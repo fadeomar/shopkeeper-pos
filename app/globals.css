@@ -1,0 +1,71 @@
+@import "tailwindcss";
+
+/* Tailwind v4: explicit source scanning for Next.js App Router */
+@source "../components/**/*.{ts,tsx}";
+@source "../features/**/*.{ts,tsx}";
+@source "../lib/**/*.{ts,tsx}";
+
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html, body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+      'Noto Sans Arabic', 'Arabic UI Text', sans-serif;
+  }
+
+  a { color: inherit; text-decoration: none; }
+  button, input, select, textarea { font: inherit; }
+
+  /* Number / price inputs stay LTR regardless of page direction so digit
+     order and currency symbols remain readable in Arabic mode */
+  input[type="number"] {
+    direction: ltr;
+    text-align: right;
+  }
+}
+
+/* ─── Barcode Scanner ─────────────────────────────────────────────────────── */
+
+.scanner-viewport {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  background: #0f172a;
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.scanner-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.scanner-crosshair {
+  position: absolute;
+  inset: 20%;
+  border: 3px solid rgba(37, 99, 235, 0.9);
+  border-radius: 12px;
+  pointer-events: none;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.35);
+}
+
+.scanner-overlay-msg {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px;
+  color: white;
+  font-size: 15px;
+  line-height: 1.5;
+  background: rgba(15, 23, 42, 0.85);
+}
+
+.scanner-overlay-error { color: #fca5a5; }
