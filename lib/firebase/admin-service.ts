@@ -42,10 +42,8 @@ export async function fetchUserSummary(uid: string): Promise<UserSummary> {
     .filter((b) => b.status === 'finalized')
     .reduce((sum, b) => sum + b.totalAmount, 0);
 
-  const lastSyncedAt =
-    bills.length > 0
-      ? bills.reduce((latest, b) => (b.createdAt > latest ? b.createdAt : latest), bills[0].createdAt)
-      : null;
+  // bills are ordered by createdAt desc, so first entry is most recent
+  const lastSyncedAt = bills.length > 0 ? bills[0].createdAt : null;
 
   return {
     billCount: bills.length,

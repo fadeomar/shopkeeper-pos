@@ -21,7 +21,7 @@ export class ShopkeeperDB extends Dexie {
     });
 
     this.version(2).stores({
-      authCache: 'uid, email, role, isActive, cachedAt',
+      authCache: 'uid',
     });
   }
 }

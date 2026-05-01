@@ -1,4 +1,4 @@
-import { writeBatch, doc, collection } from 'firebase/firestore';
+import { writeBatch, doc } from 'firebase/firestore';
 import { firestore } from './config';
 import { db } from '@/lib/db/schema';
 import type { Bill, BillItem, Product } from '@/types/domain';
@@ -29,8 +29,9 @@ export async function syncBillToCloud(
       })),
     ];
     await commitInBatches(writes);
-  } catch {
-    // Firestore offline persistence queues the write — silently continue
+  } catch (e) {
+    // Offline writes are queued by Firestore SDK and retried on reconnect
+    if (process.env.NODE_ENV === 'development') console.warn('[sync] syncBillToCloud failed', e);
   }
 }
 
@@ -45,8 +46,8 @@ export async function syncProductsToCloud(
       data: p,
     }));
     await commitInBatches(writes);
-  } catch {
-    // silent — offline writes are queued by Firestore SDK
+  } catch (e) {
+    if (process.env.NODE_ENV === 'development') console.warn('[sync] syncProductsToCloud failed', e);
   }
 }
 
@@ -74,7 +75,7 @@ export async function syncAllToCloud(uid: string): Promise<void> {
     ];
 
     await commitInBatches(writes);
-  } catch {
-    // silent
+  } catch (e) {
+    if (process.env.NODE_ENV === 'development') console.warn('[sync] syncAllToCloud failed', e);
   }
 }

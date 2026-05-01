@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import type { Route } from 'next';
 import { useAuth } from '@/components/providers/auth-context';
@@ -23,7 +23,6 @@ function userDisplayStatus(u: AppUser): 'active' | 'inactive' | 'pending' {
 
 export default function UserDetailPage() {
   const { uid } = useParams<{ uid: string }>();
-  const router = useRouter();
   const { isAdmin } = useAuth();
 
   const [profile, setProfile]   = useState<AppUser | null>(null);

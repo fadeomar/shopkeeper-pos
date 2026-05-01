@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -223,6 +223,8 @@ export function PosScreen() {
   async function finalize(values: BillFormSchema) {
     if (draftItems.length === 0) { push(t('billing.addOneProduct'), 'error'); return; }
     try {
+      // Capture IDs before clearDraft() resets state
+      const productIds = draftItems.map((i) => i.productId);
       const { bill, billItems } = await createFinalizedBill({ items: draftItems, form: { ...values, paidAmount: actualPaidAmount } });
       const uid = user?.uid;
       clearDraft();
@@ -231,10 +233,10 @@ export function PosScreen() {
       // Fire-and-forget cloud backup — does not block the UI
       if (uid) {
         void syncBillToCloud(uid, bill, billItems);
-        const updatedProducts = await import('@/lib/db/schema').then(({ db }) =>
-          db.products.bulkGet(draftItems.map((i) => i.productId))
-        ).then((ps) => ps.filter((p): p is NonNullable<typeof p> => p != null));
-        void syncProductsToCloud(uid, updatedProducts);
+        void db.products
+          .bulkGet(productIds)
+          .then((ps) => ps.filter((p): p is NonNullable<typeof p> => p != null))
+          .then((updated) => syncProductsToCloud(uid, updated));
       }
     } catch (error) {
       push(error instanceof Error ? error.message : t('billing.billFailed'), 'error');
