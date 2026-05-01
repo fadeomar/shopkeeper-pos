@@ -1,13 +1,11 @@
 import type { Metadata, Viewport } from 'next';
-import Link from 'next/link';
 import './globals.css';
 import { ServiceWorkerRegister } from '@/components/pwa/sw-register';
 import { ToastProvider } from '@/components/ui/toast';
-import { DbBootstrap } from '@/components/providers/db-bootstrap';
 import { SettingsProvider } from '@/components/providers/settings-context';
 import { LocaleProvider } from '@/components/providers/locale-context';
-import { AppSidebarBrand } from '@/components/app-sidebar-brand';
-import { SidebarNav } from '@/components/sidebar-nav';
+import { AuthProvider } from '@/components/providers/auth-context';
+import { AuthenticatedShell } from '@/components/auth/authenticated-shell';
 
 export const metadata: Metadata = {
   title: 'Shopkeeper POS',
@@ -30,34 +28,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <LocaleProvider>
           <SettingsProvider>
             <ToastProvider>
-              {/* Full-width PWA status strip */}
               <ServiceWorkerRegister />
-
-              {/* App shell: sidebar + main */}
-              <div className="min-h-screen grid grid-cols-1 lg:grid-cols-[260px_1fr]">
-
-                {/* ── Sidebar ───────────────────────────────────────────── */}
-                <aside className="bg-slate-900 text-white flex flex-col lg:min-h-screen lg:sticky lg:top-0">
-
-                  {/* Brand — hidden on mobile (shown in horizontal bar below) */}
-                  <div className="hidden lg:block px-5 pt-6 pb-4">
-                    <AppSidebarBrand />
-                  </div>
-
-                  {/* Mobile brand bar */}
-                  <div className="flex lg:hidden items-center gap-3 px-4 py-3 border-b border-white/10">
-                    <span className="font-bold text-base tracking-tight">Shopkeeper POS</span>
-                  </div>
-
-                  {/* Navigation */}
-                  <SidebarNav />
-                </aside>
-
-                {/* ── Main content ─────────────────────────────────────── */}
-                <main className="p-4 lg:p-6 min-w-0">
-                  <DbBootstrap>{children}</DbBootstrap>
-                </main>
-              </div>
+              <AuthProvider>
+                <AuthenticatedShell>
+                  {children}
+                </AuthenticatedShell>
+              </AuthProvider>
             </ToastProvider>
           </SettingsProvider>
         </LocaleProvider>

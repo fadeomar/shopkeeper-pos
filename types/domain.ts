@@ -1,4 +1,18 @@
 export type EntityStatus = 'active' | 'inactive';
+export type UserRole = 'admin' | 'cashier';
+
+export interface AppUser {
+  uid: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface AuthCacheEntry extends AppUser {
+  cachedAt: string;
+}
 export type BillStatus = 'finalized' | 'voided';
 export type PaymentMethod = 'cash' | 'card' | 'mixed' | 'credit';
 export type StockMovementType = 'purchase' | 'sale' | 'adjustment' | 'return' | 'damaged' | 'initial';
