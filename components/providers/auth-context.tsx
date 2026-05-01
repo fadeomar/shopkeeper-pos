@@ -5,7 +5,7 @@ import { onAuthChange, fetchUserDoc, signOut } from '@/lib/firebase/auth-service
 import { db } from '@/lib/db/schema';
 import type { AuthCacheEntry } from '@/types/domain';
 
-type AuthStatus = 'loading' | 'unauthenticated' | 'inactive' | 'authenticated';
+export type AuthStatus = 'loading' | 'unauthenticated' | 'pending' | 'inactive' | 'authenticated';
 
 interface AuthContextValue {
   status: AuthStatus;
@@ -16,32 +16,39 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+function resolveStatus(user: AuthCacheEntry): Exclude<AuthStatus, 'loading' | 'unauthenticated'> {
+  if (user.isActive) return 'authenticated';
+  if (user.pendingApproval) return 'pending';
+  return 'inactive';
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>('loading');
   const [user, setUser] = useState<AuthCacheEntry | null>(null);
 
-  const resolveUser = useCallback(async (uid: string, email: string) => {
-    // Try Firestore first (works online; returns cached data when offline due to persistence)
+  const resolveUser = useCallback(async (uid: string) => {
+    // Firestore with persistentLocalCache returns cached data offline — no special offline branch needed.
+    // The catch only fires in edge cases (e.g. Firestore not yet initialized, permission error).
     try {
       const doc = await fetchUserDoc(uid);
       if (doc) {
         const entry: AuthCacheEntry = { ...doc, cachedAt: new Date().toISOString() };
         await db.authCache.put(entry);
         setUser(entry);
-        setStatus(doc.isActive ? 'authenticated' : 'inactive');
+        setStatus(resolveStatus(entry));
         return;
       }
     } catch {
-      // Firestore unavailable — fall through to local cache
+      // Firestore unavailable — fall through to Dexie cache
     }
 
-    // Fallback: local Dexie cache (offline, never-been-online-yet user stays out)
+    // Belt-and-suspenders: Dexie cache when Firestore misses (offline, doc never fetched)
     const cached = await db.authCache.get(uid);
     if (cached) {
       setUser(cached);
-      setStatus(cached.isActive ? 'authenticated' : 'inactive');
+      setStatus(resolveStatus(cached));
     } else {
-      // Has Firebase JWT but no local record — needs online verification first
+      // JWT exists but no local record at all — needs one online session first
       await signOut();
       setUser(null);
       setStatus('unauthenticated');
@@ -55,7 +62,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setStatus('unauthenticated');
         return;
       }
-      await resolveUser(firebaseUser.uid, firebaseUser.email ?? '');
+      await resolveUser(firebaseUser.uid);
     });
     return unsub;
   }, [resolveUser]);

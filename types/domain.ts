@@ -7,6 +7,7 @@ export interface AppUser {
   name: string;
   role: UserRole;
   isActive: boolean;
+  pendingApproval?: boolean;
   createdAt: string;
 }
 

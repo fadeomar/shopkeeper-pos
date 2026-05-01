@@ -42,7 +42,49 @@ export async function fetchAllUsers(): Promise<AppUser[]> {
 }
 
 export async function updateUserStatus(uid: string, isActive: boolean) {
-  await updateDoc(doc(firestore, 'users', uid), { isActive });
+  await updateDoc(doc(firestore, 'users', uid), {
+    isActive,
+    pendingApproval: false,
+  });
+}
+
+export async function rejectUser(uid: string) {
+  await updateDoc(doc(firestore, 'users', uid), {
+    isActive: false,
+    pendingApproval: false,
+  });
+}
+
+export async function registerUser(
+  email: string,
+  password: string,
+  name: string,
+): Promise<void> {
+  // Use secondary app to create the Firebase Auth user without triggering
+  // onAuthStateChanged on the main app before the Firestore doc is ready.
+  const tempApp = initializeApp(firebaseApp.options, `register-${Date.now()}`);
+  let uid: string;
+  try {
+    const tempAuth = getAuth(tempApp);
+    const cred = await createUserWithEmailAndPassword(tempAuth, email, password);
+    uid = cred.user.uid;
+
+    // Write Firestore doc before signing in on main auth — no race condition
+    await setDoc(doc(firestore, 'users', uid), {
+      uid,
+      email,
+      name,
+      role: 'cashier',
+      isActive: false,
+      pendingApproval: true,
+      createdAt: new Date().toISOString(),
+    } satisfies AppUser);
+  } finally {
+    await deleteApp(tempApp);
+  }
+
+  // Sign in on main auth — onAuthStateChanged fires after the doc exists
+  await signInWithEmailAndPassword(auth, email, password);
 }
 
 export async function createAppUser(
@@ -51,7 +93,7 @@ export async function createAppUser(
   name: string,
   role: 'admin' | 'cashier',
 ): Promise<void> {
-  // Secondary app instance so creating a user doesn't sign out the current admin
+  // Secondary app so creating a user doesn't sign out the current admin
   const tempApp = initializeApp(firebaseApp.options, `create-user-${Date.now()}`);
   try {
     const tempAuth = getAuth(tempApp);
@@ -63,6 +105,7 @@ export async function createAppUser(
       name,
       role,
       isActive: true,
+      pendingApproval: false,
       createdAt: now,
     } satisfies AppUser);
   } finally {
