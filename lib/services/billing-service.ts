@@ -37,7 +37,7 @@ function validateDraftLine(
 export async function createFinalizedBill(input: {
   items: BillDraftItem[];
   form: BillFormValues;
-}): Promise<Bill> {
+}): Promise<{ bill: Bill; billItems: BillItem[] }> {
   if (input.items.length === 0) {
     throw new Error("Add at least one product before finalizing the bill.");
   }
@@ -176,7 +176,7 @@ export async function createFinalizedBill(input: {
         updatedAt: createdAt,
       });
 
-      return bill;
+      return { bill, billItems };
     },
   );
 }

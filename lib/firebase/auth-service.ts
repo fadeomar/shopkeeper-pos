@@ -59,6 +59,7 @@ export async function registerUser(
   email: string,
   password: string,
   name: string,
+  phone?: string,
 ): Promise<void> {
   // Use secondary app to create the Firebase Auth user without triggering
   // onAuthStateChanged on the main app before the Firestore doc is ready.
@@ -74,6 +75,7 @@ export async function registerUser(
       uid,
       email,
       name,
+      ...(phone ? { phone } : {}),
       role: 'cashier',
       isActive: false,
       pendingApproval: true,
@@ -92,6 +94,7 @@ export async function createAppUser(
   password: string,
   name: string,
   role: 'admin' | 'cashier',
+  phone?: string,
 ): Promise<void> {
   // Secondary app so creating a user doesn't sign out the current admin
   const tempApp = initializeApp(firebaseApp.options, `create-user-${Date.now()}`);
@@ -103,6 +106,7 @@ export async function createAppUser(
       uid: cred.user.uid,
       email,
       name,
+      ...(phone ? { phone } : {}),
       role,
       isActive: true,
       pendingApproval: false,

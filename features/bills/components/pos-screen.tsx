@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -10,6 +10,8 @@ import { billFormSchema, type BillFormSchema } from '@/features/bills/schema';
 import { calculateBillTotals, calculateChange } from '@/lib/utils/calculations';
 import { formatCurrency } from '@/lib/utils/money';
 import { createFinalizedBill } from '@/lib/services/billing-service';
+import { syncBillToCloud, syncProductsToCloud } from '@/lib/firebase/sync-service';
+import { useAuth } from '@/components/providers/auth-context';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -43,6 +45,7 @@ function SummaryRow({ label, value, highlight }: { label: string; value: string;
 
 export function PosScreen() {
   const { t } = useLocale();
+  const { user } = useAuth();
   const products = useLiveQuery(
     () => db.products.where('status').equals('active').sortBy('name'), [],
   );
@@ -220,10 +223,19 @@ export function PosScreen() {
   async function finalize(values: BillFormSchema) {
     if (draftItems.length === 0) { push(t('billing.addOneProduct'), 'error'); return; }
     try {
-      const bill = await createFinalizedBill({ items: draftItems, form: { ...values, paidAmount: actualPaidAmount } });
+      const { bill, billItems } = await createFinalizedBill({ items: draftItems, form: { ...values, paidAmount: actualPaidAmount } });
+      const uid = user?.uid;
       clearDraft();
       setConfirmOpen(false);
       push(t('billing.billCreated', { billNumber: bill.billNumber }));
+      // Fire-and-forget cloud backup — does not block the UI
+      if (uid) {
+        void syncBillToCloud(uid, bill, billItems);
+        const updatedProducts = await import('@/lib/db/schema').then(({ db }) =>
+          db.products.bulkGet(draftItems.map((i) => i.productId))
+        ).then((ps) => ps.filter((p): p is NonNullable<typeof p> => p != null));
+        void syncProductsToCloud(uid, updatedProducts);
+      }
     } catch (error) {
       push(error instanceof Error ? error.message : t('billing.billFailed'), 'error');
     }

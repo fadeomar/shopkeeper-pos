@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import type { Route } from 'next';
 import { useAuth } from '@/components/providers/auth-context';
 import { fetchAllUsers, updateUserStatus, rejectUser, createAppUser } from '@/lib/firebase/auth-service';
 import type { AppUser } from '@/types/domain';
@@ -110,6 +112,9 @@ export default function AdminUsersPage() {
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-slate-800 text-sm truncate">{u.name}</p>
                   <p className="text-xs text-slate-500 truncate">{u.email}</p>
+                  {u.phone && (
+                    <a href={`tel:${u.phone}`} className="text-xs text-blue-500 hover:underline">{u.phone}</a>
+                  )}
                 </div>
                 <span className="hidden sm:inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
                   {u.role}
@@ -157,10 +162,20 @@ export default function AdminUsersPage() {
                 <tbody className="divide-y divide-slate-50">
                   {[...active, ...inactive].map((u) => (
                     <tr key={u.uid} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-5 py-3.5 font-medium text-slate-800">
-                        {u.name}
+                      <td className="px-5 py-3.5">
+                        <Link
+                          href={`/admin/users/${u.uid}` as Route}
+                          className="font-medium text-slate-800 hover:text-blue-600 transition-colors"
+                        >
+                          {u.name}
+                        </Link>
                         {u.uid === currentUser?.uid && (
                           <span className="ml-2 text-xs text-slate-400">(you)</span>
+                        )}
+                        {u.phone && (
+                          <div>
+                            <a href={`tel:${u.phone}`} className="text-xs text-slate-400 hover:text-blue-500">{u.phone}</a>
+                          </div>
                         )}
                       </td>
                       <td className="px-5 py-3.5 text-slate-500 hidden sm:table-cell">{u.email}</td>
@@ -213,6 +228,7 @@ export default function AdminUsersPage() {
 function CreateUserForm({ onCreated, onCancel }: { onCreated: () => void; onCancel: () => void }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<'admin' | 'cashier'>('cashier');
   const [loading, setLoading] = useState(false);
@@ -223,7 +239,7 @@ function CreateUserForm({ onCreated, onCancel }: { onCreated: () => void; onCanc
     setError('');
     setLoading(true);
     try {
-      await createAppUser(email, password, name, role);
+      await createAppUser(email, password, name, role, phone || undefined);
       onCreated();
     } catch (err: unknown) {
       const code = (err as { code?: string }).code ?? '';
@@ -250,6 +266,12 @@ function CreateUserForm({ onCreated, onCancel }: { onCreated: () => void; onCanc
           <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
             className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="jane@example.com" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">Phone <span className="text-slate-400">(optional)</span></label>
+          <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
+            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="+1 555 0123" />
         </div>
         <div>
           <label className="block text-xs font-medium text-slate-600 mb-1">Password</label>

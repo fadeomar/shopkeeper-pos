@@ -5,6 +5,7 @@ export interface AppUser {
   uid: string;
   email: string;
   name: string;
+  phone?: string;
   role: UserRole;
   isActive: boolean;
   pendingApproval?: boolean;

@@ -1,14 +1,24 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/components/providers/auth-context';
 import { signIn, registerUser } from '@/lib/firebase/auth-service';
+import { syncAllToCloud } from '@/lib/firebase/sync-service';
 import { DbBootstrap } from '@/components/providers/db-bootstrap';
 import { AppSidebarBrand } from '@/components/app-sidebar-brand';
 import { SidebarNav } from '@/components/sidebar-nav';
 
 export function AuthenticatedShell({ children }: { children: React.ReactNode }) {
   const { status, user, logout } = useAuth();
+
+  // Sync all local data to cloud whenever the device comes back online
+  useEffect(() => {
+    const uid = user?.uid;
+    if (!uid) return;
+    const handleOnline = () => { void syncAllToCloud(uid); };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [user?.uid]);
 
   if (status === 'loading') return <LoadingScreen />;
   if (status === 'unauthenticated') return <AuthScreen />;
@@ -191,6 +201,7 @@ function LoginForm({ onShowSignUp }: { onShowSignUp: () => void }) {
 function SignUpForm({ onBack }: { onBack: () => void }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState('');
@@ -202,7 +213,7 @@ function SignUpForm({ onBack }: { onBack: () => void }) {
     if (password !== confirm) { setError('Passwords do not match.'); return; }
     setLoading(true);
     try {
-      await registerUser(email, password, name);
+      await registerUser(email, password, name, phone || undefined);
       // onAuthStateChanged fires → resolveUser → status becomes 'pending'
     } catch (err: unknown) {
       const code = (err as { code?: string }).code ?? '';
@@ -246,6 +257,19 @@ function SignUpForm({ onBack }: { onBack: () => void }) {
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="you@example.com"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Phone <span className="text-slate-400 font-normal">(optional)</span>
+              </label>
+              <input
+                type="tel"
+                autoComplete="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="+1 555 0123"
               />
             </div>
             <div>
