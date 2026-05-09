@@ -22,6 +22,7 @@ export const en: TranslationDict = {
   pwa: {
     online: 'Online', offline: 'Offline mode active',
     cacheReady: 'Offline cache ready', cachePrep: 'Preparing offline cache',
+    cacheUnavailable: 'Offline cache disabled',
     installed: 'Installed app', installable: 'Installable PWA',
     updateAvailable: 'Update available', reload: 'Reload to apply',
   },
@@ -145,5 +146,13 @@ export const en: TranslationDict = {
     activeFrames: 'Camera active • {{frames}} frames analyzed • Hold steady',
     lastScanned: 'Last scanned:', torchOn: 'Torch on', torchOff: 'Torch off',
     close: 'Close', doneScan: 'Done scanning',
+  },
+  sync: {
+    status: 'Sync',
+    pending: 'Pending sync',
+    syncing: 'Syncing…',
+    synced: 'Synced',
+    failed: 'Sync failed',
+    pendingBadge: '{{count}} pending sync',
   },
 };

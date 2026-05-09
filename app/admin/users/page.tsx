@@ -67,8 +67,8 @@ export default function AdminUsersPage() {
     );
   }
 
-  const pending = users.filter((u) => u.pendingApproval);
-  const active = users.filter((u) => !u.pendingApproval && u.isActive);
+  const pending  = users.filter((u) => u.pendingApproval);
+  const active   = users.filter((u) => !u.pendingApproval && u.isActive);
   const inactive = users.filter((u) => !u.pendingApproval && !u.isActive);
 
   return (
@@ -90,6 +90,13 @@ export default function AdminUsersPage() {
         <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl px-4 py-3">
           {error}
         </p>
+      )}
+
+      {/* Loading state — shown immediately, not gated behind the user list */}
+      {loading && (
+        <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center text-sm text-slate-400">
+          Loading users…
+        </div>
       )}
 
       {showCreate && (
@@ -146,10 +153,7 @@ export default function AdminUsersPage() {
             <h2 className="text-sm font-semibold text-slate-500 mb-2">All Users</h2>
           )}
           <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
-            {loading ? (
-              <div className="p-8 text-center text-sm text-slate-400">Loading users…</div>
-            ) : (
-              <table className="w-full text-sm">
+            <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-100">
                     <th className="text-left px-5 py-3 font-medium text-slate-500">Name</th>
@@ -211,7 +215,6 @@ export default function AdminUsersPage() {
                   ))}
                 </tbody>
               </table>
-            )}
           </div>
         </section>
       )}

@@ -1,6 +1,6 @@
-import { collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, limit, doc, setDoc } from 'firebase/firestore';
 import { firestore } from './config';
-import type { Bill, BillItem, Product } from '@/types/domain';
+import type { Bill, BillItem, Product, Settings } from '@/types/domain';
 
 export async function fetchUserBills(uid: string, maxRows = 100): Promise<Bill[]> {
   const snap = await getDocs(
@@ -29,7 +29,29 @@ export interface UserSummary {
   billCount: number;
   totalRevenue: number;
   productCount: number;
-  lastSyncedAt: string | null;
+}
+
+/**
+ * Fetch the user's settings document from Firestore.
+ * Returns null if the user hasn't synced settings yet or is unreachable.
+ */
+export async function fetchUserSettings(uid: string): Promise<Settings | null> {
+  try {
+    const snap = await getDocs(collection(firestore, `users/${uid}/settings`));
+    if (snap.empty) return null;
+    return snap.docs[0].data() as Settings;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Overwrite the user's settings document in Firestore.
+ * Called by admin when editing a user's settings from the admin panel.
+ * The cashier will pick up the change on next reconnect via pullSettingsFromCloud.
+ */
+export async function updateUserSettingsInCloud(uid: string, settings: Settings): Promise<void> {
+  await setDoc(doc(firestore, `users/${uid}/settings/${settings.id}`), settings);
 }
 
 export async function fetchUserSummary(uid: string): Promise<UserSummary> {
@@ -42,13 +64,9 @@ export async function fetchUserSummary(uid: string): Promise<UserSummary> {
     .filter((b) => b.status === 'finalized')
     .reduce((sum, b) => sum + b.totalAmount, 0);
 
-  // bills are ordered by createdAt desc, so first entry is most recent
-  const lastSyncedAt = bills.length > 0 ? bills[0].createdAt : null;
-
   return {
     billCount: bills.length,
     totalRevenue,
     productCount: products.length,
-    lastSyncedAt,
   };
 }

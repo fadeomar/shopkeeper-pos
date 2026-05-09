@@ -7,6 +7,7 @@ import { formatCurrency } from '@/lib/utils/money';
 import { formatDate } from '@/lib/utils/date';
 import { adjustProductStock } from '@/lib/services/inventory-service';
 import { productRepo, settingsRepo } from '@/lib/db/repositories';
+import { enqueueSyncJob } from '@/lib/services/sync-queue-service';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
@@ -46,10 +47,13 @@ export function ProductsTable({ onEdit }: { onEdit?: (product: Product) => void 
   }, [products, query, category]);
 
   async function toggleStatus(product: Product) {
+    const newStatus = product.status === 'active' ? 'inactive' : 'active';
     await productRepo.update(product.id, {
-      status: product.status === 'active' ? 'inactive' : 'active',
+      status: newStatus,
       lastUpdated: new Date().toISOString(),
+      syncStatus: 'pending',
     });
+    void enqueueSyncJob({ entity: 'product', entityId: product.id, operation: 'update' });
     push(product.status === 'active' ? t('products.productDeactivated') : t('products.productActivated'));
   }
 
@@ -59,6 +63,8 @@ export function ProductsTable({ onEdit }: { onEdit?: (product: Product) => void 
     if (Number.isNaN(qty) || qty === 0) { push(t('products.nonZeroAdj'), 'error'); return; }
     try {
       await adjustProductStock(adjustProduct, qty, adjustNote || 'Manual stock adjustment');
+      await db.products.update(adjustProduct.id, { syncStatus: 'pending' });
+      void enqueueSyncJob({ entity: 'product', entityId: adjustProduct.id, operation: 'update' });
       push(t('products.stockAdjusted'));
       setAdjustProduct(null); setAdjustQty('1'); setAdjustNote('Manual stock adjustment');
     } catch (error) {

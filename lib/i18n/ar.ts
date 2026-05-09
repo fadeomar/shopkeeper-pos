@@ -147,4 +147,12 @@ export const ar: TranslationDict = {
     lastScanned: 'آخر مسح:', torchOn: 'تشغيل الضوء', torchOff: 'إطفاء الضوء',
     close: 'إغلاق', doneScan: 'إنهاء المسح',
   },
+  sync: {
+    status: 'المزامنة',
+    pending: 'في انتظار المزامنة',
+    syncing: 'جارٍ المزامنة…',
+    synced: 'تمت المزامنة',
+    failed: 'فشلت المزامنة',
+    pendingBadge: '{{count}} في انتظار المزامنة',
+  },
 };

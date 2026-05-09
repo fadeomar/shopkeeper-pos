@@ -5,6 +5,7 @@ import { ToastProvider } from '@/components/ui/toast';
 import { SettingsProvider } from '@/components/providers/settings-context';
 import { LocaleProvider } from '@/components/providers/locale-context';
 import { AuthProvider } from '@/components/providers/auth-context';
+import { SyncProvider } from '@/components/providers/sync-provider';
 import { AuthenticatedShell } from '@/components/auth/authenticated-shell';
 
 export const metadata: Metadata = {
@@ -30,9 +31,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <ToastProvider>
               <ServiceWorkerRegister />
               <AuthProvider>
-                <AuthenticatedShell>
-                  {children}
-                </AuthenticatedShell>
+                <SyncProvider>
+                  <AuthenticatedShell>
+                    {children}
+                  </AuthenticatedShell>
+                </SyncProvider>
               </AuthProvider>
             </ToastProvider>
           </SettingsProvider>

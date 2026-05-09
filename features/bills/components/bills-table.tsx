@@ -10,6 +10,26 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Card } from '@/components/ui/card';
 import { useLocale } from '@/components/providers/locale-context';
 import clsx from 'clsx';
+import type { SyncStatus } from '@/types/domain';
+
+function SyncBadge({ status }: { status?: SyncStatus }) {
+  if (!status || status === 'synced') return null;
+  const styles: Record<string, string> = {
+    pending: 'bg-amber-100 text-amber-700',
+    syncing: 'bg-blue-100 text-blue-700',
+    failed:  'bg-red-100 text-red-700',
+  };
+  const labels: Record<string, string> = {
+    pending: 'Pending sync',
+    syncing: 'Syncing…',
+    failed:  'Sync failed',
+  };
+  return (
+    <span className={clsx('inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium', styles[status])}>
+      {labels[status]}
+    </span>
+  );
+}
 
 export function BillsTable() {
   const { t } = useLocale();
@@ -25,7 +45,7 @@ export function BillsTable() {
   const headers = [
     t('bills.billNumber'), t('bills.dateTime'), t('bills.customer'), t('bills.cashier'),
     t('bills.itemCount'), t('bills.total'), t('bills.profit'), t('bills.payment'),
-    t('bills.status'), t('bills.action'),
+    t('bills.status'), t('sync.status'), t('bills.action'),
   ];
 
   return (
@@ -63,6 +83,9 @@ export function BillsTable() {
                   )}>
                     {t(`common.${bill.status}` as Parameters<typeof t>[0])}
                   </span>
+                </td>
+                <td className="px-3 py-3">
+                  <SyncBadge status={bill.syncStatus} />
                 </td>
                 <td className="px-3 py-3">
                   <Link

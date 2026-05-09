@@ -1,6 +1,30 @@
 // ─── Version — bump this string on every release ──────────────────────────────
 // Changing this value changes the cache names, which triggers the browser to
 // install a new service worker and clean up the old caches on activate.
+const DEV_HOST_RE = /^(localhost|127\.0\.0\.1|0\.0\.0\.0|10\.|192\.168\.|172\.(1[6-9]|2\d|3[0-1])\.)/;
+const IS_DEV_HOST = self.location.protocol === 'http:' && DEV_HOST_RE.test(self.location.hostname);
+const ENABLE_DEV_SW = new URL(self.location.href).searchParams.get('dev-sw') === '1';
+
+if (IS_DEV_HOST && !ENABLE_DEV_SW) {
+  // A worker previously installed during local development can trap the phone
+  // on stale Next.js chunks. Retire immediately and let all requests hit the
+  // dev server directly.
+  self.addEventListener('install', () => {
+    self.skipWaiting();
+  });
+
+  self.addEventListener('activate', (event) => {
+    event.waitUntil((async () => {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((key) => caches.delete(key)));
+      await self.clients.claim();
+
+      const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      await Promise.all(clients.map((client) => client.navigate(client.url)));
+      await self.registration.unregister();
+    })());
+  });
+} else {
 const CACHE_VERSION = '0.1.0';
 
 const CACHE_HTML   = `sk-pages-${CACHE_VERSION}`;
@@ -192,4 +216,5 @@ async function handleGeneric(event) {
   } catch {
     return new Response('', { status: 503 });
   }
+}
 }

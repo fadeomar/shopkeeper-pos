@@ -17,7 +17,7 @@ export interface TranslationDict {
   sidebar: { title: string; subtitle: string };
   pwa: {
     online: string; offline: string; cacheReady: string;
-    cachePrep: string; installed: string; installable: string;
+    cachePrep: string; cacheUnavailable?: string; installed: string; installable: string;
     updateAvailable: string; reload: string;
   };
   db: {
@@ -87,5 +87,13 @@ export interface TranslationDict {
     error: string; starting: string; active: string; activeFrames: string;
     lastScanned: string; torchOn: string; torchOff: string;
     close: string; doneScan: string;
+  };
+  sync: {
+    status: string;
+    pending: string;
+    syncing: string;
+    synced: string;
+    failed: string;
+    pendingBadge: string;
   };
 }

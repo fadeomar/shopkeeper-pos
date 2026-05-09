@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from '@/lib/db/schema';
 import { useLocale } from '@/components/providers/locale-context';
 
 export function ServiceWorkerRegister() {
@@ -13,8 +15,18 @@ export function ServiceWorkerRegister() {
   const [ready, setReady] = useState(false);
   const [installed, setInstalled] = useState(false);
   const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [cacheUnavailable, setCacheUnavailable] = useState(false);
+
+  // Live count of sync jobs that are pending or failed (0 when nothing to show)
+  const pendingCount = useLiveQuery(
+    () => db.syncQueue.where('status').anyOf(['pending', 'failed', 'syncing']).count(),
+    [],
+    0,
+  );
 
   useEffect(() => {
+    const enableDevSw = process.env.NEXT_PUBLIC_ENABLE_OFFLINE_SW === '1';
+
     setOnline(window.navigator.onLine);
     setInstalled(window.matchMedia('(display-mode: standalone)').matches);
 
@@ -23,10 +35,61 @@ export function ServiceWorkerRegister() {
     window.addEventListener('online',  onOnline);
     window.addEventListener('offline', onOffline);
 
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js')
+    // Skip service-worker registration in development — the dev server changes
+    // chunk hashes on every restart, and a registered SW will keep serving the
+    // old cached JS, making code changes invisible on repeat visits.
+    if (!('serviceWorker' in navigator)) {
+      setReady(true);
+      setCacheUnavailable(true);
+    } else if (process.env.NODE_ENV !== 'production' && !enableDevSw) {
+      // Dev cleanup: an already-installed SW can keep serving stale Next.js
+      // chunks after every dev-server restart. Remove it and its app caches.
+      setReady(true);
+      setCacheUnavailable(true);
+      const reloadKey = 'shopkeeper_dev_sw_cleanup_reloaded';
+      const cleanupDevWorker = async () => {
+        try {
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(registrations.map((reg) => reg.unregister()));
+
+          let deletedCache = false;
+          if ('caches' in window) {
+            const keys = await caches.keys();
+            await Promise.all(
+              keys
+                .filter((key) => key.startsWith('sk-'))
+                .map(async (key) => {
+                  deletedCache = (await caches.delete(key)) || deletedCache;
+                }),
+            );
+          }
+
+          const wasControlled = Boolean(navigator.serviceWorker.controller);
+          const removedWorker = registrations.length > 0;
+          const alreadyReloaded = sessionStorage.getItem(reloadKey) === '1';
+
+          if ((wasControlled || removedWorker || deletedCache) && !alreadyReloaded) {
+            sessionStorage.setItem(reloadKey, '1');
+            window.location.reload();
+            return;
+          }
+
+          if (!wasControlled && !removedWorker && !deletedCache) {
+            sessionStorage.removeItem(reloadKey);
+          }
+        } catch (err) {
+          console.warn('[sw] Development service-worker cleanup failed:', err);
+        }
+      };
+
+      cleanupDevWorker();
+    } else {
+      const swUrl = process.env.NODE_ENV === 'production' ? '/sw.js' : '/sw.js?dev-sw=1';
+
+      navigator.serviceWorker.register(swUrl)
         .then((reg) => {
           setReady(true);
+          setCacheUnavailable(false);
           regRef.current = reg;
 
           // Detect a waiting SW that arrived before this page load
@@ -47,7 +110,11 @@ export function ServiceWorkerRegister() {
             });
           });
         })
-        .catch((err) => console.error('SW registration failed', err));
+        .catch((err) => {
+          setReady(true);
+          setCacheUnavailable(true);
+          console.error('SW registration failed', err);
+        });
 
       // Once the SW is active, push all loaded /_next/static/ chunks into its
       // cache so other routes can hydrate offline even before the user visits them.
@@ -98,11 +165,18 @@ export function ServiceWorkerRegister() {
     <div className="flex flex-wrap gap-2 px-4 py-2 bg-slate-950 border-b border-white/5" aria-live="polite">
       {networkBadge}
       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-white/5 text-slate-400">
-        {ready ? t('pwa.cacheReady') : t('pwa.cachePrep')}
+        {cacheUnavailable ? t('pwa.cacheUnavailable') : ready ? t('pwa.cacheReady') : t('pwa.cachePrep')}
       </span>
       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-white/5 text-slate-400">
         {installed ? t('pwa.installed') : t('pwa.installable')}
       </span>
+
+      {(pendingCount ?? 0) > 0 && (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-900/40 text-blue-300">
+          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+          {t('sync.pendingBadge', { count: pendingCount ?? 0 })}
+        </span>
+      )}
 
       {updateAvailable && (
         <button

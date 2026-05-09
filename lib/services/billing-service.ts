@@ -137,6 +137,7 @@ export async function createFinalizedBill(input: {
         itemCount: input.items.reduce((sum, item) => sum + item.quantity, 0),
         status: "finalized",
         notes: input.form.notes,
+        syncStatus: "pending",
       };
 
       const updatedProducts: Product[] = products.map((product) => {

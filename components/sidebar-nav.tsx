@@ -1,11 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import type { Route } from 'next';
 import { usePathname } from 'next/navigation';
 import clsx from 'clsx';
 import { useLocale } from '@/components/providers/locale-context';
-import { useAuth } from '@/components/providers/auth-context';
 
 const routes = [
   { href: '/',          key: 'nav.dashboard'   },
@@ -18,14 +16,11 @@ const routes = [
 export function SidebarNav() {
   const pathname = usePathname();
   const { t } = useLocale();
-  const { isAdmin } = useAuth();
 
   return (
     <nav
       className={clsx(
-        /* Mobile: horizontal scrolling strip */
         'flex flex-row overflow-x-auto gap-1 px-3 py-2',
-        /* Desktop: vertical stack with padding */
         'lg:flex-col lg:px-3 lg:py-2 lg:overflow-x-visible lg:flex-1',
       )}
     >
@@ -47,21 +42,6 @@ export function SidebarNav() {
           </Link>
         );
       })}
-
-      {isAdmin && (
-        <Link
-          href={"/admin/users" as Route}
-          className={clsx(
-            'whitespace-nowrap px-3 py-2 rounded-xl text-sm font-medium transition-colors',
-            'lg:w-full',
-            pathname.startsWith('/admin')
-              ? 'bg-blue-600 text-white'
-              : 'text-slate-300 hover:bg-white/10 hover:text-white',
-          )}
-        >
-          Users
-        </Link>
-      )}
     </nav>
   );
 }

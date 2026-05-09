@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { settingsRepo } from '@/lib/db/repositories';
@@ -9,6 +9,8 @@ import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { useToast } from '@/components/ui/toast';
 import { useLocale } from '@/components/providers/locale-context';
+import { useAuth } from '@/components/providers/auth-context';
+import { syncAllToCloud, syncSettingsToCloud, type SyncMeta } from '@/lib/firebase/sync-service';
 import type { Locale } from '@/lib/i18n';
 import clsx from 'clsx';
 
@@ -22,6 +24,7 @@ interface SettingsFormValues {
 
 export default function SettingsPage() {
   const { t, locale, setLocale } = useLocale();
+  const { user } = useAuth();
   const settings = useLiveQuery(() => settingsRepo.get(), []);
   const { push } = useToast();
 
@@ -44,8 +47,10 @@ export default function SettingsPage() {
   }, [settings, form]);
 
   async function onSubmit(values: SettingsFormValues) {
-    await settingsRepo.update(values);
+    const saved = await settingsRepo.update(values);
     push(t('settings.saved'));
+    // Best-effort cloud sync — local save already succeeded
+    if (user?.uid) void syncSettingsToCloud(user.uid, saved).catch(() => {});
   }
 
   const languages: { value: Locale; label: string }[] = [
@@ -126,6 +131,9 @@ export default function SettingsPage() {
         </Card>
       </form>
 
+      {/* Cloud Backup */}
+      <CloudBackupCard />
+
       {/* About */}
       <Card>
         <h3 className="text-sm font-semibold text-slate-700 mb-3">{t('settings.about')}</h3>
@@ -136,6 +144,88 @@ export default function SettingsPage() {
           </span>
         </div>
       </Card>
+    </div>
+  );
+}
+
+function CloudBackupCard() {
+  const { user } = useAuth();
+  const { push } = useToast();
+  const uid = user?.uid;
+  const [syncing, setSyncing]   = useState(false);
+  const [syncMeta, setSyncMeta] = useState<SyncMeta | null>(null);
+
+  // Load last sync info from localStorage (no Firestore read needed)
+  useEffect(() => {
+    if (!uid) return;
+    try {
+      const stored = localStorage.getItem(`shopkeeper_last_sync_${uid}`);
+      if (stored) setSyncMeta(JSON.parse(stored) as SyncMeta);
+    } catch { /* ignore */ }
+  }, [uid]);
+
+  async function handleSync() {
+    if (!uid) return;
+    setSyncing(true);
+    try {
+      const result = await syncAllToCloud(uid);
+      if (result) {
+        setSyncMeta(result);
+        push('Synced to cloud successfully ✓');
+      } else {
+        push('Sync failed — check your connection.');
+      }
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  const lastSyncDisplay = syncMeta
+    ? new Date(syncMeta.lastSyncedAt).toLocaleString(undefined, {
+        year: 'numeric', month: 'short', day: 'numeric',
+        hour: '2-digit', minute: '2-digit',
+      })
+    : null;
+
+  return (
+    <Card>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-700 mb-1">Cloud Backup</h3>
+          <p className="text-xs text-slate-500 max-w-xs">
+            Back up your local data to the cloud. Used to restore on a new device.
+            Auto-syncs daily while online.
+          </p>
+        </div>
+        <Button
+          type="button"
+          onClick={handleSync}
+          disabled={syncing}
+          className="shrink-0"
+        >
+          {syncing ? 'Syncing…' : 'Sync Now'}
+        </Button>
+      </div>
+
+      {syncMeta ? (
+        <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <SyncStat label="Last synced" value={lastSyncDisplay ?? '—'} wide />
+          <SyncStat label="Bills"       value={syncMeta.recordCounts.bills} />
+          <SyncStat label="Products"    value={syncMeta.recordCounts.products} />
+          <SyncStat label="Movements"   value={syncMeta.recordCounts.stockMovements} />
+        </div>
+      ) : (
+        <p className="mt-3 text-xs text-slate-400">Never synced on this device.</p>
+      )}
+    </Card>
+  );
+}
+
+function SyncStat({ label, value, wide }: { label: string; value: string | number; wide?: boolean }) {
+  return (
+    <div className={clsx('flex flex-col gap-0.5', wide && 'col-span-2 sm:col-span-1')}>
+      <span className="text-xs text-slate-400">{label}</span>
+      <span className="text-sm font-medium text-slate-700 tabular-nums">{value}</span>
     </div>
   );
 }

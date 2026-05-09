@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { productSchema, type ProductSchema } from '@/features/products/schema';
+import { db } from '@/lib/db/schema';
 import { productRepo } from '@/lib/db/repositories';
 import { createProductWithInitialMovement, updateProductDetails } from '@/lib/services/inventory-service';
 import { createId } from '@/lib/utils/id';
@@ -13,6 +14,7 @@ import { Select } from '@/components/ui/select';
 import { useToast } from '@/components/ui/toast';
 import { BarcodeScannerModal } from '@/components/barcode/barcode-scanner-modal';
 import { useLocale } from '@/components/providers/locale-context';
+import { enqueueSyncJob } from '@/lib/services/sync-queue-service';
 import type { Product } from '@/types/domain';
 import clsx from 'clsx';
 
@@ -61,9 +63,13 @@ export function ProductForm({ product, onSaved }: Props) {
     const now = new Date().toISOString();
     if (product) {
       await updateProductDetails(product, { ...values, quantityInStock: product.quantityInStock, lastUpdated: now });
+      await db.products.update(product.id, { syncStatus: 'pending' });
+      void enqueueSyncJob({ entity: 'product', entityId: product.id, operation: 'update' });
       push(t('products.productUpdated'));
     } else {
-      await createProductWithInitialMovement({ id: createId('prod'), ...values, lastUpdated: now });
+      const created: Product = { id: createId('prod'), ...values, lastUpdated: now, syncStatus: 'pending' };
+      await createProductWithInitialMovement(created);
+      void enqueueSyncJob({ entity: 'product', entityId: created.id, operation: 'create' });
       form.reset(emptyDefaults);
       push(t('products.productCreated'));
     }

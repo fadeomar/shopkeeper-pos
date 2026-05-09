@@ -4,7 +4,10 @@ const { version } = require('./package.json') as { version: string };
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  allowedDevOrigins: ["10.10.10.107"],
+  allowedDevOrigins: ["10.10.10.107", "192.168.16.150"],
+  logging: {
+    browserToTerminal: true,
+  },
   experimental: {
     typedRoutes: true,
   },

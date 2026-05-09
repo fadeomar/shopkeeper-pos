@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import clsx from 'clsx';
+import { createUuid } from '@/lib/utils/id';
 
 interface ToastItem {
   id: string;
@@ -17,7 +18,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
   const push = useCallback((message: string, tone: 'success' | 'error' = 'success') => {
-    const id = crypto.randomUUID();
+    const id = createUuid();
     setToasts((cur) => [...cur, { id, message, tone }]);
     window.setTimeout(() => {
       setToasts((cur) => cur.filter((t) => t.id !== id));

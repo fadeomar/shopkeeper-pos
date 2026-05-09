@@ -1,6 +1,24 @@
 export type EntityStatus = 'active' | 'inactive';
 export type UserRole = 'admin' | 'cashier';
 
+export type SyncStatus = 'pending' | 'syncing' | 'synced' | 'failed';
+export type SyncEntity = 'bill' | 'product' | 'settings' | 'stockMovement';
+export type SyncOperation = 'create' | 'update' | 'delete' | 'upsert';
+
+export interface SyncQueueItem {
+  id: string;
+  entity: SyncEntity;
+  entityId: string;
+  operation: SyncOperation;
+  status: SyncStatus;
+  retryCount: number;
+  lastError?: string;
+  createdAt: string;
+  updatedAt: string;
+  lastAttemptAt?: string;
+  syncedAt?: string;
+}
+
 export interface AppUser {
   uid: string;
   email: string;
@@ -38,6 +56,9 @@ export interface Product {
   shelfLocation?: string;
   notes?: string;
   status: EntityStatus;
+  syncStatus?: SyncStatus;
+  syncedAt?: string;
+  lastSyncError?: string;
 }
 
 export interface Bill {
@@ -58,6 +79,9 @@ export interface Bill {
   itemCount: number;
   status: BillStatus;
   notes?: string;
+  syncStatus?: SyncStatus;
+  syncedAt?: string;
+  lastSyncError?: string;
 }
 
 export interface BillItem {

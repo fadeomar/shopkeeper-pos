@@ -36,6 +36,96 @@ npm run dev
 
 Then open `http://localhost:3000`.
 
+Normal `npm run dev` intentionally disables the service worker so stale dev
+chunks do not get stuck in the browser.
+
+## Offline / PWA testing
+
+### Why `npm run dev` is not the right test environment
+
+The service worker is disabled in development to prevent stale JS chunks from
+breaking hot-module reloading. Production build is the authoritative offline
+test.
+
+### Desktop production test (required before shipping)
+
+```bash
+npm run build
+npm run start
+```
+
+1. Open `http://localhost:3000` in Chrome.
+2. Log in and visit `/`, `/products`, `/billing`, `/bills`, `/settings`.
+3. Open **DevTools → Application → Service Workers**.
+   - Confirm `/sw.js` shows **Status: activated and is running**.
+   - Confirm it is **controlling** the current page.
+4. Open **Application → Cache Storage**.
+   - Confirm `sk-pages-*` cache contains route shells.
+   - Confirm `sk-static-*` cache contains `/_next/static/` chunks.
+5. Go to **Network → check "Offline"** (or use the Offline preset).
+6. Refresh each of the five routes — none should show the browser default
+   offline page.
+7. Create a bill while offline. Refresh offline. Bill must still appear.
+8. Go back online. Confirm the "pending sync" badge in the top bar clears as
+   the sync engine flushes the queue.
+
+### Development SW test (experimental, not a substitute for production)
+
+```bash
+npm run dev:offline
+```
+
+`NEXT_PUBLIC_ENABLE_OFFLINE_SW=1` opts the dev server back into the service
+worker. Note that `sw.js?dev-sw=1` is registered in this mode. This is useful
+for quick iteration on SW logic but the production build remains the source of
+truth.
+
+### Mobile HTTPS test
+
+**Do not rely on `http://192.168.x.x:3000` as the final PWA test.** Mobile
+browsers require a secure context (HTTPS) for service workers. HTTP on LAN is
+only reliable for `localhost` on the same device.
+
+Use an HTTPS tunnel instead:
+
+```bash
+# Option A — ngrok
+ngrok http 3000
+
+# Option B — Cloudflare tunnel
+cloudflared tunnel --url http://localhost:3000
+```
+
+Open the HTTPS URL on the phone, load the app online, then:
+- Enable airplane mode (or disable Wi-Fi + mobile data).
+- Refresh and navigate — the app must stay functional from IndexedDB.
+- Re-enable network — pending sync jobs must complete.
+
+You can start the server accessible over LAN (for non-PWA debugging) with:
+
+```bash
+npm run start:host   # binds to 0.0.0.0 — use http://YOUR_LAN_IP:3000
+```
+
+### Clearing old SW / caches between test runs
+
+1. Chrome DevTools → **Application → Service Workers** → **Unregister**.
+2. **Application → Storage → Clear site data** (uncheck IndexedDB if you want
+   to keep local bills/products).
+3. Reload the app while online before testing offline behaviour again.
+
+### Sync queue behaviour
+
+- Bills and products created or modified while offline are saved locally
+  **immediately** and marked `syncStatus: 'pending'`.
+- The top status bar shows a "N pending sync" badge while jobs are queued.
+- On reconnect (or on next app open while online) the `SyncProvider` processes
+  all pending / failed jobs in sequence.
+- Jobs that fail (e.g. auth expired) are marked `failed` and retried on the
+  next reconnect, up to 5 attempts.
+- Retrying a bill sync uses `setDoc` on the same document ID — idempotent, no
+  duplicate bills created in Firestore.
+
 ## PWA notes
 
 - Manifest is served from `app/manifest.ts`.

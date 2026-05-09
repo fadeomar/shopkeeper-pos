@@ -1,9 +1,19 @@
-import { writeBatch, doc } from 'firebase/firestore';
+import { writeBatch, doc, setDoc } from 'firebase/firestore';
 import { firestore } from './config';
 import { db } from '@/lib/db/schema';
-import type { Bill, BillItem, Product } from '@/types/domain';
+import type { Bill, BillItem, Product, Settings } from '@/types/domain';
 
 const BATCH_SIZE = 400; // Firestore max is 500; stay under
+
+export interface SyncMeta {
+  lastSyncedAt: string;
+  recordCounts: {
+    bills: number;
+    billItems: number;
+    products: number;
+    stockMovements: number;
+  };
+}
 
 async function commitInBatches(
   writes: Array<{ ref: ReturnType<typeof doc>; data: object }>,
@@ -20,19 +30,14 @@ export async function syncBillToCloud(
   bill: Bill,
   items: BillItem[],
 ): Promise<void> {
-  try {
-    const writes = [
-      { ref: doc(firestore, `users/${uid}/bills/${bill.id}`), data: bill },
-      ...items.map((item) => ({
-        ref: doc(firestore, `users/${uid}/billItems/${item.id}`),
-        data: item,
-      })),
-    ];
-    await commitInBatches(writes);
-  } catch (e) {
-    // Offline writes are queued by Firestore SDK and retried on reconnect
-    if (process.env.NODE_ENV === 'development') console.warn('[sync] syncBillToCloud failed', e);
-  }
+  const writes = [
+    { ref: doc(firestore, `users/${uid}/bills/${bill.id}`), data: bill },
+    ...items.map((item) => ({
+      ref: doc(firestore, `users/${uid}/billItems/${item.id}`),
+      data: item,
+    })),
+  ];
+  await commitInBatches(writes);
 }
 
 export async function syncProductsToCloud(
@@ -40,23 +45,34 @@ export async function syncProductsToCloud(
   products: Product[],
 ): Promise<void> {
   if (products.length === 0) return;
-  try {
-    const writes = products.map((p) => ({
-      ref: doc(firestore, `users/${uid}/products/${p.id}`),
-      data: p,
-    }));
-    await commitInBatches(writes);
-  } catch (e) {
-    if (process.env.NODE_ENV === 'development') console.warn('[sync] syncProductsToCloud failed', e);
-  }
+  const writes = products.map((p) => ({
+    ref: doc(firestore, `users/${uid}/products/${p.id}`),
+    data: p,
+  }));
+  await commitInBatches(writes);
 }
 
-export async function syncAllToCloud(uid: string): Promise<void> {
+/**
+ * Immediately push a single settings document to Firestore.
+ * Called after every settings save so the cloud is always up-to-date.
+ */
+export async function syncSettingsToCloud(uid: string, settings: Settings): Promise<void> {
+  await setDoc(doc(firestore, `users/${uid}/settings/${settings.id}`), settings);
+}
+
+/**
+ * Full sync of all local tables → Firestore.
+ * Returns SyncMeta on success, null on failure.
+ * Safe to fire-and-forget: `void syncAllToCloud(uid)`.
+ */
+export async function syncAllToCloud(uid: string): Promise<SyncMeta | null> {
   try {
-    const [bills, billItems, products] = await Promise.all([
+    const [bills, billItems, products, stockMovements, settings] = await Promise.all([
       db.bills.toArray(),
       db.billItems.toArray(),
       db.products.toArray(),
+      db.stockMovements.toArray(),
+      db.settings.toArray(),
     ]);
 
     const writes = [
@@ -72,10 +88,38 @@ export async function syncAllToCloud(uid: string): Promise<void> {
         ref: doc(firestore, `users/${uid}/products/${p.id}`),
         data: p,
       })),
+      ...stockMovements.map((s) => ({
+        ref: doc(firestore, `users/${uid}/stockMovements/${s.id}`),
+        data: s,
+      })),
+      ...settings.map((s) => ({
+        ref: doc(firestore, `users/${uid}/settings/${s.id}`),
+        data: s,
+      })),
     ];
 
     await commitInBatches(writes);
+
+    // Write sync metadata to Firestore
+    const meta: SyncMeta = {
+      lastSyncedAt: new Date().toISOString(),
+      recordCounts: {
+        bills: bills.length,
+        billItems: billItems.length,
+        products: products.length,
+        stockMovements: stockMovements.length,
+      },
+    };
+    await setDoc(doc(firestore, `users/${uid}/meta/sync`), meta);
+
+    // Cache locally so Settings page can read it without a Firestore round-trip
+    try {
+      localStorage.setItem(`shopkeeper_last_sync_${uid}`, JSON.stringify(meta));
+    } catch { /* non-fatal */ }
+
+    return meta;
   } catch (e) {
     if (process.env.NODE_ENV === 'development') console.warn('[sync] syncAllToCloud failed', e);
+    return null;
   }
 }

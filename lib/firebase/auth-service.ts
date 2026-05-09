@@ -3,6 +3,7 @@ import {
   signOut as fbSignOut,
   onAuthStateChanged,
   createUserWithEmailAndPassword,
+  getAuth,
   type User,
 } from 'firebase/auth';
 import {
@@ -14,7 +15,6 @@ import {
   getDocs,
 } from 'firebase/firestore';
 import { initializeApp, deleteApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
 import { auth, firestore, firebaseApp } from './config';
 import type { AppUser } from '@/types/domain';
 
@@ -85,8 +85,15 @@ export async function registerUser(
     await deleteApp(tempApp);
   }
 
-  // Sign in on main auth — onAuthStateChanged fires after the doc exists
-  await signInWithEmailAndPassword(auth, email, password);
+  // Sign in on main auth — onAuthStateChanged fires after the doc exists.
+  // Wrapped in try/catch: if network drops between account creation and sign-in,
+  // the error bubbles to the SignUpForm and shows a message instead of silently failing.
+  try {
+    await signInWithEmailAndPassword(auth, email, password);
+  } catch (e) {
+    // Account was created but sign-in failed. User can sign in manually.
+    throw e;
+  }
 }
 
 export async function createAppUser(
