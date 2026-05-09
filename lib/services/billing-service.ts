@@ -1,5 +1,5 @@
 import { db } from "@/lib/db/schema";
-import { SETTINGS_ID, settingsRepo } from "@/lib/db/repositories";
+import { SETTINGS_ID } from "@/lib/db/repositories";
 import {
   calculateBillTotals,
   calculateChange,
@@ -8,6 +8,7 @@ import {
 } from "@/lib/utils/calculations";
 import { nowIso } from "@/lib/utils/date";
 import { createBillNumber, createId } from "@/lib/utils/id";
+import { buildSyncQueueItem } from "@/lib/services/sync-queue-service";
 import type {
   Bill,
   BillDraftItem,
@@ -58,7 +59,7 @@ export async function createFinalizedBill(input: {
 
   return db.transaction(
     "rw",
-    [db.bills, db.billItems, db.products, db.stockMovements, db.settings],
+    [db.bills, db.billItems, db.products, db.stockMovements, db.settings, db.syncQueue],
     async () => {
       const settings = await db.settings.get(SETTINGS_ID);
       if (!settings) {
@@ -154,6 +155,9 @@ export async function createFinalizedBill(input: {
           ...product,
           quantityInStock: product.quantityInStock - totalSold,
           lastUpdated: createdAt,
+          syncStatus: "pending",
+          syncedAt: undefined,
+          lastSyncError: undefined,
         };
       });
 
@@ -166,6 +170,7 @@ export async function createFinalizedBill(input: {
         referenceId: billId,
         note: `Sale recorded in ${billNumber}`,
         createdAt,
+        syncStatus: "pending",
       }));
 
       await db.bills.add(bill);
@@ -175,7 +180,21 @@ export async function createFinalizedBill(input: {
       await db.settings.update(settings.id, {
         nextBillSequence: sequence + 1,
         updatedAt: createdAt,
+        syncStatus: "pending",
+        syncedAt: undefined,
+        lastSyncError: undefined,
       });
+
+      await db.syncQueue.bulkPut([
+        buildSyncQueueItem({ entity: "bill", entityId: bill.id, operation: "create" }),
+        buildSyncQueueItem({ entity: "settings", entityId: settings.id, operation: "upsert" }),
+        ...updatedProducts.map((product) =>
+          buildSyncQueueItem({ entity: "product", entityId: product.id, operation: "update" }),
+        ),
+        ...stockMovements.map((movement) =>
+          buildSyncQueueItem({ entity: "stockMovement", entityId: movement.id, operation: "create" }),
+        ),
+      ]);
 
       return { bill, billItems };
     },

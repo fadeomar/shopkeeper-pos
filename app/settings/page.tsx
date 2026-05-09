@@ -10,7 +10,9 @@ import { Card } from '@/components/ui/card';
 import { useToast } from '@/components/ui/toast';
 import { useLocale } from '@/components/providers/locale-context';
 import { useAuth } from '@/components/providers/auth-context';
-import { syncAllToCloud, syncSettingsToCloud, type SyncMeta } from '@/lib/firebase/sync-service';
+import { useSettings } from '@/components/providers/settings-context';
+import { syncAllToCloud, type SyncMeta } from '@/lib/firebase/sync-service';
+import { enqueueSyncJob } from '@/lib/services/sync-queue-service';
 import type { Locale } from '@/lib/i18n';
 import clsx from 'clsx';
 
@@ -24,8 +26,8 @@ interface SettingsFormValues {
 
 export default function SettingsPage() {
   const { t, locale, setLocale } = useLocale();
-  const { user } = useAuth();
   const settings = useLiveQuery(() => settingsRepo.get(), []);
+  const { setSettings } = useSettings();
   const { push } = useToast();
 
   const form = useForm<SettingsFormValues>({
@@ -47,10 +49,15 @@ export default function SettingsPage() {
   }, [settings, form]);
 
   async function onSubmit(values: SettingsFormValues) {
-    const saved = await settingsRepo.update(values);
+    const saved = await settingsRepo.update({
+      ...values,
+      syncStatus: 'pending',
+      syncedAt: undefined,
+      lastSyncError: undefined,
+    });
+    setSettings(saved);
+    await enqueueSyncJob({ entity: 'settings', entityId: saved.id, operation: 'upsert' });
     push(t('settings.saved'));
-    // Best-effort cloud sync — local save already succeeded
-    if (user?.uid) void syncSettingsToCloud(user.uid, saved).catch(() => {});
   }
 
   const languages: { value: Locale; label: string }[] = [
@@ -151,6 +158,7 @@ export default function SettingsPage() {
 function CloudBackupCard() {
   const { user } = useAuth();
   const { push } = useToast();
+  const { t } = useLocale();
   const uid = user?.uid;
   const [syncing, setSyncing]   = useState(false);
   const [syncMeta, setSyncMeta] = useState<SyncMeta | null>(null);
@@ -171,9 +179,9 @@ function CloudBackupCard() {
       const result = await syncAllToCloud(uid);
       if (result) {
         setSyncMeta(result);
-        push('Synced to cloud successfully ✓');
+        push(t('settings.syncSuccess'));
       } else {
-        push('Sync failed — check your connection.');
+        push(t('settings.syncFailed'), 'error');
       }
     } finally {
       setSyncing(false);
@@ -191,10 +199,9 @@ function CloudBackupCard() {
     <Card>
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h3 className="text-sm font-semibold text-slate-700 mb-1">Cloud Backup</h3>
+          <h3 className="text-sm font-semibold text-slate-700 mb-1">{t('settings.cloudBackup')}</h3>
           <p className="text-xs text-slate-500 max-w-xs">
-            Back up your local data to the cloud. Used to restore on a new device.
-            Auto-syncs daily while online.
+            {t('settings.cloudBackupDesc')}
           </p>
         </div>
         <Button
@@ -203,19 +210,19 @@ function CloudBackupCard() {
           disabled={syncing}
           className="shrink-0"
         >
-          {syncing ? 'Syncing…' : 'Sync Now'}
+          {syncing ? t('sync.syncing') : t('settings.syncNow')}
         </Button>
       </div>
 
       {syncMeta ? (
         <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <SyncStat label="Last synced" value={lastSyncDisplay ?? '—'} wide />
-          <SyncStat label="Bills"       value={syncMeta.recordCounts.bills} />
-          <SyncStat label="Products"    value={syncMeta.recordCounts.products} />
-          <SyncStat label="Movements"   value={syncMeta.recordCounts.stockMovements} />
+          <SyncStat label={t('settings.lastSynced')} value={lastSyncDisplay ?? '—'} wide />
+          <SyncStat label={t('settings.bills')}       value={syncMeta.recordCounts.bills} />
+          <SyncStat label={t('settings.products')}    value={syncMeta.recordCounts.products} />
+          <SyncStat label={t('settings.movements')}   value={syncMeta.recordCounts.stockMovements} />
         </div>
       ) : (
-        <p className="mt-3 text-xs text-slate-400">Never synced on this device.</p>
+        <p className="mt-3 text-xs text-slate-400">{t('settings.neverSynced')}</p>
       )}
     </Card>
   );

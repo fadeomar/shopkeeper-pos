@@ -134,6 +134,12 @@ export const en: TranslationDict = {
     language: 'Language', languageDesc: 'Choose your preferred display language',
     english: 'English', arabic: 'Arabic (عربي)',
     about: 'About', version: 'App version',
+    cloudBackup: 'Cloud Backup',
+    cloudBackupDesc: 'Back up your local data to the cloud. Used to restore on a new device. Auto-syncs daily while online.',
+    syncNow: 'Sync Now', syncSuccess: 'Synced to cloud successfully ✓',
+    syncFailed: 'Sync failed — check your connection.', lastSynced: 'Last synced',
+    bills: 'Bills', products: 'Products', movements: 'Movements',
+    neverSynced: 'Never synced on this device.',
   },
   scanner: {
     requesting: 'Requesting camera…',

@@ -13,20 +13,16 @@ import clsx from 'clsx';
 import type { SyncStatus } from '@/types/domain';
 
 function SyncBadge({ status }: { status?: SyncStatus }) {
-  if (!status || status === 'synced') return null;
-  const styles: Record<string, string> = {
+  const { t } = useLocale();
+  if (!status || status === 'synced') return <span className="text-slate-300">—</span>;
+  const styles: Record<Exclude<SyncStatus, 'synced'>, string> = {
     pending: 'bg-amber-100 text-amber-700',
     syncing: 'bg-blue-100 text-blue-700',
-    failed:  'bg-red-100 text-red-700',
-  };
-  const labels: Record<string, string> = {
-    pending: 'Pending sync',
-    syncing: 'Syncing…',
-    failed:  'Sync failed',
+    failed: 'bg-red-100 text-red-700',
   };
   return (
     <span className={clsx('inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium', styles[status])}>
-      {labels[status]}
+      {t(`sync.${status}`)}
     </span>
   );
 }

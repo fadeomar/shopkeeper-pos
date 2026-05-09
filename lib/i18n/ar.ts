@@ -134,6 +134,12 @@ export const ar: TranslationDict = {
     language: 'اللغة', languageDesc: 'اختر لغة العرض المفضلة',
     english: 'English', arabic: 'العربية',
     about: 'حول التطبيق', version: 'إصدار التطبيق',
+    cloudBackup: 'النسخ الاحتياطي السحابي',
+    cloudBackupDesc: 'انسخ بيانات الجهاز المحلية إلى السحابة لاستعادتها على جهاز جديد. تتم المزامنة يومياً عند الاتصال.',
+    syncNow: 'زامن الآن', syncSuccess: 'تمت المزامنة مع السحابة ✓',
+    syncFailed: 'فشلت المزامنة — تحقق من الاتصال.', lastSynced: 'آخر مزامنة',
+    bills: 'الفواتير', products: 'المنتجات', movements: 'الحركات',
+    neverSynced: 'لم تتم المزامنة على هذا الجهاز بعد.',
   },
   scanner: {
     requesting: 'جارٍ طلب إذن الكاميرا…',

@@ -13,11 +13,13 @@ import {
   isLocalDbEmpty,
   restoreFromCloud,
   pullSettingsFromCloud,
+  getRestoreErrorMessage,
 } from "@/lib/firebase/restore-service";
 import { db } from "@/lib/db/schema";
 import { DbBootstrap } from "@/components/providers/db-bootstrap";
 import { AppSidebarBrand } from "@/components/app-sidebar-brand";
 import { SidebarNav } from "@/components/sidebar-nav";
+import { useSettings } from "@/components/providers/settings-context";
 
 export function AuthenticatedShell({
   children,
@@ -25,7 +27,6 @@ export function AuthenticatedShell({
   children: React.ReactNode;
 }) {
   const { status, user, logout } = useAuth();
-  console.log({ status, user });
   if (status === "loading") return <LoadingScreen />;
   if (status === "unauthenticated") return <AuthScreen />;
   if (status === "pending") return <PendingScreen onLogout={logout} />;
@@ -64,7 +65,7 @@ function AdminShell({ children }: { children: React.ReactNode }) {
           <span className="font-bold text-base tracking-tight">
             Shopkeeper POS
           </span>
-          <span className="ml-auto text-xs text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full">
+          <span className="ms-auto text-xs text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full">
             Admin
           </span>
         </div>
@@ -97,7 +98,7 @@ function AdminShell({ children }: { children: React.ReactNode }) {
           </div>
           <button
             onClick={logout}
-            className="w-full text-left text-xs text-slate-400 hover:text-white transition-colors"
+            className="w-full text-start text-xs text-slate-400 hover:text-white transition-colors"
           >
             Sign out
           </button>
@@ -115,6 +116,7 @@ function AdminShell({ children }: { children: React.ReactNode }) {
 
 function CashierShell({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
+  const { setSettings } = useSettings();
   const uid = user?.uid;
 
   // Restore flow state
@@ -166,7 +168,7 @@ function CashierShell({ children }: { children: React.ReactNode }) {
       window.location.reload();
     } catch (e) {
       console.error("[restore]", e);
-      setRestoreError("Restore failed. Check your connection and try again.");
+      setRestoreError(getRestoreErrorMessage(e));
       setRestoring(false);
     }
   }
@@ -180,10 +182,15 @@ function CashierShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!uid || !restoreChecked) return;
 
+    const pullLatestSettings = async () => {
+      const pulled = await pullSettingsFromCloud(uid);
+      if (pulled) setSettings(pulled);
+    };
+
     const handleOnline = () => {
-      // Push any local changes to the cloud, then pull settings in case admin changed them
+      // Push any local changes to the cloud, then pull settings in case admin changed them.
       void syncAllToCloud(uid);
-      void pullSettingsFromCloud(uid);
+      void pullLatestSettings();
     };
     window.addEventListener("online", handleOnline);
 
@@ -201,10 +208,11 @@ function CashierShell({ children }: { children: React.ReactNode }) {
         /* proceed */
       }
       if (needsSync) void syncAllToCloud(uid);
+      void pullLatestSettings();
     }
 
     return () => window.removeEventListener("online", handleOnline);
-  }, [uid, restoreChecked]);
+  }, [uid, restoreChecked, setSettings]);
 
   return (
     <div className="min-h-screen grid grid-cols-1 lg:grid-cols-[260px_1fr]">
@@ -227,7 +235,7 @@ function CashierShell({ children }: { children: React.ReactNode }) {
           </div>
           <button
             onClick={logout}
-            className="w-full text-left text-xs text-slate-400 hover:text-white transition-colors"
+            className="w-full text-start text-xs text-slate-400 hover:text-white transition-colors"
           >
             Sign out
           </button>

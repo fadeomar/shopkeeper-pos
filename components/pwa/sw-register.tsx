@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/lib/db/schema';
 import { useLocale } from '@/components/providers/locale-context';
 
@@ -17,12 +16,32 @@ export function ServiceWorkerRegister() {
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [cacheUnavailable, setCacheUnavailable] = useState(false);
 
-  // Live count of sync jobs that are pending or failed (0 when nothing to show)
-  const pendingCount = useLiveQuery(
-    () => db.syncQueue.where('status').anyOf(['pending', 'failed', 'syncing']).count(),
-    [],
-    0,
-  );
+  const [pendingCount, setPendingCount] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function refreshPendingCount() {
+      try {
+        const count = await db.syncQueue.where('status').anyOf(['pending', 'failed', 'syncing']).count();
+        if (!cancelled) setPendingCount(count);
+      } catch {
+        if (!cancelled) setPendingCount(0);
+      }
+    }
+
+    void refreshPendingCount();
+    const id = window.setInterval(refreshPendingCount, 3000);
+    window.addEventListener('online', refreshPendingCount);
+    window.addEventListener('offline', refreshPendingCount);
+    window.addEventListener('shopkeeper:sync-requested', refreshPendingCount);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+      window.removeEventListener('online', refreshPendingCount);
+      window.removeEventListener('offline', refreshPendingCount);
+      window.removeEventListener('shopkeeper:sync-requested', refreshPendingCount);
+    };
+  }, []);
 
   useEffect(() => {
     const enableDevSw = process.env.NEXT_PUBLIC_ENABLE_OFFLINE_SW === '1';
@@ -171,10 +190,10 @@ export function ServiceWorkerRegister() {
         {installed ? t('pwa.installed') : t('pwa.installable')}
       </span>
 
-      {(pendingCount ?? 0) > 0 && (
+      {pendingCount > 0 && (
         <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-900/40 text-blue-300">
           <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-          {t('sync.pendingBadge', { count: pendingCount ?? 0 })}
+          {t('sync.pendingBadge', { count: pendingCount })}
         </span>
       )}
 

@@ -10,6 +10,7 @@ export interface SyncQueueItem {
   entity: SyncEntity;
   entityId: string;
   operation: SyncOperation;
+  payload?: unknown;
   status: SyncStatus;
   retryCount: number;
   lastError?: string;
@@ -108,6 +109,9 @@ export interface StockMovement {
   referenceId: string;
   note?: string;
   createdAt: string;
+  syncStatus?: SyncStatus;
+  syncedAt?: string;
+  lastSyncError?: string;
 }
 
 export interface Settings {
@@ -120,6 +124,9 @@ export interface Settings {
   lowStockHighlight: boolean;
   createdAt: string;
   updatedAt: string;
+  syncStatus?: SyncStatus;
+  syncedAt?: string;
+  lastSyncError?: string;
 }
 
 export interface ProductFormValues {

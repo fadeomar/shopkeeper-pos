@@ -81,6 +81,9 @@ export interface TranslationDict {
     currency: string; allowLossSale: string; lowStockHighlight: string;
     save: string; saved: string; language: string; languageDesc: string;
     english: string; arabic: string; about: string; version: string;
+    cloudBackup: string; cloudBackupDesc: string; syncNow: string; syncSuccess: string;
+    syncFailed: string; lastSynced: string; bills: string; products: string;
+    movements: string; neverSynced: string;
   };
   scanner: {
     requesting: string; denied: string; unsupported: string; http: string;

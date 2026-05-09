@@ -116,15 +116,15 @@ npm run start:host   # binds to 0.0.0.0 — use http://YOUR_LAN_IP:3000
 
 ### Sync queue behaviour
 
-- Bills and products created or modified while offline are saved locally
-  **immediately** and marked `syncStatus: 'pending'`.
+- Bills, products, stock movements, and settings created or modified while offline are saved locally
+  **immediately** and queued for sync. Bills/products/settings/stock movements carry local sync metadata where useful.
 - The top status bar shows a "N pending sync" badge while jobs are queued.
 - On reconnect (or on next app open while online) the `SyncProvider` processes
   all pending / failed jobs in sequence.
 - Jobs that fail (e.g. auth expired) are marked `failed` and retried on the
   next reconnect, up to 5 attempts.
 - Retrying a bill sync uses `setDoc` on the same document ID — idempotent, no
-  duplicate bills created in Firestore.
+  duplicate bills created in Firestore. Product, settings, and stock-movement sync jobs also use stable local IDs.
 
 ## PWA notes
 
@@ -168,6 +168,7 @@ The `createFinalizedBill()` service is the key business boundary. It:
 4. Deducts live stock.
 5. Writes stock movement records.
 6. Saves the finalized bill in one Dexie transaction.
+7. Enqueues bill/product/settings/stock-movement sync jobs in the same transaction.
 
 That service should remain the only place that final sale writes happen.
 

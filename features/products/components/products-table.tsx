@@ -5,8 +5,8 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/lib/db/schema';
 import { formatCurrency } from '@/lib/utils/money';
 import { formatDate } from '@/lib/utils/date';
-import { adjustProductStock } from '@/lib/services/inventory-service';
-import { productRepo, settingsRepo } from '@/lib/db/repositories';
+import { adjustProductStock, updateProductDetails } from '@/lib/services/inventory-service';
+import { settingsRepo } from '@/lib/db/repositories';
 import { enqueueSyncJob } from '@/lib/services/sync-queue-service';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -16,8 +16,24 @@ import { Modal } from '@/components/ui/modal';
 import { Card } from '@/components/ui/card';
 import { useToast } from '@/components/ui/toast';
 import { useLocale } from '@/components/providers/locale-context';
-import type { Product } from '@/types/domain';
+import type { Product, SyncStatus } from '@/types/domain';
 import clsx from 'clsx';
+
+
+function SyncBadge({ status }: { status?: SyncStatus }) {
+  const { t } = useLocale();
+  if (!status || status === 'synced') return <span className="text-slate-300">—</span>;
+  const styles: Record<Exclude<SyncStatus, 'synced'>, string> = {
+    pending: 'bg-amber-100 text-amber-700',
+    syncing: 'bg-blue-100 text-blue-700',
+    failed: 'bg-red-100 text-red-700',
+  };
+  return (
+    <span className={clsx('inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap', styles[status])}>
+      {t(`sync.${status}`)}
+    </span>
+  );
+}
 
 export function ProductsTable({ onEdit }: { onEdit?: (product: Product) => void }) {
   const { t } = useLocale();
@@ -48,11 +64,7 @@ export function ProductsTable({ onEdit }: { onEdit?: (product: Product) => void 
 
   async function toggleStatus(product: Product) {
     const newStatus = product.status === 'active' ? 'inactive' : 'active';
-    await productRepo.update(product.id, {
-      status: newStatus,
-      lastUpdated: new Date().toISOString(),
-      syncStatus: 'pending',
-    });
+    await updateProductDetails(product, { status: newStatus });
     void enqueueSyncJob({ entity: 'product', entityId: product.id, operation: 'update' });
     push(product.status === 'active' ? t('products.productDeactivated') : t('products.productActivated'));
   }
@@ -81,7 +93,7 @@ export function ProductsTable({ onEdit }: { onEdit?: (product: Product) => void 
     t('products.barcode'), t('products.name'), t('products.category'),
     t('products.qty'), t('products.buy'), t('products.sell'),
     t('products.min'), t('products.supplier'), t('products.dateAdded'),
-    t('products.status'), t('products.actions'),
+    t('products.status'), t('sync.status'), t('products.actions'),
   ];
 
   return (
@@ -107,7 +119,7 @@ export function ProductsTable({ onEdit }: { onEdit?: (product: Product) => void 
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[960px]">
+          <table className="w-full text-sm min-w-[1040px]">
             <thead>
               <tr className="border-b border-slate-200">
                 {headers.map((h) => (
@@ -145,6 +157,9 @@ export function ProductsTable({ onEdit }: { onEdit?: (product: Product) => void 
                       )}>
                         {t(`common.${product.status}` as Parameters<typeof t>[0])}
                       </span>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <SyncBadge status={product.syncStatus} />
                     </td>
                     <td className="px-3 py-2.5">
                       <div className="flex gap-1">

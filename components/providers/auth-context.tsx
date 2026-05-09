@@ -89,7 +89,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    console.log('[auth] client auth effect mounted');
     setStatus('loading');
 
     // Safety timeout: if Firebase Auth doesn't fire within 10 s (e.g. SDK hung,
@@ -106,7 +105,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }, 10_000);
 
     const unsub = onAuthChange(async (firebaseUser) => {
-      console.log('[auth] onAuthStateChanged fired:', firebaseUser ? firebaseUser.uid : null);
       clearTimeout(fallbackTimer);
       if (!firebaseUser) {
         setUser(null);

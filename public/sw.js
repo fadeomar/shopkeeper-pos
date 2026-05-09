@@ -25,7 +25,7 @@ if (IS_DEV_HOST && !ENABLE_DEV_SW) {
     })());
   });
 } else {
-const CACHE_VERSION = '0.1.0';
+const CACHE_VERSION = '0.1.1';
 
 const CACHE_HTML   = `sk-pages-${CACHE_VERSION}`;
 const CACHE_STATIC = `sk-static-${CACHE_VERSION}`;
@@ -45,13 +45,19 @@ const APP_SHELL  = [...NAV_ROUTES, '/manifest.webmanifest'];
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const htmlCache = await caches.open(CACHE_HTML);
+    const staticCache = await caches.open(CACHE_STATIC);
     // Promise.allSettled: one failure cannot abort the whole install.
     await Promise.allSettled(
-      APP_SHELL.map((url) =>
-        fetch(url)
-          .then((res) => { if (res.ok) htmlCache.put(url, res); })
-          .catch(() => {}),
-      ),
+      APP_SHELL.map(async (url) => {
+        try {
+          const res = await fetch(url, { cache: 'reload' });
+          if (!res.ok) return;
+          await htmlCache.put(url, res.clone());
+          if (res.headers.get('Content-Type')?.includes('text/html')) {
+            await warmStaticAssetsFromHtml(res.clone(), staticCache);
+          }
+        } catch { /* best-effort install cache */ }
+      }),
     );
   })());
 });
@@ -141,7 +147,17 @@ async function handleHtml(event) {
   const cached = await cache.match(event.request, { ignoreSearch: true });
 
   const networkFetch = fetch(event.request)
-    .then((res) => { if (res.ok) cache.put(event.request, res.clone()); return res; })
+    .then((res) => {
+      if (res.ok) {
+        cache.put(event.request, res.clone());
+        if (res.headers.get('Content-Type')?.includes('text/html')) {
+          event.waitUntil(
+            caches.open(CACHE_STATIC).then((staticCache) => warmStaticAssetsFromHtml(res.clone(), staticCache)),
+          );
+        }
+      }
+      return res;
+    })
     .catch(() => null);
 
   if (cached) {
@@ -182,25 +198,44 @@ async function handleRsc(event, url, isPrefetch) {
 }
 
 // ─── /_next/static/ assets ────────────────────────────────────────────────────
-// CacheFirst for production content-hashed (immutable) chunks — filename changes
-// on every build so a cached copy is always valid.
-// NetworkFirst for everything else (dev chunks, CSS) — always fetch fresh so HMR
-// works; fall back to the cached copy when offline so the app shell survives.
+// CacheFirst for Next.js static chunks. Production filenames are content-hashed,
+// and development SW registration is intentionally disabled unless explicitly enabled.
 async function handleStatic(event) {
   const cache  = await caches.open(CACHE_STATIC);
   const cached = await cache.match(event.request);
 
-  if (cached?.headers.get('Cache-Control')?.includes('immutable')) {
-    return cached;
-  }
+  // Production Next.js chunks are content-hashed. Cache-first avoids the browser
+  // default offline page during refresh, while a later build gets new URLs.
+  if (cached) return cached;
 
   try {
     const res = await fetch(event.request);
     if (res.ok) cache.put(event.request, res.clone());
     return res;
   } catch {
-    return cached ?? new Response('', { status: 503 });
+    return new Response('', { status: 503 });
   }
+}
+
+// ─── HTML asset warming ──────────────────────────────────────────────────────
+async function warmStaticAssetsFromHtml(response, cache) {
+  try {
+    const html = await response.text();
+    const urls = new Set();
+    const attrRe = /(?:src|href)=["']([^"']*\/_next\/static\/[^"']+)["']/g;
+    let match;
+    while ((match = attrRe.exec(html))) {
+      urls.add(new URL(match[1], self.location.origin).toString());
+    }
+
+    await Promise.allSettled(
+      Array.from(urls).map(async (url) => {
+        if (await cache.match(url)) return;
+        const res = await fetch(url);
+        if (res.ok) await cache.put(url, res);
+      }),
+    );
+  } catch { /* best-effort asset warming */ }
 }
 
 // ─── Generic same-origin assets (images, manifest, icons…) ───────────────────
