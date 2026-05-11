@@ -3,10 +3,13 @@
 import { useEffect, useRef } from 'react';
 import { db } from '@/lib/db/schema';
 import {
+  applyStockMovementDeltasToCloudProducts,
+  syncBillSequenceToCloud,
   syncBillToCloud,
   syncProductsToCloud,
   syncSettingsToCloud,
   syncStockMovementsToCloud,
+  syncCustomerPaymentsToCloud,
 } from '@/lib/firebase/sync-service';
 import {
   getPendingSyncJobs,
@@ -14,11 +17,109 @@ import {
   markSyncing,
   markSynced,
   markFailed,
+  markConflict,
 } from '@/lib/services/sync-queue-service';
 import { useAuth } from './auth-context';
-import type { Product, SyncQueueItem } from '@/types/domain';
+import { autoDismissFalseOfflineSaleConflicts, getOpenConflicts } from '@/lib/services/sync-conflict-service';
+import { detectProductCloudConflict, prepareSettingsForCloudSync } from '@/lib/firebase/cloud-merge-service';
+import { pullCloudChangesBeforePush } from '@/lib/firebase/cloud-pull-service';
+import type { Product, Settings, StockMovement, SyncQueueItem, SyncStatus } from '@/types/domain';
 
 const MAX_RETRIES = 5;
+
+const PRODUCT_COMPARE_FIELDS: Array<keyof Product> = [
+  'barcode',
+  'name',
+  'category',
+  'brand',
+  'unit',
+  'quantityInStock',
+  'buyPrice',
+  'sellPrice',
+  'minimumStockAlert',
+  'supplierName',
+  'expiryDate',
+  'shelfLocation',
+  'notes',
+  'status',
+];
+
+function payloadSource(job: SyncQueueItem | undefined): string | undefined {
+  return (job?.payload as { source?: string } | undefined)?.source;
+}
+
+function isBillSequenceJob(job: SyncQueueItem): boolean {
+  return payloadSource(job) === 'bill-sequence';
+}
+
+function isActiveQueueStatus(status?: SyncStatus): boolean {
+  return status === 'pending' || status === 'failed' || status === 'syncing' || status === 'conflict';
+}
+
+function sameValue(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+}
+
+function productsMatchAfterBillDelta(local: Product, cloud: Product): boolean {
+  return PRODUCT_COMPARE_FIELDS.every((field) => sameValue(local[field], cloud[field]));
+}
+
+function jobPriority(job: SyncQueueItem): number {
+  switch (job.entity) {
+    case 'bill':
+      return 0;
+    case 'customerPayment':
+      return 1;
+    case 'stockMovement':
+      return 2;
+    case 'settings':
+      return isBillSequenceJob(job) ? 3 : 5;
+    case 'product':
+      return payloadSource(job) === 'bill-stock' ? 4 : 6;
+    default:
+      return 10;
+  }
+}
+
+function sortJobs(jobs: SyncQueueItem[]): SyncQueueItem[] {
+  return [...jobs].sort((a, b) => jobPriority(a) - jobPriority(b) || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+}
+
+async function syncBillProductDeltas(uid: string, movements: StockMovement[]): Promise<void> {
+  const productIds = Array.from(new Set(movements.map((movement) => movement.productId).filter(Boolean)));
+  if (productIds.length === 0) return;
+
+  const products = (await db.products.bulkGet(productIds)).filter((product): product is Product => Boolean(product));
+  if (products.length === 0) return;
+
+  const { syncedAt, products: cloudProducts } = await applyStockMovementDeltasToCloudProducts(uid, products, movements);
+  const cloudById = new Map(cloudProducts.map((product) => [product.id, product]));
+  const productJobs = await db.syncQueue.bulkGet(productIds.map((productId) => getSyncQueueId('product', productId)));
+  const jobsByProductId = new Map(productJobs.filter((job): job is SyncQueueItem => Boolean(job)).map((job) => [job.entityId, job]));
+
+  await Promise.all(products.map(async (product) => {
+    const cloudProduct = cloudById.get(product.id);
+    if (!cloudProduct) return;
+
+    const productJob = jobsByProductId.get(product.id);
+    if (productJob && isActiveQueueStatus(productJob.status) && !productsMatchAfterBillDelta(product, cloudProduct)) {
+      // There is also a real unsynced manual product change. Leave that product
+      // job for the normal product conflict check instead of hiding it here.
+      return;
+    }
+
+    await db.products.put({
+      ...cloudProduct,
+      syncStatus: 'synced',
+      syncedAt,
+      lastSyncError: undefined,
+    });
+
+    if (productJob && isActiveQueueStatus(productJob.status)) {
+      await markSynced(productJob.id);
+    }
+  }));
+}
 
 async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
   if ((job.retryCount ?? 0) >= MAX_RETRIES) return;
@@ -37,6 +138,8 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
       }
 
       const syncedAt = await syncBillToCloud(uid, bill, items, movements);
+      await syncBillProductDeltas(uid, movements);
+
       await db.transaction('rw', db.bills, db.stockMovements, async () => {
         await db.bills.update(job.entityId, { syncStatus: 'synced', syncedAt, lastSyncError: undefined });
         await Promise.all(
@@ -46,30 +149,28 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
         );
       });
 
-      // A bill changes product stock. Keep product backups fresh as part of the same sync pass.
-      const productIds = Array.from(new Set(items.map((item) => item.originalProductId)));
-      const products = (await db.products.bulkGet(productIds)).filter((product): product is Product => Boolean(product));
-      if (products.length > 0) {
-        const productsSyncedAt = await syncProductsToCloud(uid, products);
-        if (productsSyncedAt) {
-          await Promise.all([
-            ...products.map((product) =>
-              db.products.update(product.id, { syncStatus: 'synced', syncedAt: productsSyncedAt, lastSyncError: undefined }),
-            ),
-            ...products.map((product) => markSynced(getSyncQueueId('product', product.id))),
-          ]);
-        }
-      }
-
       await Promise.all(
         movements.map((movement) => markSynced(getSyncQueueId('stockMovement', movement.id))),
       );
     } else if (job.entity === 'product') {
+      if (payloadSource(job) === 'bill-stock') {
+        await markSynced(job.id);
+        return;
+      }
+
       const product = await db.products.get(job.entityId);
       if (!product) {
         await markSynced(job.id);
         return;
       }
+
+      const conflict = await detectProductCloudConflict(uid, product, job);
+      if (conflict.hasConflict) {
+        await markConflict(job.id, 'Cloud data changed before this product synced. Review the conflict.');
+        await db.products.update(job.entityId, { syncStatus: 'conflict', lastSyncError: 'Needs conflict review' });
+        return;
+      }
+
       const syncedAt = await syncProductsToCloud(uid, [product]);
       if (syncedAt) {
         await db.products.update(job.entityId, { syncStatus: 'synced', syncedAt, lastSyncError: undefined });
@@ -84,14 +185,42 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
       if (syncedAt) {
         await db.stockMovements.update(job.entityId, { syncStatus: 'synced', syncedAt, lastSyncError: undefined });
       }
+    } else if (job.entity === 'customerPayment') {
+      const payment = await db.customerPayments.get(job.entityId);
+      if (!payment) {
+        await markSynced(job.id);
+        return;
+      }
+      const syncedAt = await syncCustomerPaymentsToCloud(uid, [payment]);
+      if (syncedAt) {
+        await db.customerPayments.update(job.entityId, { syncStatus: 'synced', syncedAt, lastSyncError: undefined });
+      }
     } else if (job.entity === 'settings') {
       const settings = await db.settings.get(job.entityId);
       if (!settings) {
         await markSynced(job.id);
         return;
       }
-      const syncedAt = await syncSettingsToCloud(uid, settings);
-      await db.settings.update(job.entityId, { syncStatus: 'synced', syncedAt, lastSyncError: undefined });
+
+      if (isBillSequenceJob(job)) {
+        const merged = await syncBillSequenceToCloud(uid, settings as Settings);
+        await db.settings.put({ ...merged, syncStatus: 'synced', lastSyncError: undefined });
+      } else {
+        const prepared = await prepareSettingsForCloudSync(uid, settings, job);
+        if (prepared.hasConflict) {
+          await markConflict(job.id, 'Cloud settings changed before this device synced. Review the conflict.');
+          await db.settings.update(job.entityId, { syncStatus: 'conflict', lastSyncError: 'Needs conflict review' });
+          return;
+        }
+
+        const syncedAt = await syncSettingsToCloud(uid, prepared.settings);
+        await db.settings.put({
+          ...prepared.settings,
+          syncStatus: 'synced',
+          syncedAt,
+          lastSyncError: undefined,
+        });
+      }
     }
 
     await markSynced(job.id);
@@ -104,21 +233,55 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
       await db.products.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
     } else if (job.entity === 'stockMovement') {
       await db.stockMovements.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
+    } else if (job.entity === 'customerPayment') {
+      await db.customerPayments.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
     } else if (job.entity === 'settings') {
       await db.settings.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
     }
   }
 }
 
-async function runSync(uid: string): Promise<void> {
-  if (typeof navigator !== 'undefined' && !navigator.onLine) return;
-  const jobs = await getPendingSyncJobs();
-  for (const job of jobs) {
+async function processJobs(uid: string, jobs: SyncQueueItem[]): Promise<void> {
+  for (const job of sortJobs(jobs)) {
     if (typeof navigator !== 'undefined' && !navigator.onLine) break;
     const freshJob = await db.syncQueue.get(job.id);
     if (!freshJob || freshJob.status === 'synced') continue;
     await processJob(uid, freshJob);
+
+    const conflicts = await getOpenConflicts();
+    if (conflicts.length > 0) break;
   }
+}
+
+export async function runSync(uid: string): Promise<void> {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+
+  await autoDismissFalseOfflineSaleConflicts();
+  const openConflicts = await getOpenConflicts();
+  if (openConflicts.length > 0) return;
+
+  const jobs = await getPendingSyncJobs();
+  if (jobs.length === 0) {
+    await pullCloudChangesBeforePush(uid);
+    await autoDismissFalseOfflineSaleConflicts();
+    return;
+  }
+
+  // Push the durable offline queue first. Offline bills intentionally change
+  // product stock and the bill sequence; pulling products before the bill is
+  // pushed can misread those expected local changes as cloud conflicts.
+  await processJobs(uid, jobs);
+
+  await autoDismissFalseOfflineSaleConflicts();
+  const conflictsAfterPush = await getOpenConflicts();
+  if (conflictsAfterPush.length > 0) return;
+
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+  await pullCloudChangesBeforePush(uid);
+  await autoDismissFalseOfflineSaleConflicts();
+
+  const remainingJobs = await getPendingSyncJobs();
+  if (remainingJobs.length > 0) await processJobs(uid, remainingJobs);
 }
 
 export function SyncProvider({ children }: { children: React.ReactNode }) {

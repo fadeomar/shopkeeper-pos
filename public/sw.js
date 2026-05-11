@@ -1,4 +1,4 @@
-// ─── Version — bump this string on every release ──────────────────────────────
+// Version - bump this string on every release.
 // Changing this value changes the cache names, which triggers the browser to
 // install a new service worker and clean up the old caches on activate.
 const DEV_HOST_RE = /^(localhost|127\.0\.0\.1|0\.0\.0\.0|10\.|192\.168\.|172\.(1[6-9]|2\d|3[0-1])\.)/;
@@ -25,65 +25,50 @@ if (IS_DEV_HOST && !ENABLE_DEV_SW) {
     })());
   });
 } else {
-const CACHE_VERSION = '0.1.1';
+const CACHE_VERSION = '0.1.10';
 
 const CACHE_HTML   = `sk-pages-${CACHE_VERSION}`;
 const CACHE_STATIC = `sk-static-${CACHE_VERSION}`;
-// RSC responses are NOT cached — they vary by Next-Router-State-Tree,
-// Next-Router-Prefetch, and Next-Url.  Serving a stale RSC to the wrong
-// router state silently corrupts navigation (the "Rendering…" symptom).
-// Offline navigation falls back to the cached HTML shell instead.
+const OFFLINE_FALLBACK_URL = '/__shopkeeper-offline-fallback__';
+// RSC responses are NOT cached. They vary by Next-Router-State-Tree,
+// Next-Router-Prefetch, and Next-Url. Serving a stale RSC to the wrong router
+// state silently corrupts navigation. Offline navigation falls back to cached
+// HTML document navigations instead.
 const ALL_CACHES   = [CACHE_HTML, CACHE_STATIC];
 
-const NAV_ROUTES = ['/', '/products', '/billing', '/bills', '/settings'];
+const NAV_ROUTES = ['/', '/products', '/inventory', '/reports', '/customers', '/billing', '/bills', '/settings', '/admin/users'];
 const APP_SHELL  = [...NAV_ROUTES, '/manifest.webmanifest'];
+const FETCH_TIMEOUT_MS = 8000;
 
-// ─── Install: pre-cache HTML shells ───────────────────────────────────────────
-// skipWaiting() is intentionally absent — the new worker waits until the
-// client sends SKIP_WAITING (triggered by the user via the update toast).
-// This prevents a mid-transaction reload on POS devices.
 self.addEventListener('install', (event) => {
+  self.skipWaiting();
+
+  // Do not block service-worker installation on route warm-up. On mobile
+  // tunnels a single slow route can leave the worker stuck in "installing";
+  // then Chrome shows its dinosaur page when the device goes offline. Install
+  // only the local fallback immediately. Route HTML is warmed after activation
+  // by the client via WARM_ROUTES.
+  event.waitUntil(installCoreFallback());
+});
+
+self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
-    const htmlCache = await caches.open(CACHE_HTML);
-    const staticCache = await caches.open(CACHE_STATIC);
-    // Promise.allSettled: one failure cannot abort the whole install.
-    await Promise.allSettled(
-      APP_SHELL.map(async (url) => {
-        try {
-          const res = await fetch(url, { cache: 'reload' });
-          if (!res.ok) return;
-          await htmlCache.put(url, res.clone());
-          if (res.headers.get('Content-Type')?.includes('text/html')) {
-            await warmStaticAssetsFromHtml(res.clone(), staticCache);
-          }
-        } catch { /* best-effort install cache */ }
-      }),
+    const keys = await caches.keys();
+    await Promise.all(
+      keys.filter((k) => !ALL_CACHES.includes(k)).map((k) => caches.delete(k)),
     );
+    await self.clients.claim();
+    await notifyWindows({ type: 'SK_SW_ACTIVE', version: CACHE_VERSION });
   })());
 });
 
-// ─── Activate: clean up old caches ────────────────────────────────────────────
-self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys()
-      .then((keys) =>
-        Promise.all(
-          keys.filter((k) => !ALL_CACHES.includes(k)).map((k) => caches.delete(k)),
-        ),
-      )
-      .then(() => self.clients.claim()),
-  );
-});
-
-// ─── Fetch ────────────────────────────────────────────────────────────────────
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
 
-  const url          = new URL(event.request.url);
-  const isSameOrigin = url.origin === self.location.origin;
-  const isNavigation = event.request.mode === 'navigate';
+  const url           = new URL(event.request.url);
+  const isSameOrigin  = url.origin === self.location.origin;
+  const isNavigation  = event.request.mode === 'navigate';
 
-  // Skip webpack HMR, Next.js dev helpers, and the SW script itself.
   if (isSameOrigin && (
     url.pathname.startsWith('/_next/webpack-hmr') ||
     url.pathname.startsWith('/__nextjs_') ||
@@ -97,9 +82,8 @@ self.addEventListener('fetch', (event) => {
 
   if (!isSameOrigin) return;
 
-  // RSC requests (navigation fetch or prefetch from Next.js App Router).
-  const isRsc       = event.request.headers.get('RSC') === '1' || url.searchParams.has('_rsc');
-  const isPrefetch  = event.request.headers.get('Next-Router-Prefetch') === '1';
+  const isRsc      = event.request.headers.get('RSC') === '1' || url.searchParams.has('_rsc');
+  const isPrefetch = event.request.headers.get('Next-Router-Prefetch') === '1';
 
   if (isRsc) {
     event.respondWith(handleRsc(event, url, isPrefetch));
@@ -114,9 +98,6 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(handleGeneric(event));
 });
 
-// ─── Message: client-driven SW control ───────────────────────────────────────
-// SKIP_WAITING: user accepted the update toast — take over immediately.
-// WARM_CACHE:   push already-loaded chunk URLs into the static cache.
 self.addEventListener('message', (event) => {
   if (event.data?.type === 'SKIP_WAITING') {
     self.skipWaiting();
@@ -125,131 +106,232 @@ self.addEventListener('message', (event) => {
 
   if (event.data?.type === 'WARM_CACHE') {
     const urls = Array.isArray(event.data.urls) ? event.data.urls : [];
-    event.waitUntil((async () => {
-      const cache = await caches.open(CACHE_STATIC);
-      await Promise.allSettled(
-        urls.map(async (url) => {
-          if (await cache.match(url)) return;
-          try {
-            const res = await fetch(url);
-            if (res.ok) cache.put(url, res);
-          } catch { /* best-effort */ }
-        }),
-      );
-    })());
+    event.waitUntil(warmStaticUrls(urls));
+    return;
+  }
+
+  if (event.data?.type === 'WARM_ROUTES') {
+    const urls = Array.isArray(event.data.urls) ? event.data.urls : [];
+    event.waitUntil(warmRouteHtml(urls));
+    return;
+  }
+
+  if (event.data?.type === 'SK_PING') {
+    event.source?.postMessage?.({ type: 'SK_PONG', version: CACHE_VERSION });
   }
 });
 
-// ─── HTML pages: StaleWhileRevalidate ─────────────────────────────────────────
-async function handleHtml(event) {
-  const cache  = await caches.open(CACHE_HTML);
-  // ignoreSearch: Next.js occasionally appends query params to navigation URLs.
-  const cached = await cache.match(event.request, { ignoreSearch: true });
-
-  const networkFetch = fetch(event.request)
-    .then((res) => {
-      if (res.ok) {
-        cache.put(event.request, res.clone());
-        if (res.headers.get('Content-Type')?.includes('text/html')) {
-          event.waitUntil(
-            caches.open(CACHE_STATIC).then((staticCache) => warmStaticAssetsFromHtml(res.clone(), staticCache)),
-          );
-        }
-      }
-      return res;
-    })
-    .catch(() => null);
-
-  if (cached) {
-    event.waitUntil(networkFetch);
-    return cached;
-  }
-
-  const networkRes = await networkFetch;
-  if (networkRes) return networkRes;
-
-  // Offline fallback: root shell boots the SPA so IndexedDB data still renders.
-  return (await cache.match('/')) ??
-    new Response('Offline — page not cached yet.', {
-      status: 503,
-      headers: { 'Content-Type': 'text/plain' },
-    });
+async function installCoreFallback() {
+  const cache = await caches.open(CACHE_HTML);
+  await cache.put(OFFLINE_FALLBACK_URL, offlineRouteNotCachedResponse('/'));
 }
 
-// ─── RSC requests ─────────────────────────────────────────────────────────────
-// Online: pass straight through to the network — no caching.
-// Offline (navigation RSC only): signal the page to do a full navigation to the
-// cached HTML shell for the target route, which boots the SPA from IndexedDB.
-// Prefetch failures are ignored — Next.js handles them gracefully.
+async function handleHtml(event) {
+  const cache = await caches.open(CACHE_HTML);
+  const url = new URL(event.request.url);
+  const routeKey = `${url.pathname}${url.search}`;
+
+  const cacheHtml = (res) => {
+    if (!res?.ok) return;
+    event.waitUntil((async () => {
+      try {
+        await cache.put(event.request, res.clone());
+        await cache.put(routeKey, res.clone());
+        if (res.headers.get('Content-Type')?.includes('text/html')) {
+          const staticCache = await caches.open(CACHE_STATIC);
+          await warmStaticAssetsFromHtml(res.clone(), staticCache);
+        }
+      } catch {
+        // best-effort cache write
+      }
+    })());
+  };
+
+  // Online must be network-first. Returning stale HTML after a new Next build can
+  // reference chunks that no longer exist and causes "This page could not load".
+  try {
+    const networkRes = await fetchWithTimeout(event.request);
+    cacheHtml(networkRes.clone());
+    return networkRes;
+  } catch {
+    // Offline fallback below.
+  }
+
+  const cached =
+    (await cache.match(event.request, { ignoreSearch: true })) ||
+    (await cache.match(routeKey, { ignoreSearch: true })) ||
+    (await cache.match(url.pathname, { ignoreSearch: true }));
+  if (cached) return cached;
+
+  // Do not serve '/' for another route. In Next App Router that paints the
+  // dashboard while the URL/sidebar say another page is active.
+  return offlineRouteNotCachedResponse(url.pathname);
+}
+
 async function handleRsc(event, url, isPrefetch) {
   try {
-    return await fetch(event.request);
+    return await fetchWithTimeout(event.request);
   } catch {
     if (!isPrefetch) {
-      try {
-        const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-        for (const win of wins) {
-          win.postMessage({ type: 'SK_OFFLINE_NAV', url: url.pathname });
-        }
-      } catch { /* best-effort */ }
+      await notifyWindows({ type: 'SK_OFFLINE_NAV', url: `${url.pathname}${url.search}` });
     }
-    return new Response('', { status: 503 });
+    return new Response('', { status: 503, headers: { 'Cache-Control': 'no-store' } });
   }
 }
 
-// ─── /_next/static/ assets ────────────────────────────────────────────────────
-// CacheFirst for Next.js static chunks. Production filenames are content-hashed,
-// and development SW registration is intentionally disabled unless explicitly enabled.
 async function handleStatic(event) {
   const cache  = await caches.open(CACHE_STATIC);
   const cached = await cache.match(event.request);
-
-  // Production Next.js chunks are content-hashed. Cache-first avoids the browser
-  // default offline page during refresh, while a later build gets new URLs.
   if (cached) return cached;
 
   try {
-    const res = await fetch(event.request);
-    if (res.ok) cache.put(event.request, res.clone());
+    const res = await fetchWithTimeout(event.request);
+    if (res.ok) await cache.put(event.request, res.clone());
     return res;
   } catch {
-    return new Response('', { status: 503 });
+    return new Response('', { status: 503, headers: { 'Cache-Control': 'no-store' } });
   }
 }
 
-// ─── HTML asset warming ──────────────────────────────────────────────────────
+async function warmRouteHtml(urls) {
+  const htmlCache = await caches.open(CACHE_HTML);
+  const staticCache = await caches.open(CACHE_STATIC);
+
+  await Promise.allSettled(
+    urls.map(async (rawUrl) => {
+      try {
+        const url = new URL(rawUrl, self.location.origin);
+        if (url.origin !== self.location.origin) return;
+        const routeKey = `${url.pathname}${url.search}`;
+        const res = await fetchWithTimeout(routeKey, { cache: 'reload' }, FETCH_TIMEOUT_MS);
+        if (!res.ok) return;
+        await htmlCache.put(routeKey, res.clone());
+        await htmlCache.put(url.toString(), res.clone());
+        if (res.headers.get('Content-Type')?.includes('text/html')) {
+          await warmStaticAssetsFromHtml(res.clone(), staticCache);
+        }
+      } catch {
+        // best-effort warm-up
+      }
+    }),
+  );
+
+  await notifyWindows({ type: 'SK_CACHE_WARMED', version: CACHE_VERSION });
+}
+
+async function warmStaticUrls(urls) {
+  const cache = await caches.open(CACHE_STATIC);
+  await Promise.allSettled(
+    urls.map(async (rawUrl) => {
+      try {
+        const url = new URL(rawUrl, self.location.origin);
+        if (url.origin !== self.location.origin) return;
+        if (!url.pathname.startsWith('/_next/static/')) return;
+        if (await cache.match(url.toString())) return;
+        const res = await fetchWithTimeout(url.toString());
+        if (res.ok) await cache.put(url.toString(), res.clone());
+      } catch {
+        // best-effort
+      }
+    }),
+  );
+}
+
 async function warmStaticAssetsFromHtml(response, cache) {
   try {
     const html = await response.text();
     const urls = new Set();
+
     const attrRe = /(?:src|href)=["']([^"']*\/_next\/static\/[^"']+)["']/g;
+    const stringRe = /["']([^"']*\/_next\/static\/[^"']+)["']/g;
     let match;
     while ((match = attrRe.exec(html))) {
       urls.add(new URL(match[1], self.location.origin).toString());
     }
+    while ((match = stringRe.exec(html))) {
+      urls.add(new URL(match[1], self.location.origin).toString());
+    }
 
-    await Promise.allSettled(
-      Array.from(urls).map(async (url) => {
-        if (await cache.match(url)) return;
-        const res = await fetch(url);
-        if (res.ok) await cache.put(url, res);
-      }),
-    );
-  } catch { /* best-effort asset warming */ }
+    await warmStaticUrls(Array.from(urls));
+  } catch {
+    // best-effort asset warming
+  }
 }
 
-// ─── Generic same-origin assets (images, manifest, icons…) ───────────────────
 async function handleGeneric(event) {
-  const cache  = await caches.open(CACHE_HTML);
+  const cache  = await caches.open(CACHE_STATIC);
   const cached = await cache.match(event.request);
   if (cached) return cached;
 
   try {
-    const res = await fetch(event.request);
-    if (res.ok) cache.put(event.request, res.clone());
+    const res = await fetchWithTimeout(event.request);
+    if (res.ok) await cache.put(event.request, res.clone());
     return res;
   } catch {
-    return new Response('', { status: 503 });
+    return new Response('', { status: 503, headers: { 'Cache-Control': 'no-store' } });
   }
+}
+
+async function fetchWithTimeout(input, init = {}, timeoutMs = FETCH_TIMEOUT_MS) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error('Fetch timed out')), timeoutMs);
+  });
+  try {
+    return await Promise.race([fetch(input, init), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function notifyWindows(message) {
+  try {
+    const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    await Promise.all(wins.map((win) => win.postMessage(message)));
+  } catch {
+    // best-effort
+  }
+}
+
+function offlineRouteNotCachedResponse(pathname) {
+  return new Response(
+    `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Offline cache not ready</title>
+  <style>
+    body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0f172a;color:#e2e8f0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:24px}
+    main{max-width:460px;background:rgba(15,23,42,.9);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:24px;box-shadow:0 18px 60px rgba(0,0,0,.35)}
+    h1{font-size:20px;margin:0 0 8px;color:#fff}p{line-height:1.5;margin:8px 0;color:#cbd5e1}.path{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#93c5fd}button{margin-top:14px;border:0;border-radius:12px;background:#2563eb;color:#fff;font-weight:700;padding:10px 14px}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Offline cache is not ready yet.</h1>
+    <p>The device is offline and <span class="path">${escapeHtml(pathname)}</span> was not prepared in the offline cache.</p>
+    <p>Reconnect once, keep this tab open until the app says the offline cache is ready, then test offline again.</p>
+    <button onclick="location.reload()">Retry</button>
+  </main>
+</body>
+</html>`,
+    {
+      status: 503,
+      headers: {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-store',
+      },
+    },
+  );
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
 }
 }

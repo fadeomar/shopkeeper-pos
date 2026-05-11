@@ -51,6 +51,16 @@ export async function enqueueSyncJob(input: {
   return id;
 }
 
+const SYNC_ENTITY_PRIORITY: Record<SyncEntity, number> = {
+  // Bills also sync their bill items, stock movements, and sale-driven product stock.
+  // Keep them first so an offline sale does not look like a manual product overwrite.
+  bill: 0,
+  customerPayment: 1,
+  stockMovement: 2,
+  product: 3,
+  settings: 4,
+};
+
 export async function getPendingSyncJobs(): Promise<SyncQueueItem[]> {
   // Re-queue items that got stuck in 'syncing' (for example, app/tab crashed mid-sync).
   await db.syncQueue.where('status').equals('syncing').modify({ status: 'pending', updatedAt: nowIso() });
@@ -59,7 +69,12 @@ export async function getPendingSyncJobs(): Promise<SyncQueueItem[]> {
     .anyOf(['pending', 'failed'])
     .toArray();
 
-  return jobs.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  return jobs.sort((a, b) => {
+    const byPriority = SYNC_ENTITY_PRIORITY[a.entity] - SYNC_ENTITY_PRIORITY[b.entity];
+    if (byPriority !== 0) return byPriority;
+    const byCreatedAt = a.createdAt.localeCompare(b.createdAt);
+    return byCreatedAt !== 0 ? byCreatedAt : a.id.localeCompare(b.id);
+  });
 }
 
 export async function markSyncing(id: string): Promise<void> {
@@ -93,6 +108,49 @@ export async function markFailed(id: string, error: string): Promise<void> {
   });
 }
 
+
+export async function markConflict(id: string, error = 'Needs conflict review'): Promise<void> {
+  await db.syncQueue.update(id, {
+    status: 'conflict',
+    updatedAt: nowIso(),
+    lastError: error.slice(0, 500),
+  });
+}
+
 export async function getPendingSyncCount(): Promise<number> {
-  return db.syncQueue.where('status').anyOf(['pending', 'failed', 'syncing']).count();
+  return db.syncQueue.where('status').anyOf(['pending', 'failed', 'syncing', 'conflict']).count();
+}
+
+export async function retryFailedSyncJobs(): Promise<number> {
+  const now = nowIso();
+  const failedJobs = await db.syncQueue.where('status').equals('failed').toArray();
+  await Promise.all(
+    failedJobs.map((job) =>
+      db.syncQueue.update(job.id, {
+        status: 'pending',
+        retryCount: 0,
+        lastError: undefined,
+        updatedAt: now,
+      }),
+    ),
+  );
+  if (failedJobs.length > 0) notifySyncRequested();
+  return failedJobs.length;
+}
+
+export async function getSyncQueueCounts(): Promise<{
+  pending: number;
+  syncing: number;
+  failed: number;
+  conflict: number;
+  synced: number;
+}> {
+  const [pending, syncing, failed, conflict, synced] = await Promise.all([
+    db.syncQueue.where('status').equals('pending').count(),
+    db.syncQueue.where('status').equals('syncing').count(),
+    db.syncQueue.where('status').equals('failed').count(),
+    db.syncQueue.where('status').equals('conflict').count(),
+    db.syncQueue.where('status').equals('synced').count(),
+  ]);
+  return { pending, syncing, failed, conflict, synced };
 }

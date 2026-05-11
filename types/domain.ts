@@ -1,8 +1,8 @@
 export type EntityStatus = 'active' | 'inactive';
 export type UserRole = 'admin' | 'cashier';
 
-export type SyncStatus = 'pending' | 'syncing' | 'synced' | 'failed';
-export type SyncEntity = 'bill' | 'product' | 'settings' | 'stockMovement';
+export type SyncStatus = 'pending' | 'syncing' | 'synced' | 'failed' | 'conflict';
+export type SyncEntity = 'bill' | 'product' | 'settings' | 'stockMovement' | 'customerPayment';
 export type SyncOperation = 'create' | 'update' | 'delete' | 'upsert';
 
 export interface SyncQueueItem {
@@ -20,6 +20,28 @@ export interface SyncQueueItem {
   syncedAt?: string;
 }
 
+
+export type SyncConflictType = 'same_field_changed' | 'delete_vs_update' | 'duplicate_record' | 'inventory_overwrite' | 'sale_state_conflict' | 'settings_conflict' | 'unknown';
+export type SyncConflictSeverity = 'low' | 'medium' | 'high' | 'critical';
+export type SyncConflictResolution = 'keep_cloud' | 'keep_local' | 'merge' | 'keep_both' | 'delete' | 'manual';
+export interface SyncConflict {
+  id: string;
+  entity: SyncEntity;
+  entityId: string;
+  operationId?: string;
+  conflictType: SyncConflictType;
+  severity: SyncConflictSeverity;
+  cloudRecord: Record<string, unknown>;
+  localRecord: Record<string, unknown>;
+  baseRecord?: Record<string, unknown>;
+  changedFields: string[];
+  status: 'open' | 'resolved' | 'ignored';
+  resolution?: SyncConflictResolution;
+  createdAt: string;
+  resolvedAt?: string;
+  resolvedByUserId?: string;
+}
+
 export interface AppUser {
   uid: string;
   email: string;
@@ -34,7 +56,7 @@ export interface AppUser {
 export interface AuthCacheEntry extends AppUser {
   cachedAt: string;
 }
-export type BillStatus = 'finalized' | 'voided';
+export type BillStatus = 'finalized' | 'voided' | 'partially_returned' | 'returned';
 export type PaymentMethod = 'cash' | 'card' | 'mixed' | 'credit';
 export type StockMovementType = 'purchase' | 'sale' | 'adjustment' | 'return' | 'damaged' | 'initial';
 export type ReferenceType = 'product' | 'bill' | 'adjustment' | 'seed';
@@ -80,6 +102,12 @@ export interface Bill {
   itemCount: number;
   status: BillStatus;
   notes?: string;
+  voidedAt?: string;
+  voidReason?: string;
+  returnedAmount?: number;
+  returnedProfit?: number;
+  lastReturnAt?: string;
+  lastReturnReason?: string;
   syncStatus?: SyncStatus;
   syncedAt?: string;
   lastSyncError?: string;
@@ -97,7 +125,21 @@ export interface BillItem {
   unitSellPriceAtSale: number;
   lineSubtotal: number;
   lineProfit: number;
+  quantityReturned?: number;
   createdAt: string;
+}
+
+export interface CustomerPayment {
+  id: string;
+  customerKey: string;
+  customerName: string;
+  customerPhone?: string;
+  amount: number;
+  note?: string;
+  createdAt: string;
+  syncStatus?: SyncStatus;
+  syncedAt?: string;
+  lastSyncError?: string;
 }
 
 export interface StockMovement {

@@ -1,31 +1,59 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import type { Route } from 'next';
 import { useAuth } from '@/components/providers/auth-context';
 import { fetchAllUsers, updateUserStatus, rejectUser, createAppUser } from '@/lib/firebase/auth-service';
+import { fetchUserSummary, type SupportHealth, type UserSummary } from '@/lib/firebase/admin-service';
 import type { AppUser } from '@/types/domain';
+
+type SummaryMap = Record<string, UserSummary>;
+
+const HEALTH_STYLES: Record<SupportHealth, string> = {
+  healthy: 'bg-green-100 text-green-700',
+  needs_attention: 'bg-amber-100 text-amber-700',
+  no_backup: 'bg-red-100 text-red-600',
+};
 
 export default function AdminUsersPage() {
   const { isAdmin, user: currentUser } = useAuth();
   const [users, setUsers] = useState<AppUser[]>([]);
+  const [summaries, setSummaries] = useState<SummaryMap>({});
   const [loading, setLoading] = useState(true);
+  const [loadingHealth, setLoadingHealth] = useState(false);
   const [error, setError] = useState('');
   const [showCreate, setShowCreate] = useState(false);
 
   async function loadUsers() {
     try {
+      setLoading(true);
       const list = await fetchAllUsers();
-      // Pending first, then active, then inactive; alphabetically within each group
-      setUsers(list.sort((a, b) => {
+      const sorted = list.sort((a, b) => {
         const rank = (u: AppUser) => u.pendingApproval ? 0 : u.isActive ? 1 : 2;
         return rank(a) - rank(b) || a.name.localeCompare(b.name);
-      }));
+      });
+      setUsers(sorted);
+      void loadSupportHealth(sorted);
     } catch {
       setError('Failed to load users. Check your connection.');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadSupportHealth(list = users) {
+    if (list.length === 0) return;
+    setLoadingHealth(true);
+    try {
+      const entries = await Promise.all(
+        list.map(async (u) => [u.uid, await fetchUserSummary(u.uid)] as const),
+      );
+      setSummaries(Object.fromEntries(entries));
+    } catch {
+      setError('Users loaded, but support health could not be refreshed.');
+    } finally {
+      setLoadingHealth(false);
     }
   }
 
@@ -58,6 +86,18 @@ export default function AdminUsersPage() {
     } catch { setError('Failed to update user.'); }
   }
 
+  const dashboard = useMemo(() => {
+    const summaryList = Object.values(summaries);
+    return {
+      totalUsers: users.length,
+      pendingCount: users.filter((u) => u.pendingApproval).length,
+      activeCount: users.filter((u) => !u.pendingApproval && u.isActive).length,
+      needsAttention: summaryList.filter((s) => s.syncHealth !== 'healthy').length,
+      totalRevenue: summaryList.reduce((sum, s) => sum + s.totalRevenue, 0),
+      totalDebt: summaryList.reduce((sum, s) => sum + s.creditDebt, 0),
+    };
+  }, [users, summaries]);
+
   if (!isAdmin) {
     return (
       <div className="max-w-md mx-auto mt-12 p-6 bg-white border border-red-100 rounded-2xl text-center">
@@ -72,18 +112,36 @@ export default function AdminUsersPage() {
   const inactive = users.filter((u) => !u.pendingApproval && !u.isActive);
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="max-w-5xl mx-auto space-y-6">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-xl font-bold text-slate-800">User Management</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Control who can access Shopkeeper POS</p>
+          <h1 className="text-xl font-bold text-slate-800">Admin Support Dashboard</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Approve users, check backup health, and support seller data.</p>
         </div>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-xl transition-colors"
-        >
-          Add User
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => void loadSupportHealth()}
+            disabled={loadingHealth || users.length === 0}
+            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 disabled:opacity-60 text-slate-700 text-sm font-medium rounded-xl transition-colors"
+          >
+            {loadingHealth ? 'Refreshing…' : 'Refresh health'}
+          </button>
+          <button
+            onClick={() => setShowCreate(true)}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-xl transition-colors"
+          >
+            Add User
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
+        <SupportCard label="Users" value={dashboard.totalUsers} />
+        <SupportCard label="Pending" value={dashboard.pendingCount} tone={dashboard.pendingCount > 0 ? 'amber' : undefined} />
+        <SupportCard label="Active" value={dashboard.activeCount} />
+        <SupportCard label="Needs help" value={dashboard.needsAttention} tone={dashboard.needsAttention > 0 ? 'red' : undefined} />
+        <SupportCard label="Cloud sales" value={dashboard.totalRevenue.toFixed(2)} />
+        <SupportCard label="Customer debt" value={dashboard.totalDebt.toFixed(2)} tone={dashboard.totalDebt > 0 ? 'amber' : undefined} />
       </div>
 
       {error && (
@@ -92,7 +150,6 @@ export default function AdminUsersPage() {
         </p>
       )}
 
-      {/* Loading state — shown immediately, not gated behind the user list */}
       {loading && (
         <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center text-sm text-slate-400">
           Loading users…
@@ -106,7 +163,6 @@ export default function AdminUsersPage() {
         />
       )}
 
-      {/* Pending approval — shown prominently */}
       {pending.length > 0 && (
         <section>
           <h2 className="text-sm font-semibold text-amber-700 mb-2 flex items-center gap-2">
@@ -146,75 +202,90 @@ export default function AdminUsersPage() {
         </section>
       )}
 
-      {/* Active + inactive users table */}
       {(active.length > 0 || inactive.length > 0) && (
         <section>
           {pending.length > 0 && (
             <h2 className="text-sm font-semibold text-slate-500 mb-2">All Users</h2>
           )}
           <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-100">
                     <th className="text-left px-5 py-3 font-medium text-slate-500">Name</th>
-                    <th className="text-left px-5 py-3 font-medium text-slate-500 hidden sm:table-cell">Email</th>
-                    <th className="text-left px-5 py-3 font-medium text-slate-500">Role</th>
+                    <th className="text-left px-5 py-3 font-medium text-slate-500 hidden md:table-cell">Health</th>
+                    <th className="text-left px-5 py-3 font-medium text-slate-500 hidden lg:table-cell">Backup</th>
+                    <th className="text-left px-5 py-3 font-medium text-slate-500 hidden sm:table-cell">Data</th>
                     <th className="text-left px-5 py-3 font-medium text-slate-500">Status</th>
                     <th className="px-5 py-3" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {[...active, ...inactive].map((u) => (
-                    <tr key={u.uid} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-5 py-3.5">
-                        <Link
-                          href={`/admin/users/${u.uid}` as Route}
-                          className="font-medium text-slate-800 hover:text-blue-600 transition-colors"
-                        >
-                          {u.name}
-                        </Link>
-                        {u.uid === currentUser?.uid && (
-                          <span className="ml-2 text-xs text-slate-400">(you)</span>
-                        )}
-                        {u.phone && (
-                          <div>
-                            <a href={`tel:${u.phone}`} className="text-xs text-slate-400 hover:text-blue-500">{u.phone}</a>
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-5 py-3.5 text-slate-500 hidden sm:table-cell">{u.email}</td>
-                      <td className="px-5 py-3.5">
-                        <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
-                          u.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-600'
-                        }`}>
-                          {u.role}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
-                          u.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'
-                        }`}>
-                          {u.isActive ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3.5 text-right">
-                        {u.uid !== currentUser?.uid && (
-                          <button
-                            onClick={() => void toggleActive(u.uid, u.isActive)}
-                            className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${
-                              u.isActive
-                                ? 'bg-red-50 text-red-600 hover:bg-red-100'
-                                : 'bg-green-50 text-green-700 hover:bg-green-100'
-                            }`}
+                  {[...active, ...inactive].map((u) => {
+                    const summary = summaries[u.uid];
+                    return (
+                      <tr key={u.uid} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-5 py-3.5">
+                          <Link
+                            href={`/admin/users/${u.uid}` as Route}
+                            className="font-medium text-slate-800 hover:text-blue-600 transition-colors"
                           >
-                            {u.isActive ? 'Deactivate' : 'Reactivate'}
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                            {u.name}
+                          </Link>
+                          {u.uid === currentUser?.uid && (
+                            <span className="ml-2 text-xs text-slate-400">(you)</span>
+                          )}
+                          <div className="text-xs text-slate-400 truncate max-w-[220px]">{u.email}</div>
+                          {u.phone && (
+                            <div>
+                              <a href={`tel:${u.phone}`} className="text-xs text-slate-400 hover:text-blue-500">{u.phone}</a>
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-5 py-3.5 hidden md:table-cell">
+                          {summary ? <HealthBadge health={summary.syncHealth} /> : <span className="text-xs text-slate-300">Loading…</span>}
+                        </td>
+                        <td className="px-5 py-3.5 text-slate-500 hidden lg:table-cell whitespace-nowrap">
+                          {summary?.lastSyncAt ? relativeTime(summary.lastSyncAt) : <span className="text-slate-300">No backup</span>}
+                        </td>
+                        <td className="px-5 py-3.5 text-xs text-slate-500 hidden sm:table-cell whitespace-nowrap">
+                          {summary ? `${summary.billCount} bills / ${summary.productCount} products` : '—'}
+                          {summary && summary.creditDebt > 0 && (
+                            <div className="text-amber-600">Debt {summary.creditDebt.toFixed(2)}</div>
+                          )}
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
+                            u.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'
+                          }`}>
+                            {u.isActive ? 'Active' : 'Inactive'}
+                          </span>
+                          <span className={`ml-1 hidden sm:inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
+                            u.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-600'
+                          }`}>
+                            {u.role}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3.5 text-right">
+                          {u.uid !== currentUser?.uid && (
+                            <button
+                              onClick={() => void toggleActive(u.uid, u.isActive)}
+                              className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${
+                                u.isActive
+                                  ? 'bg-red-50 text-red-600 hover:bg-red-100'
+                                  : 'bg-green-50 text-green-700 hover:bg-green-100'
+                              }`}
+                            >
+                              {u.isActive ? 'Deactivate' : 'Reactivate'}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
+            </div>
           </div>
         </section>
       )}
@@ -226,6 +297,34 @@ export default function AdminUsersPage() {
       )}
     </div>
   );
+}
+
+function HealthBadge({ health }: { health: SupportHealth }) {
+  const label = health === 'healthy' ? 'Healthy' : health === 'needs_attention' ? 'Needs attention' : 'No backup';
+  return <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${HEALTH_STYLES[health]}`}>{label}</span>;
+}
+
+function SupportCard({ label, value, tone }: { label: string; value: string | number; tone?: 'amber' | 'red' }) {
+  const toneClass = tone === 'red' ? 'text-red-600' : tone === 'amber' ? 'text-amber-600' : 'text-slate-800';
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl px-4 py-3">
+      <p className="text-xs text-slate-500 mb-1">{label}</p>
+      <p className={`text-lg font-bold tabular-nums ${toneClass}`}>{value}</p>
+    </div>
+  );
+}
+
+function relativeTime(value: string) {
+  const time = new Date(value).getTime();
+  if (!Number.isFinite(time)) return 'Unknown';
+  const diffMs = Date.now() - time;
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
 }
 
 function CreateUserForm({ onCreated, onCancel }: { onCreated: () => void; onCancel: () => void }) {

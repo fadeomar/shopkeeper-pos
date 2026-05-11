@@ -1,11 +1,21 @@
-import { collection, getDocs, getDoc, doc, type QueryDocumentSnapshot, type DocumentData } from 'firebase/firestore';
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  writeBatch,
+  type DocumentData,
+  type QueryDocumentSnapshot,
+} from 'firebase/firestore';
 import { firestore } from './config';
 import { db } from '@/lib/db/schema';
 import { createBillNumber } from '@/lib/utils/id';
-import type { Bill, BillItem, Product, StockMovement, Settings } from '@/types/domain';
+import type { Bill, BillItem, Product, Settings, StockMovement, CustomerPayment } from '@/types/domain';
 import type { SyncMeta } from './sync-service';
 
 const SETTINGS_ID = 'app-settings';
+const BATCH_SIZE = 400;
 
 export class RestoreError extends Error {
   readonly code?: string;
@@ -56,6 +66,25 @@ function syncedMeta(syncedAt: string) {
   };
 }
 
+function stripUndefined<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((item) => stripUndefined(item)) as T;
+  }
+  if (value && typeof value === 'object') {
+    const output: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      if (item !== undefined) output[key] = stripUndefined(item);
+    }
+    return output as T;
+  }
+  return value;
+}
+
+function finiteNumber(value: unknown, fallback = 0): number {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : fallback;
+}
+
 function withDocId<T extends { id: string }>(snapshot: QueryDocumentSnapshot<DocumentData>): T {
   const data = snapshot.data() as Partial<T>;
   return {
@@ -65,19 +94,59 @@ function withDocId<T extends { id: string }>(snapshot: QueryDocumentSnapshot<Doc
 }
 
 function normalizeBill(snapshot: QueryDocumentSnapshot<DocumentData>, syncedAt: string): Bill {
-  return { ...withDocId<Bill>(snapshot), ...syncedMeta(syncedAt) };
+  const bill = withDocId<Bill>(snapshot) as Partial<Bill> & { id: string };
+  return {
+    ...bill,
+    status: bill.status ?? 'finalized',
+    returnedAmount: bill.returnedAmount ?? 0,
+    returnedProfit: bill.returnedProfit ?? 0,
+    ...syncedMeta(syncedAt),
+  } as Bill;
 }
 
 function normalizeBillItem(snapshot: QueryDocumentSnapshot<DocumentData>): BillItem {
-  return withDocId<BillItem>(snapshot);
+  const item = withDocId<BillItem>(snapshot) as Partial<BillItem> & { id: string };
+  return {
+    ...item,
+    quantityReturned: item.quantityReturned ?? 0,
+  } as BillItem;
 }
 
 function normalizeProduct(snapshot: QueryDocumentSnapshot<DocumentData>, syncedAt: string): Product {
-  return { ...withDocId<Product>(snapshot), ...syncedMeta(syncedAt) };
+  const product = withDocId<Product>(snapshot) as Partial<Product> & { id: string };
+  const dateAdded = product.dateAdded || product.lastUpdated || syncedAt;
+  return {
+    ...product,
+    barcode: typeof product.barcode === 'string' ? product.barcode.trim() : '',
+    name: typeof product.name === 'string' && product.name.trim() ? product.name.trim() : 'Restored product',
+    category: typeof product.category === 'string' && product.category.trim() ? product.category.trim() : 'Uncategorized',
+    unit: typeof product.unit === 'string' && product.unit.trim() ? product.unit.trim() : 'pcs',
+    quantityInStock: Math.max(0, finiteNumber(product.quantityInStock)),
+    buyPrice: Math.max(0, finiteNumber(product.buyPrice)),
+    sellPrice: Math.max(0, finiteNumber(product.sellPrice)),
+    minimumStockAlert: Math.max(0, finiteNumber(product.minimumStockAlert)),
+    dateAdded,
+    lastUpdated: product.lastUpdated || dateAdded,
+    status: product.status ?? 'active',
+    ...syncedMeta(syncedAt),
+  } as Product;
 }
 
 function normalizeStockMovement(snapshot: QueryDocumentSnapshot<DocumentData>, syncedAt: string): StockMovement {
-  return { ...withDocId<StockMovement>(snapshot), ...syncedMeta(syncedAt) };
+  const movement = withDocId<StockMovement>(snapshot);
+  return { ...movement, ...syncedMeta(syncedAt) };
+}
+
+function normalizeCustomerPayment(snapshot: QueryDocumentSnapshot<DocumentData>, syncedAt: string): CustomerPayment {
+  const payment = withDocId<CustomerPayment>(snapshot) as Partial<CustomerPayment> & { id: string };
+  return {
+    ...payment,
+    customerKey: payment.customerKey || '',
+    customerName: payment.customerName || 'Customer',
+    amount: Math.max(0, finiteNumber(payment.amount)),
+    createdAt: payment.createdAt || syncedAt,
+    ...syncedMeta(syncedAt),
+  } as CustomerPayment;
 }
 
 function normalizeSettings(snapshot: QueryDocumentSnapshot<DocumentData>, syncedAt: string): Settings {
@@ -106,7 +175,6 @@ async function readUserCollection<T>(
     );
   }
 }
-
 
 function getBillSequenceFromNumber(billNumber: string | undefined): number | null {
   if (!billNumber) return null;
@@ -169,7 +237,6 @@ function normalizeUniqueBillNumbers(bills: Bill[]): Bill[] {
   });
 }
 
-
 function buildRestoredDefaultSettings(restoredAt: string, nextBillSequence: number): Settings {
   return {
     id: SETTINGS_ID,
@@ -201,26 +268,195 @@ function ensureRestoredSettings(settings: Settings[], bills: Bill[], restoredAt:
   }));
 }
 
-function assertNoDuplicateProductBarcodes(products: Product[]) {
-  const seen = new Map<string, string>();
-  const duplicates: string[] = [];
+function appendRestoreNote(existing: string | undefined, note: string): string {
+  if (!existing?.trim()) return note;
+  return existing.includes(note) ? existing : `${existing}\n${note}`;
+}
 
-  for (const product of products) {
-    const barcode = product.barcode?.trim();
-    if (!barcode) continue;
-    const existingId = seen.get(barcode);
-    if (existingId && existingId !== product.id) {
-      duplicates.push(barcode);
-    } else {
-      seen.set(barcode, product.id);
+function productTimeValue(product: Product): number {
+  const parsed = Date.parse(product.lastUpdated || product.dateAdded || product.syncedAt || '');
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function chooseCanonicalProduct(products: Product[]): Product {
+  return [...products].sort((a, b) => {
+    const byActive = Number(b.status === 'active') - Number(a.status === 'active');
+    if (byActive !== 0) return byActive;
+
+    const byUpdated = productTimeValue(b) - productTimeValue(a);
+    if (byUpdated !== 0) return byUpdated;
+
+    const byStock = (b.quantityInStock || 0) - (a.quantityInStock || 0);
+    if (byStock !== 0) return byStock;
+
+    return a.id.localeCompare(b.id);
+  })[0];
+}
+
+function makeRestoredBarcode(product: Product, usedBarcodes: Set<string>): string {
+  const base = `RESTORED-${product.id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10) || Date.now()}`;
+  let candidate = base;
+  let suffix = 2;
+
+  while (usedBarcodes.has(candidate)) {
+    candidate = `${base}-${suffix}`;
+    suffix += 1;
+  }
+
+  usedBarcodes.add(candidate);
+  return candidate;
+}
+
+type ProductBackupRepair = {
+  products: Product[];
+  billItems: BillItem[];
+  stockMovements: StockMovement[];
+  duplicateProductIds: string[];
+  remappedBillItems: BillItem[];
+  remappedStockMovements: StockMovement[];
+  duplicateBarcodes: string[];
+};
+
+function repairDuplicateProductBarcodes(input: {
+  products: Product[];
+  billItems: BillItem[];
+  stockMovements: StockMovement[];
+}): ProductBackupRepair {
+  const usedBarcodes = new Set(
+    input.products
+      .map((product) => product.barcode?.trim())
+      .filter((barcode): barcode is string => Boolean(barcode)),
+  );
+
+  const groups = new Map<string, Product[]>();
+  for (const product of input.products) {
+    const rawBarcode = product.barcode?.trim();
+    const barcode = rawBarcode || makeRestoredBarcode(product, usedBarcodes);
+    const safeProduct: Product = rawBarcode
+      ? { ...product, barcode }
+      : {
+          ...product,
+          barcode,
+          notes: appendRestoreNote(
+            product.notes,
+            'Restored from cloud backup. Missing barcode was replaced with a temporary restored barcode.',
+          ),
+        };
+
+    const existing = groups.get(barcode) ?? [];
+    existing.push(safeProduct);
+    groups.set(barcode, existing);
+  }
+
+  const idRemap = new Map<string, string>();
+  const products: Product[] = [];
+  const duplicateProductIds: string[] = [];
+  const duplicateBarcodes: string[] = [];
+
+  for (const [barcode, group] of groups) {
+    if (group.length === 1) {
+      products.push(group[0]);
+      continue;
     }
+
+    const canonical = chooseCanonicalProduct(group);
+    const duplicateIds = group
+      .filter((product) => product.id !== canonical.id)
+      .map((product) => product.id);
+    duplicateProductIds.push(...duplicateIds);
+    duplicateBarcodes.push(barcode);
+
+    for (const product of group) {
+      if (product.id !== canonical.id) idRemap.set(product.id, canonical.id);
+    }
+
+    products.push({
+      ...canonical,
+      barcode,
+      status: group.some((product) => product.status === 'active') ? 'active' : canonical.status,
+      notes: appendRestoreNote(
+        canonical.notes,
+        `Restored backup repair: merged ${duplicateIds.length} duplicate product record${duplicateIds.length === 1 ? '' : 's'} for barcode ${barcode}.`,
+      ),
+    });
   }
 
-  if (duplicates.length) {
-    throw new RestoreError(
-      `Restore failed because the backup contains duplicate product barcodes: ${duplicates.slice(0, 3).join(', ')}.`,
-    );
+  const remappedBillItems: BillItem[] = [];
+  const billItems = input.billItems.map((item) => {
+    const canonicalId = idRemap.get(item.originalProductId);
+    if (!canonicalId) return item;
+    const repaired = { ...item, originalProductId: canonicalId };
+    remappedBillItems.push(repaired);
+    return repaired;
+  });
+
+  const remappedStockMovements: StockMovement[] = [];
+  const stockMovements = input.stockMovements.map((movement) => {
+    const canonicalId = idRemap.get(movement.productId);
+    if (!canonicalId) return movement;
+    const repaired = { ...movement, productId: canonicalId };
+    remappedStockMovements.push(repaired);
+    return repaired;
+  });
+
+  return {
+    products,
+    billItems,
+    stockMovements,
+    duplicateProductIds,
+    remappedBillItems,
+    remappedStockMovements,
+    duplicateBarcodes,
+  };
+}
+
+async function repairCloudDuplicateProducts(input: {
+  uid: string;
+  repair: ProductBackupRepair;
+  meta: SyncMeta;
+}) {
+  const { uid, repair, meta } = input;
+  if (
+    repair.duplicateProductIds.length === 0 &&
+    repair.remappedBillItems.length === 0 &&
+    repair.remappedStockMovements.length === 0
+  ) return;
+
+  const writes: Array<
+    | { type: 'set'; ref: ReturnType<typeof doc>; data: object }
+    | { type: 'delete'; ref: ReturnType<typeof doc> }
+  > = [
+    ...repair.products.map((product) => ({
+      type: 'set' as const,
+      ref: doc(firestore, `users/${uid}/products/${product.id}`),
+      data: stripUndefined(product),
+    })),
+    ...repair.remappedBillItems.map((item) => ({
+      type: 'set' as const,
+      ref: doc(firestore, `users/${uid}/billItems/${item.id}`),
+      data: stripUndefined(item),
+    })),
+    ...repair.remappedStockMovements.map((movement) => ({
+      type: 'set' as const,
+      ref: doc(firestore, `users/${uid}/stockMovements/${movement.id}`),
+      data: stripUndefined(movement),
+    })),
+    ...repair.duplicateProductIds.map((id) => ({
+      type: 'delete' as const,
+      ref: doc(firestore, `users/${uid}/products/${id}`),
+    })),
+  ];
+
+  for (let index = 0; index < writes.length; index += BATCH_SIZE) {
+    const batch = writeBatch(firestore);
+    for (const write of writes.slice(index, index + BATCH_SIZE)) {
+      if (write.type === 'set') batch.set(write.ref, write.data);
+      else batch.delete(write.ref);
+    }
+    await batch.commit();
   }
+
+  await setDoc(doc(firestore, `users/${uid}/meta/sync`), meta);
 }
 
 /**
@@ -238,11 +474,19 @@ export async function pullSettingsFromCloud(uid: string): Promise<Settings | nul
     if (!db.isOpen()) await db.open();
 
     const local = await db.settings.get(cloud.id);
+    const pendingSettingsJob = await db.syncQueue.get(`sq:settings:${cloud.id}`);
+    if (pendingSettingsJob && ['pending', 'failed', 'syncing', 'conflict'].includes(pendingSettingsJob.status)) {
+      return null;
+    }
 
-    // Only overwrite local if cloud is strictly newer
+    // Only overwrite local if cloud is strictly newer. The bill sequence is
+    // monotonic, so never pull it backwards.
     if (!local || cloud.updatedAt > local.updatedAt) {
-      await db.settings.put(cloud);
-      return cloud;
+      const merged = local
+        ? { ...cloud, nextBillSequence: Math.max(local.nextBillSequence || 1, cloud.nextBillSequence || 1) }
+        : cloud;
+      await db.settings.put(merged);
+      return merged;
     }
     return null; // local is current or newer — no change
   } catch {
@@ -301,14 +545,28 @@ export async function restoreFromCloud(
   let bills = await readUserCollection(uid, 'bills', (snapshot) => normalizeBill(snapshot, restoredAt));
 
   onProgress?.('Fetching bill items…');
-  const billItems = await readUserCollection(uid, 'billItems', normalizeBillItem);
+  const cloudBillItems = await readUserCollection(uid, 'billItems', normalizeBillItem);
 
   onProgress?.('Fetching products…');
-  const products = await readUserCollection(uid, 'products', (snapshot) => normalizeProduct(snapshot, restoredAt));
-  assertNoDuplicateProductBarcodes(products);
+  const cloudProducts = await readUserCollection(uid, 'products', (snapshot) => normalizeProduct(snapshot, restoredAt));
 
   onProgress?.('Fetching stock movements…');
-  const stockMovements = await readUserCollection(uid, 'stockMovements', (snapshot) => normalizeStockMovement(snapshot, restoredAt));
+  const cloudStockMovements = await readUserCollection(uid, 'stockMovements', (snapshot) => normalizeStockMovement(snapshot, restoredAt));
+
+  onProgress?.('Fetching customer payments…');
+  const customerPayments = await readUserCollection(uid, 'customerPayments', (snapshot) => normalizeCustomerPayment(snapshot, restoredAt));
+
+  const productRepair = repairDuplicateProductBarcodes({
+    products: cloudProducts,
+    billItems: cloudBillItems,
+    stockMovements: cloudStockMovements,
+  });
+
+  if (productRepair.duplicateProductIds.length) {
+    onProgress?.(
+      `Repairing duplicate product barcodes (${productRepair.duplicateBarcodes.slice(0, 3).join(', ')})…`,
+    );
+  }
 
   onProgress?.('Fetching settings…');
   let settings = await readUserCollection(uid, 'settings', (snapshot) => normalizeSettings(snapshot, restoredAt));
@@ -316,11 +574,22 @@ export async function restoreFromCloud(
   bills = normalizeUniqueBillNumbers(bills);
   settings = ensureRestoredSettings(settings, bills, restoredAt);
 
+  const meta: SyncMeta = {
+    lastSyncedAt: restoredAt,
+    recordCounts: {
+      bills: bills.length,
+      billItems: productRepair.billItems.length,
+      products: productRepair.products.length,
+      stockMovements: productRepair.stockMovements.length,
+      customerPayments: customerPayments.length,
+    },
+  };
+
   onProgress?.('Writing to local database…');
   try {
     await db.transaction(
       'rw',
-      [db.bills, db.billItems, db.products, db.stockMovements, db.settings, db.syncQueue],
+      [db.bills, db.billItems, db.products, db.stockMovements, db.customerPayments, db.settings, db.syncQueue, db.syncConflicts],
       async () => {
         // Clear first so stale local rows that no longer exist in the cloud are removed.
         // This is still safe because fetch/normalization already succeeded and Dexie
@@ -330,13 +599,16 @@ export async function restoreFromCloud(
           db.billItems.clear(),
           db.products.clear(),
           db.stockMovements.clear(),
+          db.customerPayments.clear(),
           db.settings.clear(),
           db.syncQueue.clear(),
+          db.syncConflicts.clear(),
         ]);
         if (bills.length) await db.bills.bulkPut(bills);
-        if (billItems.length) await db.billItems.bulkPut(billItems);
-        if (products.length) await db.products.bulkPut(products);
-        if (stockMovements.length) await db.stockMovements.bulkPut(stockMovements);
+        if (productRepair.billItems.length) await db.billItems.bulkPut(productRepair.billItems);
+        if (productRepair.products.length) await db.products.bulkPut(productRepair.products);
+        if (productRepair.stockMovements.length) await db.stockMovements.bulkPut(productRepair.stockMovements);
+        if (customerPayments.length) await db.customerPayments.bulkPut(customerPayments);
         if (settings.length) await db.settings.bulkPut(settings);
       },
     );
@@ -347,17 +619,20 @@ export async function restoreFromCloud(
     );
   }
 
-  // Record restore time in localStorage so Settings shows it
+  onProgress?.('Finalizing restore…');
   try {
-    const meta: SyncMeta = {
-      lastSyncedAt: restoredAt,
-      recordCounts: {
-        bills: bills.length,
-        billItems: billItems.length,
-        products: products.length,
-        stockMovements: stockMovements.length,
-      },
-    };
     localStorage.setItem(`shopkeeper_last_sync_${uid}`, JSON.stringify(meta));
   } catch { /* non-fatal */ }
+
+  // Best effort: clean the cloud backup so future devices do not see the same
+  // duplicate barcode records. If this cleanup fails, the local restore is still valid.
+  if (productRepair.duplicateProductIds.length) {
+    try {
+      await repairCloudDuplicateProducts({ uid, repair: productRepair, meta });
+    } catch (error) {
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('[restore] cloud duplicate repair failed', error);
+      }
+    }
+  }
 }

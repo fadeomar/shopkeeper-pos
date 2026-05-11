@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { onAuthChange, fetchUserDoc, signOut } from '@/lib/firebase/auth-service';
 import { db } from '@/lib/db/schema';
+import { prepareRuntimeDbForUid, setActiveUid } from '@/lib/services/account-data-service';
 import type { AuthCacheEntry } from '@/types/domain';
 
 export type AuthStatus = 'loading' | 'unauthenticated' | 'pending' | 'inactive' | 'authenticated';
@@ -39,27 +40,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try { await db.open(); } catch { /* non-fatal */ }
     }
 
-    // If a different user was previously active on this device, wipe their local data.
-    // Only runs online: after the wipe we reload and Firestore (which has its own separate
-    // IndexedDB cache that is NOT wiped) re-supplies the profile. Offline logins for a brand-new
-    // user on this device are impossible anyway — first login always requires network.
-    try {
-      const lastUid = localStorage.getItem('shopkeeper_last_uid');
-      if (lastUid && lastUid !== uid && navigator.onLine) {
-        // Set the new uid BEFORE reloading so the wipe doesn't re-trigger on reload.
-        localStorage.setItem('shopkeeper_last_uid', uid);
-        await db.delete(); // wipes only our Dexie DB; Firestore's own cache is unaffected
-        window.location.reload();
-        return; // unreachable — reload fires above
-      }
-    } catch { /* non-fatal */ }
+    // Preserve the current account's local browser database before switching users.
+    // This protects offline work while preventing data from one account being visible
+    // to the next account on the same browser.
+    try { await prepareRuntimeDbForUid(uid); } catch (e) { console.warn('[auth] account data handoff failed:', e); }
 
     try {
       const userDoc = await fetchUserDoc(uid);
       if (userDoc) {
         const entry: AuthCacheEntry = { ...userDoc, cachedAt: new Date().toISOString() };
         try { await db.authCache.put(entry); } catch { /* cache write failed, non-fatal */ }
-        try { localStorage.setItem('shopkeeper_last_uid', uid); } catch { /* non-fatal */ }
+        try { setActiveUid(uid); } catch { /* non-fatal */ }
         setAuthError('');
         setUser(entry);
         setStatus(resolveStatus(entry));

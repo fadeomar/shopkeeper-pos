@@ -10,7 +10,6 @@ import { billFormSchema, type BillFormSchema } from '@/features/bills/schema';
 import { calculateBillTotals, calculateChange } from '@/lib/utils/calculations';
 import { formatCurrency } from '@/lib/utils/money';
 import { createFinalizedBill } from '@/lib/services/billing-service';
-import { enqueueSyncJob } from '@/lib/services/sync-queue-service';
 import { useAuth } from '@/components/providers/auth-context';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,6 +20,7 @@ import { useToast } from '@/components/ui/toast';
 import { BarcodeScannerModal } from '@/components/barcode/barcode-scanner-modal';
 import { useLocale } from '@/components/providers/locale-context';
 import { Card } from '@/components/ui/card';
+import { QuickProductModal } from './quick-product-modal';
 import type { BillDraftItem, Product } from '@/types/domain';
 
 const POS_DRAFT_KEY = 'shopkeeper-pos-bill-draft-v1';
@@ -58,6 +58,8 @@ export function PosScreen() {
   const [barcodeQuery, setBarcodeQuery] = useState('');
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [missingBarcode, setMissingBarcode] = useState('');
   const [isPaidAmountManuallyEdited, setIsPaidAmountManuallyEdited] = useState(false);
 
   const barcodeInputRef = useRef<HTMLInputElement | null>(null);
@@ -143,6 +145,9 @@ export function PosScreen() {
     () => calculateChange(actualPaidAmount, billSummary.totalAmount),
     [actualPaidAmount, billSummary.totalAmount],
   );
+  const amountDue = Math.max(0, billSummary.totalAmount - actualPaidAmount);
+  const isCreditSale = watchedPaymentMethod === 'credit';
+  const hasCreditCustomer = Boolean(watchedCustomerName?.trim() || watchedCustomerPhone?.trim());
 
   useEffect(() => {
     if (isPaidAmountManuallyEdited) return;
@@ -184,19 +189,38 @@ export function PosScreen() {
     setProductId('');
   }
 
+  function promptQuickAddProduct(barcode: string) {
+    setScannerOpen(false);
+    setBarcodeQuery('');
+    setMissingBarcode(barcode);
+    setQuickAddOpen(true);
+    push(t('billing.productNotFoundAddNow', { barcode }), 'error');
+  }
+
   function addByBarcode() {
     const bc = barcodeQuery.trim();
     if (!bc) return;
     const product = products?.find((p) => p.barcode === bc);
-    if (!product) { push(t('billing.notFound'), 'error'); return; }
+    if (!product) { promptQuickAddProduct(bc); return; }
     appendProduct(product);
     setBarcodeQuery('');
   }
 
   function handleScanForBill(barcode: string) {
     const product = products?.find((p) => p.barcode === barcode);
-    if (!product) { push(t('billing.notFoundBarcode', { barcode }), 'error'); return; }
+    if (!product) { promptQuickAddProduct(barcode); return; }
     appendProduct(product);
+  }
+
+  function handleQuickProductCreated(product: Product) {
+    setQuickAddOpen(false);
+    setBarcodeQuery('');
+    setMissingBarcode('');
+    if (product.quantityInStock > 0) {
+      appendProduct(product);
+    } else {
+      push(t('billing.productCreatedNotAdded', { name: product.name }));
+    }
   }
 
   function updateQuantity(productId: string, quantity: number) {
@@ -223,16 +247,10 @@ export function PosScreen() {
   async function finalize(values: BillFormSchema) {
     if (draftItems.length === 0) { push(t('billing.addOneProduct'), 'error'); return; }
     try {
-      const productIds = draftItems.map((i) => i.productId);
       const { bill } = await createFinalizedBill({ items: draftItems, form: { ...values, paidAmount: actualPaidAmount } });
       clearDraft();
       setConfirmOpen(false);
       push(t('billing.billCreated', { billNumber: bill.billNumber }));
-      // Enqueue durable sync jobs — the SyncProvider retries on reconnect
-      void enqueueSyncJob({ entity: 'bill', entityId: bill.id, operation: 'create' });
-      for (const pid of productIds) {
-        void enqueueSyncJob({ entity: 'product', entityId: pid, operation: 'update' });
-      }
     } catch (error) {
       push(error instanceof Error ? error.message : t('billing.billFailed'), 'error');
     }
@@ -242,19 +260,28 @@ export function PosScreen() {
     return <Card><p className="text-sm text-slate-500">{t('billing.loadingPos')}</p></Card>;
   }
 
-  const canFinalize = draftItems.length > 0 && actualChangeAmount >= 0;
+  const hasValidTotal = billSummary.totalAmount >= 0;
+  const hasEnoughPayment = isCreditSale || actualChangeAmount >= 0;
+  const canFinalize = draftItems.length > 0 && hasValidTotal && hasEnoughPayment && (!isCreditSale || hasCreditCustomer);
 
   return (
     <>
-      {/* Two-column layout: items panel | summary panel */}
-      <div className="grid grid-cols-1 xl:grid-cols-[1fr_400px] gap-5 items-start">
+      {/* Mobile-first layout, desktop keeps two columns */}
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_400px] gap-4 xl:gap-5 items-start">
 
         {/* ── Build bill panel ─────────────────────────────────────────── */}
-        <Card className="flex flex-col gap-4">
-          <h3 className="text-base font-semibold text-slate-800">{t('billing.buildBill')}</h3>
+        <Card className="flex flex-col gap-4" padding="sm">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-base font-semibold text-slate-800">{t('billing.buildBill')}</h3>
+            {draftItems.length > 0 && (
+              <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+                {draftItems.length} {t('billing.items')}
+              </span>
+            )}
+          </div>
 
           {/* Barcode input row */}
-          <div className="flex gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto] gap-2">
             <Input
               ref={barcodeInputRef}
               placeholder={t('billing.typeBarcode')}
@@ -272,7 +299,7 @@ export function PosScreen() {
           </div>
 
           {/* Product select row */}
-          <div className="flex gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">
             <Select value={productId} onChange={(e) => setProductId(e.target.value)} className="flex-1">
               <option value="">{t('billing.selectProduct')}</option>
               {products.map((p) => (
@@ -286,63 +313,107 @@ export function PosScreen() {
             </Button>
           </div>
 
-          {/* Items table */}
+          {/* Items */}
           {draftItems.length === 0 ? (
             <EmptyState title={t('billing.noItems')} description={t('billing.noItemsDesc')} />
           ) : (
-            <div className="overflow-x-auto rounded-xl border border-slate-100">
-              <table className="w-full text-sm min-w-[560px]">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200">
-                    {[t('billing.product'), t('billing.stock'), t('billing.qty'),
-                      t('billing.sell'), t('billing.subtotalCol'), t('billing.profit'), ''].map((h) => (
-                      <th key={h} className="px-3 py-2.5 text-start text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {draftItems.map((item) => (
-                    <tr key={item.productId} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="px-3 py-2.5 font-medium text-slate-800">{item.name}</td>
-                      <td className="px-3 py-2.5 text-slate-500 tabular-nums">{item.availableStock}</td>
-                      <td className="px-3 py-2.5">
-                        <Input
-                          type="number" min={1} max={item.availableStock}
-                          value={item.quantity}
-                          onChange={(e) => updateQuantity(item.productId, Number(e.target.value))}
-                          className="w-20 text-center"
-                        />
-                      </td>
-                      <td className="px-3 py-2.5 tabular-nums text-slate-700">
-                        {formatCurrency(item.unitSellPrice, currency)}
-                      </td>
-                      <td className="px-3 py-2.5 tabular-nums font-medium text-slate-800">
-                        {formatCurrency(item.unitSellPrice * item.quantity, currency)}
-                      </td>
-                      <td className="px-3 py-2.5 tabular-nums text-green-600 font-medium">
-                        {formatCurrency((item.unitSellPrice - item.unitBuyPrice) * item.quantity, currency)}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <Button
-                          type="button" variant="ghost" size="sm"
-                          onClick={() => setDraftItems((cur) => cur.filter((i) => i.productId !== item.productId))}
-                        >
-                          {t('common.remove')}
-                        </Button>
-                      </td>
+            <>
+              <div className="grid gap-2 md:hidden">
+                {draftItems.map((item) => (
+                  <div key={item.productId} className="touch-card rounded-2xl border border-slate-200 bg-white p-3 shadow-xs">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-slate-900 truncate">{item.name}</p>
+                        <p className="text-xs text-slate-500 font-mono truncate">{item.barcode}</p>
+                      </div>
+                      <Button
+                        type="button" variant="ghost" size="sm"
+                        onClick={() => setDraftItems((cur) => cur.filter((i) => i.productId !== item.productId))}
+                      >
+                        {t('common.remove')}
+                      </Button>
+                    </div>
+                    <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                      <div className="rounded-xl bg-slate-50 p-2">
+                        <p className="text-slate-500">{t('billing.stock')}</p>
+                        <p className="font-bold text-slate-800 tabular-nums">{item.availableStock}</p>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 p-2">
+                        <p className="text-slate-500">{t('billing.sell')}</p>
+                        <p className="font-bold text-slate-800 tabular-nums">{formatCurrency(item.unitSellPrice, currency)}</p>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 p-2">
+                        <p className="text-slate-500">{t('billing.subtotalCol')}</p>
+                        <p className="font-bold text-slate-800 tabular-nums">{formatCurrency(item.unitSellPrice * item.quantity, currency)}</p>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between gap-3">
+                      <span className="text-sm font-medium text-slate-600">{t('billing.qty')}</span>
+                      <Input
+                        type="number" min={1} max={item.availableStock}
+                        value={item.quantity}
+                        onChange={(e) => updateQuantity(item.productId, Number(e.target.value))}
+                        className="w-28 text-center"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="hidden md:block overflow-x-auto rounded-xl border border-slate-100">
+                <table className="w-full text-sm min-w-[560px]">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200">
+                      {[t('billing.product'), t('billing.stock'), t('billing.qty'),
+                        t('billing.sell'), t('billing.subtotalCol'), t('billing.profit'), ''].map((h) => (
+                        <th key={h} className="px-3 py-2.5 text-start text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                          {h}
+                        </th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {draftItems.map((item) => (
+                      <tr key={item.productId} className="hover:bg-slate-50/50 transition-colors">
+                        <td className="px-3 py-2.5 font-medium text-slate-800">{item.name}</td>
+                        <td className="px-3 py-2.5 text-slate-500 tabular-nums">{item.availableStock}</td>
+                        <td className="px-3 py-2.5">
+                          <Input
+                            type="number" min={1} max={item.availableStock}
+                            value={item.quantity}
+                            onChange={(e) => updateQuantity(item.productId, Number(e.target.value))}
+                            className="w-20 text-center"
+                          />
+                        </td>
+                        <td className="px-3 py-2.5 tabular-nums text-slate-700">
+                          {formatCurrency(item.unitSellPrice, currency)}
+                        </td>
+                        <td className="px-3 py-2.5 tabular-nums font-medium text-slate-800">
+                          {formatCurrency(item.unitSellPrice * item.quantity, currency)}
+                        </td>
+                        <td className="px-3 py-2.5 tabular-nums text-green-600 font-medium">
+                          {formatCurrency((item.unitSellPrice - item.unitBuyPrice) * item.quantity, currency)}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <Button
+                            type="button" variant="ghost" size="sm"
+                            onClick={() => setDraftItems((cur) => cur.filter((i) => i.productId !== item.productId))}
+                          >
+                            {t('common.remove')}
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </Card>
 
         {/* ── Bill summary panel ───────────────────────────────────────── */}
         <div className="xl:sticky xl:top-6">
-          <Card className="flex flex-col gap-4">
+          <Card className="flex flex-col gap-4" padding="sm">
             <h3 className="text-base font-semibold text-slate-800">{t('billing.billSummary')}</h3>
 
             <form
@@ -409,14 +480,25 @@ export function PosScreen() {
                 <SummaryRow label={t('billing.subtotal')} value={formatCurrency(billSummary.subtotal, currency)} />
                 <SummaryRow label={t('billing.total')} value={formatCurrency(billSummary.totalAmount, currency)} highlight />
                 <SummaryRow label={t('billing.totalProfit')} value={formatCurrency(billSummary.totalProfit, currency)} />
-                <SummaryRow label={t('billing.change')} value={formatCurrency(actualChangeAmount, currency)} highlight />
+                <SummaryRow label={t('billing.change')} value={formatCurrency(Math.max(0, actualChangeAmount), currency)} highlight />
+                {isCreditSale && amountDue > 0 && (
+                  <SummaryRow label={t('billing.amountDue')} value={formatCurrency(amountDue, currency)} highlight />
+                )}
               </div>
 
-              {!canFinalize && draftItems.length > 0 && (
+              {!hasValidTotal && draftItems.length > 0 && (
+                <p className="text-xs text-red-600 font-medium">{t('billing.invalidTotal')}</p>
+              )}
+
+              {isCreditSale && !hasCreditCustomer && draftItems.length > 0 && (
+                <p className="text-xs text-red-600 font-medium">{t('billing.creditCustomerRequired')}</p>
+              )}
+
+              {hasValidTotal && !hasEnoughPayment && draftItems.length > 0 && (
                 <p className="text-xs text-red-600 font-medium">{t('billing.paidBelowTotal')}</p>
               )}
 
-              <div className="flex gap-2 pt-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
                 <Button type="button" variant="ghost" onClick={clearDraft} className="flex-1">
                   {t('billing.clearDraft')}
                 </Button>
@@ -428,6 +510,20 @@ export function PosScreen() {
           </Card>
         </div>
       </div>
+
+      {draftItems.length > 0 && (
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 px-3 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.12)] backdrop-blur lg:hidden">
+          <div className="mx-auto flex max-w-screen-sm items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-medium text-slate-500">{draftItems.length} {t('billing.items')}</p>
+              <p className="truncate text-lg font-black text-slate-900 tabular-nums">{formatCurrency(billSummary.totalAmount, currency)}</p>
+            </div>
+            <Button type="button" disabled={!canFinalize} onClick={form.handleSubmit(() => setConfirmOpen(true))} className="min-w-[132px]">
+              {t('billing.reviewFinalize')}
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* ── Confirm modal ────────────────────────────────────────────────── */}
       <Modal
@@ -450,9 +546,23 @@ export function PosScreen() {
           <SummaryRow label={t('billing.items')} value={String(draftItems.length)} />
           <SummaryRow label={t('billing.total')} value={formatCurrency(billSummary.totalAmount, currency)} highlight />
           <SummaryRow label={t('billing.paid')} value={formatCurrency(actualPaidAmount, currency)} />
-          <SummaryRow label={t('billing.change')} value={formatCurrency(actualChangeAmount, currency)} highlight />
+          <SummaryRow label={t('billing.change')} value={formatCurrency(Math.max(0, actualChangeAmount), currency)} highlight />
+          {isCreditSale && amountDue > 0 && (
+            <SummaryRow label={t('billing.amountDue')} value={formatCurrency(amountDue, currency)} highlight />
+          )}
         </div>
       </Modal>
+
+      <QuickProductModal
+        open={quickAddOpen}
+        barcode={missingBarcode}
+        onClose={() => {
+          setQuickAddOpen(false);
+          setMissingBarcode('');
+          setTimeout(() => barcodeInputRef.current?.focus(), 0);
+        }}
+        onCreated={handleQuickProductCreated}
+      />
 
       {/* ── Barcode scanner modal ─────────────────────────────────────────── */}
       <BarcodeScannerModal
