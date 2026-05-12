@@ -7,6 +7,7 @@ import {
   calculateLineSubtotal,
 } from "@/lib/utils/calculations";
 import { nowIso } from "@/lib/utils/date";
+import { addMoney, allocateMoney, roundMoney, subtractMoney } from "@/lib/utils/money";
 import { createBillNumber, createId } from "@/lib/utils/id";
 import { buildSyncQueueItem } from "@/lib/services/sync-queue-service";
 import type {
@@ -29,16 +30,25 @@ function validateDraftLine(
   settings: Settings,
   line: BillDraftItem,
   product: Product,
+  requestedQuantity: number,
 ) {
   if (product.status !== "active")
     throw new Error(`Product ${product.name} is inactive.`);
   if (line.quantity <= 0)
     throw new Error(`Quantity for ${product.name} must be greater than zero.`);
-  if (line.quantity > product.quantityInStock)
+  if (requestedQuantity > product.quantityInStock)
     throw new Error(`Not enough stock for ${product.name}.`);
   if (!settings.allowLossSale && line.unitSellPrice < line.unitBuyPrice) {
     throw new Error(`Loss-making sale is not allowed for ${product.name}.`);
   }
+}
+
+function getRequestedQuantities(items: BillDraftItem[]): Map<string, number> {
+  const requested = new Map<string, number>();
+  for (const item of items) {
+    requested.set(item.productId, (requested.get(item.productId) ?? 0) + item.quantity);
+  }
+  return requested;
 }
 
 export async function createFinalizedBill(input: {
@@ -101,12 +111,13 @@ export async function createFinalizedBill(input: {
       const billNumber = createBillNumber(sequence);
       const products = liveProducts as Product[];
 
+      const requestedQuantities = getRequestedQuantities(input.items);
       for (const line of input.items) {
         const product = products.find(
           (candidate) => candidate.id === line.productId,
         );
         if (!product) throw new Error(`Product ${line.name} not found.`);
-        validateDraftLine(settings, line, product);
+        validateDraftLine(settings, line, product, requestedQuantities.get(line.productId) ?? line.quantity);
       }
 
       const billItems: BillItem[] = input.items.map((item) => ({
@@ -247,14 +258,20 @@ function appendBillNote(existing: string | undefined, note: string): string {
   return existing ? `${existing}\n${note}` : note;
 }
 
-function calculateReturnedLineValue(item: BillItem, quantity: number) {
+function calculateReturnedLineValue(bill: Bill, item: BillItem, quantity: number) {
+  const lineAmount = calculateLineSubtotal(quantity, item.unitSellPriceAtSale);
+  const lineProfit = calculateLineProfit(
+    quantity,
+    item.unitBuyPriceAtSale,
+    item.unitSellPriceAtSale,
+  );
+  const subtotalRatio = bill.subtotal > 0 ? lineAmount / bill.subtotal : 0;
+  const discountShare = allocateMoney(bill.discountAmount, subtotalRatio);
+  const taxShare = allocateMoney(bill.taxAmount, subtotalRatio);
+
   return {
-    amount: calculateLineSubtotal(quantity, item.unitSellPriceAtSale),
-    profit: calculateLineProfit(
-      quantity,
-      item.unitBuyPriceAtSale,
-      item.unitSellPriceAtSale,
-    ),
+    amount: addMoney(subtractMoney(lineAmount, discountShare), taxShare),
+    profit: subtractMoney(lineProfit, discountShare),
   };
 }
 
@@ -362,6 +379,7 @@ export async function voidBill(input: {
       ]);
     },
   );
+  requestSync();
 }
 
 export async function returnBillItem(input: {
@@ -401,7 +419,7 @@ export async function returnBillItem(input: {
       if (!product) throw new Error("Product not found.");
 
       const now = nowIso();
-      const returnedValues = calculateReturnedLineValue(item, quantity);
+      const returnedValues = calculateReturnedLineValue(bill, item, quantity);
       const nextReturnedQuantity = (item.quantityReturned ?? 0) + quantity;
       await db.billItems.update(item.id, {
         quantityReturned: nextReturnedQuantity,
@@ -420,10 +438,10 @@ export async function returnBillItem(input: {
         (candidate) => getRemainingItemQuantity(candidate) <= 0,
       );
 
-      const nextReturnedAmount =
-        (bill.returnedAmount ?? 0) + returnedValues.amount;
-      const nextReturnedProfit =
-        (bill.returnedProfit ?? 0) + returnedValues.profit;
+      const calculatedReturnedAmount = addMoney(bill.returnedAmount ?? 0, returnedValues.amount);
+      const calculatedReturnedProfit = addMoney(bill.returnedProfit ?? 0, returnedValues.profit);
+      const nextReturnedAmount = allReturned ? bill.totalAmount : roundMoney(calculatedReturnedAmount);
+      const nextReturnedProfit = allReturned ? bill.totalProfit : roundMoney(calculatedReturnedProfit);
 
       const stockMovement: StockMovement = {
         id: createId("move"),
@@ -473,4 +491,5 @@ export async function returnBillItem(input: {
       ]);
     },
   );
+  requestSync();
 }
