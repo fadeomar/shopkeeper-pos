@@ -8,16 +8,25 @@ import clsx from "clsx";
 import { useAuth } from "@/components/providers/auth-context";
 import { signIn, registerUser } from "@/lib/firebase/auth-service";
 import { syncAllToCloud, type SyncMeta } from "@/lib/firebase/sync-service";
+import { getPendingSyncCount } from "@/lib/services/sync-queue-service";
+import { getOpenConflicts } from "@/lib/services/sync-conflict-service";
 import {
   fetchSyncMeta,
   isLocalDbEmpty,
   restoreFromCloud,
   pullSettingsFromCloud,
+  getRestoreErrorMessage,
 } from "@/lib/firebase/restore-service";
 import { db } from "@/lib/db/schema";
 import { DbBootstrap } from "@/components/providers/db-bootstrap";
 import { AppSidebarBrand } from "@/components/app-sidebar-brand";
 import { SidebarNav } from "@/components/sidebar-nav";
+import { useSettings } from "@/components/providers/settings-context";
+import { Modal } from "@/components/ui/modal";
+import { Button } from "@/components/ui/button";
+import { getLocalDataSummary, saveCurrentAccountSnapshot } from "@/lib/services/account-data-service";
+import { SyncStatusBadge } from "@/components/sync/sync-status-badge";
+import { ConflictResolverModal } from "@/components/sync/conflict-resolver-modal";
 
 export function AuthenticatedShell({
   children,
@@ -25,7 +34,6 @@ export function AuthenticatedShell({
   children: React.ReactNode;
 }) {
   const { status, user, logout } = useAuth();
-  console.log({ status, user });
   if (status === "loading") return <LoadingScreen />;
   if (status === "unauthenticated") return <AuthScreen />;
   if (status === "pending") return <PendingScreen onLogout={logout} />;
@@ -55,7 +63,7 @@ function AdminShell({ children }: { children: React.ReactNode }) {
   if (!pathname.startsWith("/admin")) return <LoadingScreen />;
 
   return (
-    <div className="min-h-screen grid grid-cols-1 lg:grid-cols-[260px_1fr]">
+    <div className="min-h-screen grid grid-cols-1 lg:grid-cols-[260px_1fr] bg-slate-50">
       <aside className="bg-slate-900 text-white flex flex-col lg:min-h-screen lg:sticky lg:top-0">
         <div className="hidden lg:block px-5 pt-6 pb-4">
           <AppSidebarBrand />
@@ -64,9 +72,10 @@ function AdminShell({ children }: { children: React.ReactNode }) {
           <span className="font-bold text-base tracking-tight">
             Shopkeeper POS
           </span>
-          <span className="ml-auto text-xs text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full">
+          <span className="text-xs text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full">
             Admin
           </span>
+          <SafeSignOutButton className="ms-auto rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700 hover:text-white transition-colors" />
         </div>
 
         <nav className="flex flex-row overflow-x-auto gap-1 px-3 py-2 lg:flex-col lg:overflow-x-visible lg:flex-1">
@@ -95,16 +104,11 @@ function AdminShell({ children }: { children: React.ReactNode }) {
           <div className="text-xs text-slate-500 mb-3 truncate">
             {user?.email}
           </div>
-          <button
-            onClick={logout}
-            className="w-full text-left text-xs text-slate-400 hover:text-white transition-colors"
-          >
-            Sign out
-          </button>
+          <SafeSignOutButton className="w-full text-start text-xs text-slate-400 hover:text-white transition-colors" />
         </div>
       </aside>
 
-      <main className="p-4 lg:p-6 min-w-0">{children}</main>
+      <main className="min-w-0 p-3 pb-24 sm:p-4 sm:pb-24 lg:p-6 lg:pb-6">{children}</main>
     </div>
   );
 }
@@ -115,11 +119,13 @@ function AdminShell({ children }: { children: React.ReactNode }) {
 
 function CashierShell({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
+  const { setSettings } = useSettings();
   const uid = user?.uid;
 
   // Restore flow state
   const [cloudMeta, setCloudMeta] = useState<SyncMeta | null>(null);
   const [restoreChecked, setRestoreChecked] = useState(false);
+  const [restoreSkipped, setRestoreSkipped] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [restoreStep, setRestoreStep] = useState("");
   const [restoreError, setRestoreError] = useState("");
@@ -141,6 +147,12 @@ function CashierShell({ children }: { children: React.ReactNode }) {
           meta &&
           (meta.recordCounts.bills > 0 || meta.recordCounts.products > 0)
         ) {
+          const skippedBackup = readSkippedRestoreMeta(userId);
+          if (skippedBackup === meta.lastSyncedAt) {
+            setRestoreSkipped(true);
+            setRestoreChecked(true);
+            return;
+          }
           setCloudMeta(meta);
           return; // show restore modal — don't mark as checked yet
         }
@@ -151,39 +163,111 @@ function CashierShell({ children }: { children: React.ReactNode }) {
     setRestoreChecked(true);
   }
 
+  function readSkippedRestoreMeta(userId: string): string | null {
+    try {
+      return localStorage.getItem(`shopkeeper_restore_skipped_${userId}`);
+    } catch {
+      return null;
+    }
+  }
+
+  function rememberSkippedRestore(userId: string, meta: SyncMeta | null) {
+    if (!meta) return;
+    try {
+      localStorage.setItem(
+        `shopkeeper_restore_skipped_${userId}`,
+        meta.lastSyncedAt,
+      );
+    } catch {
+      /* non-fatal */
+    }
+  }
+
+  function clearSkippedRestore(userId: string) {
+    try {
+      localStorage.removeItem(`shopkeeper_restore_skipped_${userId}`);
+    } catch {
+      /* non-fatal */
+    }
+  }
+
+  async function clearAppCaches() {
+    if (typeof window === "undefined" || !("caches" in window)) return;
+    try {
+      const keys = await caches.keys();
+      await Promise.all(
+        keys
+          .filter((key) => key.startsWith("sk-"))
+          .map((key) => caches.delete(key)),
+      );
+    } catch {
+      /* cache cleanup is best effort */
+    }
+  }
+
+  function requestQueueSync() {
+    if (typeof window === "undefined") return;
+    window.dispatchEvent(new Event("shopkeeper:sync-requested"));
+  }
+
+  async function runSafeFullSync(userId: string) {
+    const [pendingCount, openConflicts] = await Promise.all([
+      getPendingSyncCount(),
+      getOpenConflicts(),
+    ]);
+
+    if (pendingCount > 0 || openConflicts.length > 0) {
+      requestQueueSync();
+      return null;
+    }
+
+    return syncAllToCloud(userId);
+  }
+
   async function handleRestore() {
     if (!uid) return;
     setRestoring(true);
     setRestoreError("");
     try {
       await restoreFromCloud(uid, setRestoreStep);
+      setRestoreSkipped(false);
+      clearSkippedRestore(uid);
+      setRestoreStep("Preparing app reload…");
+      await clearAppCaches();
       // Close DB before reload to guarantee IDB writes are flushed (important on Safari/iOS).
       try {
-        await db.close();
+        db.close();
       } catch {
         /* non-fatal */
       }
-      window.location.reload();
+      window.location.replace(window.location.pathname || "/");
     } catch (e) {
       console.error("[restore]", e);
-      setRestoreError("Restore failed. Check your connection and try again.");
+      setRestoreError(getRestoreErrorMessage(e));
       setRestoring(false);
     }
   }
 
   function handleSkipRestore() {
+    if (uid) rememberSkippedRestore(uid, cloudMeta);
+    setRestoreSkipped(true);
     setCloudMeta(null);
     setRestoreChecked(true);
   }
 
   // Reconnect handler + daily auto-sync (only after restore decision)
   useEffect(() => {
-    if (!uid || !restoreChecked) return;
+    if (!uid || !restoreChecked || restoreSkipped) return;
+
+    const pullLatestSettings = async () => {
+      const pulled = await pullSettingsFromCloud(uid);
+      if (pulled) setSettings(pulled);
+    };
 
     const handleOnline = () => {
-      // Push any local changes to the cloud, then pull settings in case admin changed them
-      void syncAllToCloud(uid);
-      void pullSettingsFromCloud(uid);
+      // Reconnect must drain the durable offline queue first. A full backup here
+      // can turn a normal offline bill into product/settings conflicts.
+      requestQueueSync();
     };
     window.addEventListener("online", handleOnline);
 
@@ -200,14 +284,16 @@ function CashierShell({ children }: { children: React.ReactNode }) {
       } catch {
         /* proceed */
       }
-      if (needsSync) void syncAllToCloud(uid);
+      if (needsSync) void runSafeFullSync(uid);
+      requestQueueSync();
+      void pullLatestSettings();
     }
 
     return () => window.removeEventListener("online", handleOnline);
-  }, [uid, restoreChecked]);
+  }, [uid, restoreChecked, restoreSkipped, setSettings]);
 
   return (
-    <div className="min-h-screen grid grid-cols-1 lg:grid-cols-[260px_1fr]">
+    <div className="min-h-screen grid grid-cols-1 lg:grid-cols-[260px_1fr] bg-slate-50">
       <aside className="bg-slate-900 text-white flex flex-col lg:min-h-screen lg:sticky lg:top-0">
         <div className="hidden lg:block px-5 pt-6 pb-4">
           <AppSidebarBrand />
@@ -216,6 +302,12 @@ function CashierShell({ children }: { children: React.ReactNode }) {
           <span className="font-bold text-base tracking-tight">
             Shopkeeper POS
           </span>
+          <div className="ms-auto flex items-center gap-2">
+            <div className="hidden sm:block max-w-[220px]">
+              <SyncStatusBadge compact />
+            </div>
+            <SafeSignOutButton className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700 hover:text-white transition-colors" />
+          </div>
         </div>
         <SidebarNav />
         <div className="hidden lg:block px-4 pb-5 mt-auto">
@@ -225,16 +317,13 @@ function CashierShell({ children }: { children: React.ReactNode }) {
           <div className="text-xs text-slate-500 mb-3 truncate">
             {user?.email}
           </div>
-          <button
-            onClick={logout}
-            className="w-full text-left text-xs text-slate-400 hover:text-white transition-colors"
-          >
-            Sign out
-          </button>
+          <SyncStatusBadge />
+          <SafeSignOutButton className="w-full text-start text-xs text-slate-400 hover:text-white transition-colors" />
         </div>
       </aside>
-      <main className="p-4 lg:p-6 min-w-0">
+      <main className="min-w-0 p-3 pb-24 sm:p-4 sm:pb-24 lg:p-6 lg:pb-6">
         <DbBootstrap>
+          <ConflictResolverModal userId={uid} />
           {cloudMeta && (
             <RestoreModal
               meta={cloudMeta}
@@ -278,7 +367,18 @@ function RestoreModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
-      <div className="w-full max-w-sm bg-white rounded-2xl shadow-xl p-6">
+      <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-xl p-6">
+        <button
+          type="button"
+          aria-label="Close restore prompt"
+          onClick={onSkip}
+          disabled={restoring}
+          className="absolute end-3 top-3 rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 disabled:opacity-40"
+        >
+          <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+          </svg>
+        </button>
         {/* Icon */}
         <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
           <svg
@@ -297,12 +397,11 @@ function RestoreModal({
         </div>
 
         <h2 className="text-base font-bold text-slate-800 text-center mb-1">
-          Cloud backup found
+          Use your existing data?
         </h2>
         <p className="text-sm text-slate-500 text-center mb-4">
-          We found your data backed up on{" "}
-          <span className="font-medium text-slate-700">{date}</span>. Would you
-          like to restore it to this device?
+          We found data for this account in the cloud from{" "}
+          <span className="font-medium text-slate-700">{date}</span>. Sync it to this device, or start with an empty local workspace. Starting empty will not delete your cloud data.
         </p>
 
         {/* Counts */}
@@ -319,9 +418,20 @@ function RestoreModal({
           </p>
         )}
         {error && (
-          <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2 mb-3 text-center">
-            {error}
-          </p>
+          <div className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2 mb-3 text-center">
+            <p className="select-text">{error}</p>
+            <button
+              type="button"
+              onClick={() => {
+                if (typeof navigator !== "undefined" && navigator.clipboard) {
+                  void navigator.clipboard.writeText(error);
+                }
+              }}
+              className="mt-2 font-medium text-red-700 underline underline-offset-2"
+            >
+              Copy error
+            </button>
+          </div>
         )}
 
         {/* Actions */}
@@ -331,14 +441,14 @@ function RestoreModal({
             disabled={restoring}
             className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm font-medium rounded-xl transition-colors"
           >
-            {restoring ? "Restoring…" : "Restore my data"}
+            {restoring ? "Syncing…" : "Sync cloud data"}
           </button>
           <button
             onClick={onSkip}
             disabled={restoring}
             className="w-full py-2 text-slate-500 hover:text-slate-700 text-sm transition-colors disabled:opacity-40"
           >
-            Start fresh on this device
+            Start empty on this device
           </button>
         </div>
       </div>
@@ -747,4 +857,22 @@ function ErrorBox({ message }: { message: string }) {
       {message}
     </p>
   );
+}
+
+
+function SafeSignOutButton({ className }: { className?: string }) {
+  const { user, logout } = useAuth();
+  const [open, setOpen] = useState(false);
+  const [summary, setSummary] = useState<Awaited<ReturnType<typeof getLocalDataSummary>> | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+
+  async function openModal() { setSummary(await getLocalDataSummary()); setOpen(true); }
+  async function signOutKeepingDeviceData() { setSigningOut(true); try { if (user?.uid) await saveCurrentAccountSnapshot(user.uid); await logout(); } finally { setSigningOut(false); } }
+  async function syncThenSignOut() { if (!user?.uid) return signOutKeepingDeviceData(); setSyncing(true); const result = await syncAllToCloud(user.uid); setSyncing(false); if (!result) { setSummary(await getLocalDataSummary()); return; } await signOutKeepingDeviceData(); }
+
+  const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+  const hasUnsynced = Boolean(summary?.hasUnsyncedWork);
+  const pendingCount = summary ? summary.pending + summary.failed + summary.syncing : 0;
+  return <><button type="button" onClick={openModal} className={className ?? 'text-sm text-slate-500 hover:text-slate-700'}>Sign out</button><Modal open={open} title={isOffline ? 'You are offline' : hasUnsynced ? 'Unsynced changes' : 'Sign out?'} description={isOffline ? 'Changes saved on this device will stay linked to this account and sync when this same account is opened online again.' : hasUnsynced ? 'Some changes have not finished syncing yet. Sync before signing out to make them available on other devices.' : 'Your local data will stay safely stored for this account on this browser.'} onClose={() => setOpen(false)} footer={<><Button type="button" variant="secondary" onClick={() => setOpen(false)} disabled={signingOut || syncing}>Cancel</Button>{!isOffline && hasUnsynced && <Button type="button" onClick={syncThenSignOut} disabled={signingOut || syncing}>{syncing ? 'Syncing…' : 'Sync now, then sign out'}</Button>}<Button type="button" variant={hasUnsynced || isOffline ? 'danger' : 'primary'} onClick={signOutKeepingDeviceData} disabled={signingOut || syncing}>{signingOut ? 'Signing out…' : hasUnsynced || isOffline ? 'Sign out anyway' : 'Sign out'}</Button></>}>{summary && <div className="space-y-3 text-sm text-slate-600"><p>Data on this browser is preserved per account. Other accounts on this browser will not see this account&apos;s local data.</p><div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-50 p-3 text-xs"><div><span className="font-semibold text-slate-800">{summary.products}</span> products</div><div><span className="font-semibold text-slate-800">{summary.bills}</span> bills</div><div><span className="font-semibold text-slate-800">{summary.stockMovements}</span> stock movements</div><div><span className="font-semibold text-slate-800">{pendingCount}</span> pending sync jobs</div><div><span className="font-semibold text-slate-800">{summary.conflicts}</span> conflicts</div><div><span className="font-semibold text-slate-800">{summary.customerPayments}</span> payments</div></div>{summary.conflicts > 0 && <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">Resolve conflicts before expecting every change to sync cleanly to the cloud.</p>}</div>}</Modal></>;
 }

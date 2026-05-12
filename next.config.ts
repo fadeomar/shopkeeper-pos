@@ -8,9 +8,7 @@ const nextConfig: NextConfig = {
   logging: {
     browserToTerminal: true,
   },
-  experimental: {
-    typedRoutes: true,
-  },
+  typedRoutes: true,
   env: {
     // Available in both server and client components as process.env.NEXT_PUBLIC_APP_VERSION.
     // Update package.json version on each release — this picks it up automatically.

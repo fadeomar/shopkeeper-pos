@@ -1,6 +1,5 @@
-// Retail barcode formats supported by the scanner.
-// ZXing handles detection internally; this module normalizes the raw result.
-
+// Retail barcode formats supported by the scanner. Keep this list narrow so QR
+// codes or unrelated labels do not accidentally become product barcodes.
 export const RETAIL_BARCODE_FORMATS = [
   'EAN_13',
   'EAN_8',
@@ -11,12 +10,27 @@ export const RETAIL_BARCODE_FORMATS = [
   'ITF',
 ] as const;
 
-/** Strip whitespace from a raw ZXing result string. */
+export const NATIVE_RETAIL_BARCODE_FORMATS = [
+  'ean_13',
+  'ean_8',
+  'upc_a',
+  'upc_e',
+  'code_128',
+  'code_39',
+  'itf',
+] as const;
+
+/** Strip whitespace from a camera/manual barcode value without changing meaningful symbols. */
 export function normalizeBarcode(raw: string): string {
-  return raw.trim();
+  return raw.trim().replace(/\s+/g, '');
 }
 
-/** Minimum viability check — barcode schema enforces min 3 chars anyway. */
+/**
+ * Product barcodes may be retail numeric codes or internal Code 128/39 labels.
+ * Keep validation permissive enough for shop-created labels, but reject empty,
+ * very long, or non-printable values.
+ */
 export function isValidBarcode(value: string): boolean {
-  return normalizeBarcode(value).length >= 3;
+  const normalized = normalizeBarcode(value);
+  return /^[A-Za-z0-9._-]{3,64}$/.test(normalized);
 }

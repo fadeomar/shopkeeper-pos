@@ -16,6 +16,24 @@
   a { color: inherit; text-decoration: none; }
   button, input, select, textarea { font: inherit; }
 
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    background: #f8fafc;
+    overscroll-behavior-y: none;
+  }
+
+  input, select, textarea {
+    font-size: 16px;
+  }
+
+  @media (min-width: 640px) {
+    input, select, textarea { font-size: 14px; }
+  }
+
   /* Number / price inputs stay LTR regardless of page direction so digit
      order and currency symbols remain readable in Arabic mode */
   input[type="number"] {
@@ -69,3 +87,44 @@
 }
 
 .scanner-overlay-error { color: #fca5a5; }
+
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+
+  #receipt-print-area,
+  #receipt-print-area * {
+    visibility: visible !important;
+  }
+
+  #receipt-print-area {
+    position: absolute !important;
+    inset-inline-start: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 16px !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+}
+
+
+@layer utilities {
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .touch-card {
+    -webkit-tap-highlight-color: transparent;
+  }
+}

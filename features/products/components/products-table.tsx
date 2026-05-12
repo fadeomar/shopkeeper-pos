@@ -5,9 +5,8 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/lib/db/schema';
 import { formatCurrency } from '@/lib/utils/money';
 import { formatDate } from '@/lib/utils/date';
-import { adjustProductStock } from '@/lib/services/inventory-service';
-import { productRepo, settingsRepo } from '@/lib/db/repositories';
-import { enqueueSyncJob } from '@/lib/services/sync-queue-service';
+import { adjustProductStock, updateProductDetails } from '@/lib/services/inventory-service';
+import { settingsRepo } from '@/lib/db/repositories';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
@@ -16,8 +15,26 @@ import { Modal } from '@/components/ui/modal';
 import { Card } from '@/components/ui/card';
 import { useToast } from '@/components/ui/toast';
 import { useLocale } from '@/components/providers/locale-context';
-import type { Product } from '@/types/domain';
+import type { Product, SyncStatus } from '@/types/domain';
 import clsx from 'clsx';
+
+
+function SyncBadge({ status }: { status?: SyncStatus }) {
+  const { t } = useLocale();
+  const effective = status ?? 'synced';
+  const styles: Record<SyncStatus, string> = {
+    synced: 'bg-green-50 text-green-700 border-green-100',
+    pending: 'bg-amber-50 text-amber-700 border-amber-100',
+    syncing: 'bg-blue-50 text-blue-700 border-blue-100',
+    failed: 'bg-red-50 text-red-700 border-red-100',
+    conflict: 'bg-amber-100 text-amber-800 border-amber-200',
+  };
+  return (
+    <span className={clsx('inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap border', styles[effective])}>
+      {t(`sync.${effective}`)}
+    </span>
+  );
+}
 
 export function ProductsTable({ onEdit }: { onEdit?: (product: Product) => void }) {
   const { t } = useLocale();
@@ -48,12 +65,7 @@ export function ProductsTable({ onEdit }: { onEdit?: (product: Product) => void 
 
   async function toggleStatus(product: Product) {
     const newStatus = product.status === 'active' ? 'inactive' : 'active';
-    await productRepo.update(product.id, {
-      status: newStatus,
-      lastUpdated: new Date().toISOString(),
-      syncStatus: 'pending',
-    });
-    void enqueueSyncJob({ entity: 'product', entityId: product.id, operation: 'update' });
+    await updateProductDetails(product, { status: newStatus });
     push(product.status === 'active' ? t('products.productDeactivated') : t('products.productActivated'));
   }
 
@@ -63,8 +75,6 @@ export function ProductsTable({ onEdit }: { onEdit?: (product: Product) => void 
     if (Number.isNaN(qty) || qty === 0) { push(t('products.nonZeroAdj'), 'error'); return; }
     try {
       await adjustProductStock(adjustProduct, qty, adjustNote || 'Manual stock adjustment');
-      await db.products.update(adjustProduct.id, { syncStatus: 'pending' });
-      void enqueueSyncJob({ entity: 'product', entityId: adjustProduct.id, operation: 'update' });
       push(t('products.stockAdjusted'));
       setAdjustProduct(null); setAdjustQty('1'); setAdjustNote('Manual stock adjustment');
     } catch (error) {
@@ -81,14 +91,14 @@ export function ProductsTable({ onEdit }: { onEdit?: (product: Product) => void 
     t('products.barcode'), t('products.name'), t('products.category'),
     t('products.qty'), t('products.buy'), t('products.sell'),
     t('products.min'), t('products.supplier'), t('products.dateAdded'),
-    t('products.status'), t('products.actions'),
+    t('products.status'), t('sync.status'), t('products.actions'),
   ];
 
   return (
     <>
       <Card padding="sm">
         {/* Search & filter toolbar */}
-        <div className="flex flex-wrap gap-2 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 mb-4">
           <Input
             className="flex-1 min-w-[200px]"
             placeholder={t('products.searchPlaceholder')}
@@ -96,7 +106,7 @@ export function ProductsTable({ onEdit }: { onEdit?: (product: Product) => void 
             onChange={(e) => setQuery(e.target.value)}
           />
           <Select
-            className="w-48"
+            className="w-full sm:w-48"
             value={category}
             onChange={(e) => setCategory(e.target.value)}
           >
@@ -106,8 +116,38 @@ export function ProductsTable({ onEdit }: { onEdit?: (product: Product) => void 
           </Select>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[960px]">
+        <div className="grid gap-3 md:hidden">
+          {filtered.length === 0 ? (
+            <div className="py-10 text-center text-sm text-slate-500">{t('products.noProducts')}</div>
+          ) : filtered.map((product) => {
+            const lowStock = settings?.lowStockHighlight && product.quantityInStock <= product.minimumStockAlert;
+            return (
+              <div key={product.id} className={clsx('touch-card rounded-2xl border p-3 shadow-xs', lowStock ? 'border-amber-200 bg-amber-50' : 'border-slate-200 bg-white')}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-slate-900 truncate">{product.name}</p>
+                    <p className="text-xs text-slate-500 font-mono truncate">{product.barcode}</p>
+                    <p className="mt-1 text-xs text-slate-500 truncate">{product.category}{product.supplierName ? ` · ${product.supplierName}` : ''}</p>
+                  </div>
+                  <SyncBadge status={product.syncStatus} />
+                </div>
+                <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                  <div className="rounded-xl bg-white/75 p-2"><p className="text-slate-500">{t('products.qty')}</p><p className={clsx('font-black tabular-nums', lowStock ? 'text-amber-700' : 'text-slate-900')}>{product.quantityInStock}</p></div>
+                  <div className="rounded-xl bg-white/75 p-2"><p className="text-slate-500">{t('products.buy')}</p><p className="font-bold text-slate-800 tabular-nums">{formatCurrency(product.buyPrice, currency)}</p></div>
+                  <div className="rounded-xl bg-white/75 p-2"><p className="text-slate-500">{t('products.sell')}</p><p className="font-bold text-slate-800 tabular-nums">{formatCurrency(product.sellPrice, currency)}</p></div>
+                </div>
+                <div className="mt-3 grid grid-cols-3 gap-2">
+                  <Button type="button" variant="ghost" size="sm" onClick={() => onEdit?.(product)}>{t('common.edit')}</Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => { setAdjustProduct(product); setAdjustQty('1'); }}>{t('common.adjust')}</Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => toggleStatus(product)}>{product.status === 'active' ? t('common.deactivate') : t('common.activate')}</Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="hidden md:block overflow-x-auto">
+          <table className="w-full text-sm min-w-[1040px]">
             <thead>
               <tr className="border-b border-slate-200">
                 {headers.map((h) => (
@@ -125,40 +165,18 @@ export function ProductsTable({ onEdit }: { onEdit?: (product: Product) => void 
                     <td className="px-3 py-2.5 font-mono text-xs text-slate-600">{product.barcode}</td>
                     <td className="px-3 py-2.5">
                       <span className="font-medium text-slate-800">{product.name}</span>
-                      {product.shelfLocation && (
-                        <div className="text-xs text-slate-400">{t('products.shelf')} {product.shelfLocation}</div>
-                      )}
+                      {product.shelfLocation && (<div className="text-xs text-slate-400">{t('products.shelf')} {product.shelfLocation}</div>)}
                     </td>
                     <td className="px-3 py-2.5 text-slate-600">{product.category}</td>
-                    <td className={clsx('px-3 py-2.5 tabular-nums font-semibold', lowStock ? 'text-amber-700' : 'text-slate-700')}>
-                      {product.quantityInStock}
-                    </td>
+                    <td className={clsx('px-3 py-2.5 tabular-nums font-semibold', lowStock ? 'text-amber-700' : 'text-slate-700')}>{product.quantityInStock}</td>
                     <td className="px-3 py-2.5 tabular-nums text-slate-600">{formatCurrency(product.buyPrice, currency)}</td>
                     <td className="px-3 py-2.5 tabular-nums font-medium text-slate-800">{formatCurrency(product.sellPrice, currency)}</td>
                     <td className="px-3 py-2.5 tabular-nums text-slate-500">{product.minimumStockAlert}</td>
                     <td className="px-3 py-2.5 text-slate-600 max-w-[120px] truncate">{product.supplierName || '—'}</td>
                     <td className="px-3 py-2.5 text-slate-500 whitespace-nowrap">{formatDate(product.dateAdded)}</td>
-                    <td className="px-3 py-2.5">
-                      <span className={clsx(
-                        'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium',
-                        product.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600',
-                      )}>
-                        {t(`common.${product.status}` as Parameters<typeof t>[0])}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <div className="flex gap-1">
-                        <Button type="button" variant="ghost" size="sm" onClick={() => onEdit?.(product)}>
-                          {t('common.edit')}
-                        </Button>
-                        <Button type="button" variant="ghost" size="sm" onClick={() => { setAdjustProduct(product); setAdjustQty('1'); }}>
-                          {t('common.adjust')}
-                        </Button>
-                        <Button type="button" variant="ghost" size="sm" onClick={() => toggleStatus(product)}>
-                          {product.status === 'active' ? t('common.deactivate') : t('common.activate')}
-                        </Button>
-                      </div>
-                    </td>
+                    <td className="px-3 py-2.5"><span className={clsx('inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium', product.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600')}>{t(`common.${product.status}` as Parameters<typeof t>[0])}</span></td>
+                    <td className="px-3 py-2.5"><SyncBadge status={product.syncStatus} /></td>
+                    <td className="px-3 py-2.5"><div className="flex gap-1"><Button type="button" variant="ghost" size="sm" onClick={() => onEdit?.(product)}>{t('common.edit')}</Button><Button type="button" variant="ghost" size="sm" onClick={() => { setAdjustProduct(product); setAdjustQty('1'); }}>{t('common.adjust')}</Button><Button type="button" variant="ghost" size="sm" onClick={() => toggleStatus(product)}>{product.status === 'active' ? t('common.deactivate') : t('common.activate')}</Button></div></td>
                   </tr>
                 );
               })}

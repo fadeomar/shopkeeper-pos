@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { IScannerControls } from '@zxing/browser';
-import { normalizeBarcode, isValidBarcode } from '@/lib/utils/barcode';
+import { normalizeBarcode, isValidBarcode, NATIVE_RETAIL_BARCODE_FORMATS } from '@/lib/utils/barcode';
 import { Button } from '@/components/ui/button';
 import { useLocale } from '@/components/providers/locale-context';
 
@@ -82,9 +82,24 @@ export function BarcodeScannerModal({
           height: { min: 480, ideal: 1080, max: 2160 },
         };
 
-        const nativeDetector = 'BarcodeDetector' in window
-          ? new (window as unknown as { BarcodeDetector: new (o: object) => { detect: (v: HTMLVideoElement) => Promise<{ rawValue: string }[]> } }).BarcodeDetector({ formats: ['ean_13','ean_8','code_128','code_39','upc_a','upc_e','qr_code','data_matrix','itf'] })
-          : null;
+        let nativeDetector: { detect: (v: HTMLVideoElement) => Promise<{ rawValue: string }[]> } | null = null;
+        if ('BarcodeDetector' in window) {
+          try {
+            const Detector = (window as unknown as {
+              BarcodeDetector: {
+                new (o: { formats?: string[] }): { detect: (v: HTMLVideoElement) => Promise<{ rawValue: string }[]> };
+                getSupportedFormats?: () => Promise<string[]>;
+              };
+            }).BarcodeDetector;
+            const supported = typeof Detector.getSupportedFormats === 'function'
+              ? await Detector.getSupportedFormats()
+              : [...NATIVE_RETAIL_BARCODE_FORMATS];
+            const formats = NATIVE_RETAIL_BARCODE_FORMATS.filter((format) => supported.includes(format));
+            if (formats.length > 0) nativeDetector = new Detector({ formats: [...formats] });
+          } catch {
+            nativeDetector = null;
+          }
+        }
 
         const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
         if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
@@ -131,10 +146,22 @@ export function BarcodeScannerModal({
           const prevStop = controlsRef.current!.stop.bind(controlsRef.current);
           controlsRef.current = { stop: () => { cancelAnimationFrame(rafId); prevStop(); } } as unknown as import('@zxing/browser').IScannerControls;
         } else {
-          const [{ BrowserMultiFormatReader }, { DecodeHintType }] =
+          const [{ BrowserMultiFormatReader }, { DecodeHintType, BarcodeFormat }] =
             await Promise.all([import('@zxing/browser'), import('@zxing/library')]);
           if (cancelled) return;
-          const hints = new Map<number, unknown>([[DecodeHintType.TRY_HARDER, true]]);
+          const possibleFormats = [
+            BarcodeFormat.EAN_13,
+            BarcodeFormat.EAN_8,
+            BarcodeFormat.UPC_A,
+            BarcodeFormat.UPC_E,
+            BarcodeFormat.CODE_128,
+            BarcodeFormat.CODE_39,
+            BarcodeFormat.ITF,
+          ];
+          const hints = new Map<number, unknown>([
+            [DecodeHintType.TRY_HARDER, true],
+            [DecodeHintType.POSSIBLE_FORMATS, possibleFormats],
+          ]);
           const reader = new BrowserMultiFormatReader(hints as Map<never, never>, { delayBetweenScanAttempts: 100 });
           controlsRef.current?.stop(); controlsRef.current = null;
           const controls = await reader.decodeFromConstraints({ video: videoConstraints }, video, (result, err) => {
