@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -25,7 +26,10 @@ import { BarcodeScannerModal } from "@/components/barcode/barcode-scanner-modal"
 import { useLocale } from "@/components/providers/locale-context";
 import { Card } from "@/components/ui/card";
 import { QuickProductModal } from "./quick-product-modal";
-import type { BillDraftItem, Product } from "@/types/domain";
+import { ReceiptView } from "./receipt-view";
+import type { Bill, BillDraftItem, BillItem, Product, Settings } from "@/types/domain";
+
+const SUCCESS_AUTO_DISMISS_MS = 8000;
 
 const POS_DRAFT_KEY = "shopkeeper-pos-bill-draft-v1";
 
@@ -71,6 +75,87 @@ function SummaryRow({
   );
 }
 
+function SuccessPanel({
+  bill,
+  items,
+  settings,
+  currency,
+  onDismiss,
+}: {
+  bill: Bill;
+  items: BillItem[];
+  settings?: Settings;
+  currency: string;
+  onDismiss: () => void;
+}) {
+  const { t } = useLocale();
+  const newSaleRef = useRef<HTMLButtonElement | null>(null);
+  const amountDue = Math.max(0, bill.totalAmount - bill.paidAmount);
+
+  useEffect(() => {
+    newSaleRef.current?.focus({ preventScroll: true });
+  }, []);
+
+  return (
+    <Card className="flex flex-col gap-4" padding="sm">
+      <div className="flex items-start gap-3">
+        <span
+          aria-hidden
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-lg font-bold"
+        >
+          ✓
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-emerald-700">
+            {t("billing.saleCompleted")}
+          </p>
+          <p className="font-mono text-base font-bold text-slate-900">
+            {bill.billNumber}
+          </p>
+        </div>
+      </div>
+
+      <div className="rounded-xl bg-emerald-50 border border-emerald-100 px-4 py-3">
+        <SummaryRow
+          label={t("billing.total")}
+          value={formatCurrency(bill.totalAmount, currency)}
+          highlight
+        />
+        <SummaryRow
+          label={t("billing.change")}
+          value={formatCurrency(bill.changeAmount, currency)}
+        />
+        {amountDue > 0 && (
+          <SummaryRow
+            label={t("billing.amountDue")}
+            value={formatCurrency(amountDue, currency)}
+            highlight
+          />
+        )}
+      </div>
+
+      <ReceiptView bill={bill} items={items} settings={settings} />
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <Link
+          href={`/bills/${bill.id}`}
+          className="inline-flex h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
+        >
+          {t("billing.openBillDetail")}
+        </Link>
+        <Button
+          ref={newSaleRef}
+          type="button"
+          onClick={onDismiss}
+          className="w-full"
+        >
+          {t("billing.newSale")}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
 export function PosScreen() {
   const { t } = useLocale();
   const { user } = useAuth();
@@ -91,6 +176,9 @@ export function PosScreen() {
   const [missingBarcode, setMissingBarcode] = useState("");
   const [isPaidAmountManuallyEdited, setIsPaidAmountManuallyEdited] =
     useState(false);
+  const [lastFinalized, setLastFinalized] = useState<
+    { bill: Bill; items: BillItem[] } | null
+  >(null);
 
   const barcodeInputRef = useRef<HTMLInputElement | null>(null);
   const lastAppliedCashierNameRef = useRef("Owner");
@@ -230,12 +318,25 @@ export function PosScreen() {
     });
   }, [defaultPaidAmount, isPaidAmountManuallyEdited, form]);
 
+  // Auto-dismiss the success panel after a short window so the right column
+  // returns to the bill summary form. Cancelled if the cashier starts a new
+  // sale (appendProduct) or explicitly dismisses via the panel's buttons.
+  useEffect(() => {
+    if (!lastFinalized) return;
+    const id = window.setTimeout(() => setLastFinalized(null), SUCCESS_AUTO_DISMISS_MS);
+    return () => window.clearTimeout(id);
+  }, [lastFinalized]);
+
   // ── FIXED double-toast: push() is called OUTSIDE setDraftItems updater ──
   function appendProduct(product: Product) {
     if (product.quantityInStock <= 0) {
       push(t("billing.outOfStock"), "error");
       return;
     }
+
+    // Adding the first item of the next sale means the cashier has moved on
+    // from the just-completed bill — collapse the success panel immediately.
+    if (lastFinalized) setLastFinalized(null);
 
     const existing = draftItems.find((i) => i.productId === product.id);
 
@@ -347,13 +448,13 @@ export function PosScreen() {
       return;
     }
     try {
-      const { bill } = await createFinalizedBill({
+      const { bill, billItems } = await createFinalizedBill({
         items: draftItems,
         form: { ...values, paidAmount: actualPaidAmount },
       });
       clearDraft();
       setConfirmOpen(false);
-      push(t("billing.billCreated", { billNumber: bill.billNumber }));
+      setLastFinalized({ bill, items: billItems });
     } catch (error) {
       push(
         error instanceof Error ? error.message : t("billing.billFailed"),
@@ -608,6 +709,18 @@ export function PosScreen() {
 
         {/* ── Bill summary panel ───────────────────────────────────────── */}
         <div className="xl:sticky xl:top-6">
+          {lastFinalized ? (
+            <SuccessPanel
+              bill={lastFinalized.bill}
+              items={lastFinalized.items}
+              settings={settings}
+              currency={currency}
+              onDismiss={() => {
+                setLastFinalized(null);
+                setTimeout(() => barcodeInputRef.current?.focus(), 0);
+              }}
+            />
+          ) : (
           <Card className="flex flex-col gap-4" padding="sm">
             <h3 className="text-base font-semibold text-slate-800">
               {t("billing.billSummary")}
@@ -755,6 +868,7 @@ export function PosScreen() {
               </div>
             </form>
           </Card>
+          )}
         </div>
       </div>
 

@@ -317,6 +317,12 @@ export interface TranslationDict {
     addOneProduct: string;
     billCreated: string;
     billFailed: string;
+    saleCompleted: string;
+    openBillDetail: string;
+    newSale: string;
+    quickCash: string;
+    exact: string;
+    lastAdded: string;
     itemAdded: string;
     itemUpdated: string;
     productNotFoundAddNow: string;
