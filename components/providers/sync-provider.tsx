@@ -6,6 +6,7 @@ import {
   applyStockMovementDeltasToCloudProducts,
   syncBillSequenceToCloud,
   syncBillToCloud,
+  syncCustomersToCloud,
   syncProductsToCloud,
   syncSettingsToCloud,
   syncStockMovementsToCloud,
@@ -149,6 +150,8 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
         await db.stockMovements.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
       } else if (job.entity === 'customerPayment') {
         await db.customerPayments.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
+      } else if (job.entity === 'customer') {
+        await db.customers.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
       } else if (job.entity === 'settings') {
         await db.settings.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
       }
@@ -222,6 +225,16 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
       if (syncedAt) {
         await db.customerPayments.update(job.entityId, { syncStatus: 'synced', syncedAt, lastSyncError: undefined });
       }
+    } else if (job.entity === 'customer') {
+      const customer = await db.customers.get(job.entityId);
+      if (!customer) {
+        await markSynced(job.id);
+        return;
+      }
+      const syncedAt = await syncCustomersToCloud(uid, [customer]);
+      if (syncedAt) {
+        await db.customers.update(job.entityId, { syncStatus: 'synced', syncedAt, lastSyncError: undefined });
+      }
     } else if (job.entity === 'settings') {
       const settings = await db.settings.get(job.entityId);
       if (!settings) {
@@ -262,6 +275,8 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
       await db.stockMovements.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
     } else if (job.entity === 'customerPayment') {
       await db.customerPayments.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
+    } else if (job.entity === 'customer') {
+      await db.customers.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
     } else if (job.entity === 'settings') {
       await db.settings.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
     }

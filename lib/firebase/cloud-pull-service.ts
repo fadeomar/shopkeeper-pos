@@ -4,7 +4,7 @@ import { db } from '@/lib/db/schema';
 import { saveConflict } from '@/lib/services/sync-conflict-service';
 import { buildSyncQueueItem, getSyncQueueId } from '@/lib/services/sync-queue-service';
 import { normalizeBillSplit } from '@/lib/utils/bill-split';
-import type { Bill, BillItem, CustomerPayment, Product, Settings, StockMovement, SyncEntity, SyncQueueItem } from '@/types/domain';
+import type { Bill, BillItem, Customer, CustomerPayment, Product, Settings, StockMovement, SyncEntity, SyncQueueItem } from '@/types/domain';
 
 const PRODUCT_FIELDS: Array<keyof Product> = [
   'barcode', 'name', 'category', 'brand', 'unit', 'quantityInStock', 'buyPrice', 'sellPrice',
@@ -219,8 +219,29 @@ async function pullAppendOnlyCollections(uid: string): Promise<void> {
   });
 }
 
+async function pullCustomers(uid: string): Promise<void> {
+  const cloudCustomers = await pullCollection<Customer>(uid, 'customers');
+  if (cloudCustomers.length === 0) return;
+
+  await db.transaction('rw', db.customers, async () => {
+    for (const cloud of cloudCustomers) {
+      const local = await db.customers.get(cloud.id);
+      if (!local) {
+        await db.customers.put({ ...cloud, syncStatus: 'synced', lastSyncError: undefined });
+        continue;
+      }
+      // Skip if local has an unsynced edit — that push will reconcile it.
+      const pendingJob = await getPendingLocalJob('customer', local.id);
+      if (pendingJob) continue;
+      if (!isCloudNewer(local.syncedAt, cloud.syncedAt)) continue;
+      await db.customers.put({ ...cloud, syncStatus: 'synced', lastSyncError: undefined });
+    }
+  });
+}
+
 export async function pullCloudChangesBeforePush(uid: string): Promise<void> {
   await pullAppendOnlyCollections(uid);
+  await pullCustomers(uid);
   await pullProducts(uid);
   await pullSettings(uid);
 }

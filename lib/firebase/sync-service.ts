@@ -3,7 +3,7 @@ import { firestore } from './config';
 import { db } from '@/lib/db/schema';
 import { nowIso } from '@/lib/utils/date';
 import { detectProductCloudConflict, detectSettingsCloudConflict } from '@/lib/firebase/cloud-merge-service';
-import type { Bill, BillItem, Product, Settings, StockMovement, CustomerPayment, SyncQueueItem } from '@/types/domain';
+import type { Bill, BillItem, Customer, Product, Settings, StockMovement, CustomerPayment, SyncQueueItem } from '@/types/domain';
 
 const BATCH_SIZE = 400; // Firestore max is 500; stay under
 
@@ -15,6 +15,7 @@ export interface SyncMeta {
     products: number;
     stockMovements: number;
     customerPayments?: number;
+    customers?: number;
   };
 }
 
@@ -213,6 +214,20 @@ export async function syncCustomerPaymentsToCloud(
   return syncedAt;
 }
 
+export async function syncCustomersToCloud(
+  uid: string,
+  customers: Customer[],
+): Promise<string | null> {
+  if (customers.length === 0) return null;
+  const syncedAt = nowIso();
+  const writes = customers.map((customer) => ({
+    ref: doc(firestore, `users/${uid}/customers/${customer.id}`),
+    data: asSyncedRecord(customer, syncedAt),
+  }));
+  await commitInBatches(writes);
+  return syncedAt;
+}
+
 /** Push a single settings document to Firestore. */
 export async function syncSettingsToCloud(uid: string, settings: Settings): Promise<string> {
   const syncedAt = nowIso();
@@ -265,12 +280,13 @@ export async function syncAllToCloud(uid: string): Promise<SyncMeta | null> {
     ]);
     if (activeQueueCount > 0 || openConflictCount > 0) return null;
 
-    const [bills, billItems, products, stockMovements, customerPayments, localSettings] = await Promise.all([
+    const [bills, billItems, products, stockMovements, customerPayments, customers, localSettings] = await Promise.all([
       db.bills.toArray(),
       db.billItems.toArray(),
       db.products.toArray(),
       db.stockMovements.toArray(),
       db.customerPayments.toArray(),
+      db.customers.toArray(),
       db.settings.toArray(),
     ]);
 
@@ -339,6 +355,10 @@ export async function syncAllToCloud(uid: string): Promise<SyncMeta | null> {
         ref: doc(firestore, `users/${uid}/customerPayments/${payment.id}`),
         data: asSyncedRecord(payment, syncedAt),
       })),
+      ...customers.map((customer) => ({
+        ref: doc(firestore, `users/${uid}/customers/${customer.id}`),
+        data: asSyncedRecord(customer, syncedAt),
+      })),
       ...settings.map((s) => ({
         ref: doc(firestore, `users/${uid}/settings/${s.id}`),
         data: asSyncedRecord(s, syncedAt),
@@ -355,16 +375,18 @@ export async function syncAllToCloud(uid: string): Promise<SyncMeta | null> {
         products: products.length,
         stockMovements: stockMovements.length,
         customerPayments: customerPayments.length,
+        customers: customers.length,
       },
     };
     await setDoc(doc(firestore, `users/${uid}/meta/sync`), meta);
 
-    await db.transaction('rw', [db.bills, db.products, db.stockMovements, db.customerPayments, db.settings, db.syncQueue], async () => {
+    await db.transaction('rw', [db.bills, db.products, db.stockMovements, db.customerPayments, db.customers, db.settings, db.syncQueue], async () => {
       await Promise.all([
         db.bills.toCollection().modify({ syncStatus: 'synced', syncedAt, lastSyncError: undefined }),
         db.products.toCollection().modify({ syncStatus: 'synced', syncedAt, lastSyncError: undefined }),
         db.stockMovements.toCollection().modify({ syncStatus: 'synced', syncedAt, lastSyncError: undefined }),
         db.customerPayments.toCollection().modify({ syncStatus: 'synced', syncedAt, lastSyncError: undefined }),
+        db.customers.toCollection().modify({ syncStatus: 'synced', syncedAt, lastSyncError: undefined }),
         settings.length
           ? db.settings.bulkPut(settings.map((setting) => asSyncedRecord(setting, syncedAt)))
           : Promise.resolve(),
