@@ -82,7 +82,7 @@ function jobPriority(job: SyncQueueItem): number {
     case 'settings':
       return isBillSequenceJob(job) ? 3 : 5;
     case 'product':
-      return payloadSource(job) === 'bill-stock' ? 4 : 6;
+      return 6;
     default:
       return 10;
   }
@@ -181,11 +181,6 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
         movements.map((movement) => markSynced(getSyncQueueId('stockMovement', movement.id))),
       );
     } else if (job.entity === 'product') {
-      if (payloadSource(job) === 'bill-stock') {
-        await markSynced(job.id);
-        return;
-      }
-
       const product = await db.products.get(job.entityId);
       if (!product) {
         await markSynced(job.id);
