@@ -323,6 +323,9 @@ export interface TranslationDict {
     quickCash: string;
     exact: string;
     lastAdded: string;
+    shortcutsHelp: string;
+    shortcutFinalize: string;
+    shortcutClearBarcode: string;
     itemAdded: string;
     itemUpdated: string;
     productNotFoundAddNow: string;

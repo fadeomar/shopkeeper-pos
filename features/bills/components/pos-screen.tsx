@@ -314,6 +314,13 @@ export function PosScreen() {
   const hasCreditCustomer = Boolean(
     watchedCustomerName?.trim() || watchedCustomerPhone?.trim(),
   );
+  const hasValidTotal = billSummary.totalAmount >= 0;
+  const hasEnoughPayment = isCreditSale || actualChangeAmount >= 0;
+  const canFinalize =
+    draftItems.length > 0 &&
+    hasValidTotal &&
+    hasEnoughPayment &&
+    (!isCreditSale || hasCreditCustomer);
 
   useEffect(() => {
     if (isPaidAmountManuallyEdited) return;
@@ -340,6 +347,22 @@ export function PosScreen() {
     const id = window.setTimeout(() => setLastAdded(null), 2500);
     return () => window.clearTimeout(id);
   }, [lastAdded]);
+
+  // Global Ctrl/Cmd+Enter opens the finalize confirm modal so the cashier
+  // can finish a sale without leaving the keyboard. Skipped when any modal
+  // is already open (Esc handles those) and when nothing is finalizable.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.defaultPrevented) return;
+      if (confirmOpen || scannerOpen || quickAddOpen || lastFinalized) return;
+      if (!(e.ctrlKey || e.metaKey) || e.key !== "Enter") return;
+      if (!canFinalize) return;
+      e.preventDefault();
+      form.handleSubmit(() => setConfirmOpen(true))();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [confirmOpen, scannerOpen, quickAddOpen, lastFinalized, canFinalize, form]);
 
   // ── FIXED double-toast: push() is called OUTSIDE setDraftItems updater ──
   function appendProduct(product: Product) {
@@ -495,14 +518,6 @@ export function PosScreen() {
     );
   }
 
-  const hasValidTotal = billSummary.totalAmount >= 0;
-  const hasEnoughPayment = isCreditSale || actualChangeAmount >= 0;
-  const canFinalize =
-    draftItems.length > 0 &&
-    hasValidTotal &&
-    hasEnoughPayment &&
-    (!isCreditSale || hasCreditCustomer);
-
   return (
     <>
       {/* Mobile-first layout, desktop keeps two columns */}
@@ -537,7 +552,7 @@ export function PosScreen() {
           )}
 
           {/* Barcode input row */}
-          <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto] gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto_auto] gap-2">
             <Input
               ref={barcodeInputRef}
               placeholder={t("billing.typeBarcode")}
@@ -547,6 +562,9 @@ export function PosScreen() {
                 if (e.key === "Enter") {
                   e.preventDefault();
                   addByBarcode();
+                } else if (e.key === "Escape" && barcodeQuery) {
+                  e.preventDefault();
+                  setBarcodeQuery("");
                 }
               }}
               className="flex-1"
@@ -557,6 +575,14 @@ export function PosScreen() {
             <Button type="button" onClick={() => setScannerOpen(true)}>
               {t("common.scan")}
             </Button>
+            <button
+              type="button"
+              title={`${t("billing.shortcutsHelp")}\n• ${t("billing.shortcutFinalize")}\n• ${t("billing.shortcutClearBarcode")}`}
+              aria-label={t("billing.shortcutsHelp")}
+              className="inline-flex h-[42px] w-[42px] items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors"
+            >
+              ?
+            </button>
           </div>
 
           {/* Product select row */}
