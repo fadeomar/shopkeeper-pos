@@ -446,6 +446,7 @@ export interface TranslationDict {
     pendingSync: string;
     healthLooksGood: string;
     failedSyncWarning: string;
+    blockedSyncWarning: string;
     waitingSyncWarning: string;
     exportLocalBackup: string;
     exportingBackup: string;
@@ -479,6 +480,7 @@ export interface TranslationDict {
     synced: string;
     failed: string;
     conflict: string;
+    blocked: string;
     pendingBadge: string;
     safeLocal: string;
     waitingCloud: string;

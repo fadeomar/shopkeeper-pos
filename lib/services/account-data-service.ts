@@ -8,7 +8,7 @@ const DEVICE_ID_KEY = 'shopkeeper_device_id';
 
 export interface LocalDataSummary {
   products: number; bills: number; billItems: number; stockMovements: number; customerPayments: number; settings: number;
-  pending: number; failed: number; syncing: number; conflicts: number; hasBusinessData: boolean; hasUnsyncedWork: boolean;
+  pending: number; failed: number; syncing: number; blocked: number; conflicts: number; hasBusinessData: boolean; hasUnsyncedWork: boolean;
 }
 
 interface AccountSnapshot {
@@ -31,14 +31,14 @@ export function setActiveUid(uid: string): void { if (typeof window === 'undefin
 
 export async function getLocalDataSummary(): Promise<LocalDataSummary> {
   if (!db.isOpen()) { try { await db.open(); } catch {} }
-  const [products,bills,billItems,stockMovements,customerPayments,settings,pending,failed,syncing,conflicts] = await Promise.all([
+  const [products,bills,billItems,stockMovements,customerPayments,settings,pending,failed,syncing,blocked,conflicts] = await Promise.all([
     db.products.count(), db.bills.count(), db.billItems.count(), db.stockMovements.count(), db.customerPayments.count(), db.settings.count(),
-    db.syncQueue.where('status').equals('pending').count(), db.syncQueue.where('status').equals('failed').count(), db.syncQueue.where('status').equals('syncing').count(),
+    db.syncQueue.where('status').equals('pending').count(), db.syncQueue.where('status').equals('failed').count(), db.syncQueue.where('status').equals('syncing').count(), db.syncQueue.where('status').equals('blocked').count(),
     db.syncConflicts.where('status').equals('open').count().catch(() => 0),
   ]);
   const hasBusinessData = products + bills + billItems + stockMovements + customerPayments > 0;
-  const hasUnsyncedWork = pending + failed + syncing + conflicts > 0;
-  return { products,bills,billItems,stockMovements,customerPayments,settings,pending,failed,syncing,conflicts,hasBusinessData,hasUnsyncedWork };
+  const hasUnsyncedWork = pending + failed + syncing + blocked + conflicts > 0;
+  return { products,bills,billItems,stockMovements,customerPayments,settings,pending,failed,syncing,blocked,conflicts,hasBusinessData,hasUnsyncedWork };
 }
 
 async function clearRuntimeDb(): Promise<void> { await Promise.all([db.products.clear(),db.bills.clear(),db.billItems.clear(),db.stockMovements.clear(),db.customerPayments.clear(),db.settings.clear(),db.authCache.clear(),db.syncQueue.clear(),db.syncConflicts.clear().catch(()=>undefined)]); }

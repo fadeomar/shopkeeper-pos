@@ -108,6 +108,14 @@ export async function markFailed(id: string, error: string): Promise<void> {
   });
 }
 
+export async function markBlocked(id: string, error: string): Promise<void> {
+  await db.syncQueue.update(id, {
+    status: 'blocked',
+    updatedAt: nowIso(),
+    lastError: error.slice(0, 500),
+  });
+}
+
 
 export async function markConflict(id: string, error = 'Needs conflict review'): Promise<void> {
   await db.syncQueue.update(id, {
@@ -118,14 +126,19 @@ export async function markConflict(id: string, error = 'Needs conflict review'):
 }
 
 export async function getPendingSyncCount(): Promise<number> {
-  return db.syncQueue.where('status').anyOf(['pending', 'failed', 'syncing', 'conflict']).count();
+  return db.syncQueue.where('status').anyOf(['pending', 'failed', 'syncing', 'conflict', 'blocked']).count();
 }
 
 export async function retryFailedSyncJobs(): Promise<number> {
   const now = nowIso();
-  const failedJobs = await db.syncQueue.where('status').equals('failed').toArray();
+  // Manual retry also picks up blocked jobs (the ones that exhausted MAX_RETRIES).
+  // Resetting retryCount gives them a fresh budget after the user investigated.
+  const recoverableJobs = await db.syncQueue
+    .where('status')
+    .anyOf(['failed', 'blocked'])
+    .toArray();
   await Promise.all(
-    failedJobs.map((job) =>
+    recoverableJobs.map((job) =>
       db.syncQueue.update(job.id, {
         status: 'pending',
         retryCount: 0,
@@ -134,8 +147,8 @@ export async function retryFailedSyncJobs(): Promise<number> {
       }),
     ),
   );
-  if (failedJobs.length > 0) notifySyncRequested();
-  return failedJobs.length;
+  if (recoverableJobs.length > 0) notifySyncRequested();
+  return recoverableJobs.length;
 }
 
 export async function getSyncQueueCounts(): Promise<{
@@ -143,14 +156,16 @@ export async function getSyncQueueCounts(): Promise<{
   syncing: number;
   failed: number;
   conflict: number;
+  blocked: number;
   synced: number;
 }> {
-  const [pending, syncing, failed, conflict, synced] = await Promise.all([
+  const [pending, syncing, failed, conflict, blocked, synced] = await Promise.all([
     db.syncQueue.where('status').equals('pending').count(),
     db.syncQueue.where('status').equals('syncing').count(),
     db.syncQueue.where('status').equals('failed').count(),
     db.syncQueue.where('status').equals('conflict').count(),
+    db.syncQueue.where('status').equals('blocked').count(),
     db.syncQueue.where('status').equals('synced').count(),
   ]);
-  return { pending, syncing, failed, conflict, synced };
+  return { pending, syncing, failed, conflict, blocked, synced };
 }

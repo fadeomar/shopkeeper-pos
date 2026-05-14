@@ -1,7 +1,7 @@
 export type EntityStatus = 'active' | 'inactive';
 export type UserRole = 'admin' | 'cashier';
 
-export type SyncStatus = 'pending' | 'syncing' | 'synced' | 'failed' | 'conflict';
+export type SyncStatus = 'pending' | 'syncing' | 'synced' | 'failed' | 'conflict' | 'blocked';
 export type SyncEntity = 'bill' | 'product' | 'settings' | 'stockMovement' | 'customerPayment';
 export type SyncOperation = 'create' | 'update' | 'delete' | 'upsert';
 

@@ -260,7 +260,7 @@ export async function syncBillSequenceToCloud(uid: string, settings: Settings): 
 export async function syncAllToCloud(uid: string): Promise<SyncMeta | null> {
   try {
     const [activeQueueCount, openConflictCount] = await Promise.all([
-      db.syncQueue.where('status').anyOf(['pending', 'failed', 'syncing', 'conflict']).count(),
+      db.syncQueue.where('status').anyOf(['pending', 'failed', 'syncing', 'conflict', 'blocked']).count(),
       db.syncConflicts.where('status').equals('open').count().catch(() => 0),
     ]);
     if (activeQueueCount > 0 || openConflictCount > 0) return null;
@@ -368,7 +368,7 @@ export async function syncAllToCloud(uid: string): Promise<SyncMeta | null> {
         settings.length
           ? db.settings.bulkPut(settings.map((setting) => asSyncedRecord(setting, syncedAt)))
           : Promise.resolve(),
-        db.syncQueue.where('status').anyOf(['pending', 'failed', 'syncing']).modify({ status: 'synced', syncedAt, updatedAt: syncedAt, lastError: undefined }),
+        db.syncQueue.where('status').anyOf(['pending', 'failed', 'syncing', 'blocked']).modify({ status: 'synced', syncedAt, updatedAt: syncedAt, lastError: undefined }),
       ]);
     });
 

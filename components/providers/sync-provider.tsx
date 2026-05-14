@@ -17,6 +17,7 @@ import {
   markSyncing,
   markSynced,
   markFailed,
+  markBlocked,
   markConflict,
 } from '@/lib/services/sync-queue-service';
 import { useAuth } from './auth-context';
@@ -53,7 +54,13 @@ function isBillSequenceJob(job: SyncQueueItem): boolean {
 }
 
 function isActiveQueueStatus(status?: SyncStatus): boolean {
-  return status === 'pending' || status === 'failed' || status === 'syncing' || status === 'conflict';
+  return (
+    status === 'pending' ||
+    status === 'failed' ||
+    status === 'syncing' ||
+    status === 'conflict' ||
+    status === 'blocked'
+  );
 }
 
 function sameValue(a: unknown, b: unknown): boolean {
@@ -122,7 +129,28 @@ async function syncBillProductDeltas(uid: string, movements: StockMovement[]): P
 }
 
 async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
-  if ((job.retryCount ?? 0) >= MAX_RETRIES) return;
+  // A job that has burned through its retry budget without succeeding needs
+  // human attention. Mark it `blocked` so it shows up in Device Health with
+  // a clear "manual retry required" affordance instead of silently being
+  // skipped on every sync run.
+  if ((job.retryCount ?? 0) >= MAX_RETRIES) {
+    if (job.status !== 'blocked') {
+      const message = `Sync stopped after ${MAX_RETRIES} failed attempts. Manual retry required.`;
+      await markBlocked(job.id, message);
+      if (job.entity === 'bill') {
+        await db.bills.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
+      } else if (job.entity === 'product') {
+        await db.products.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
+      } else if (job.entity === 'stockMovement') {
+        await db.stockMovements.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
+      } else if (job.entity === 'customerPayment') {
+        await db.customerPayments.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
+      } else if (job.entity === 'settings') {
+        await db.settings.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
+      }
+    }
+    return;
+  }
 
   await markSyncing(job.id);
   try {

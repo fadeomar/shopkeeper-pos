@@ -271,6 +271,7 @@ function DeviceHealthCard() {
     syncing: number;
     failed: number;
     conflict: number;
+    blocked: number;
     synced: number;
   } | null>(null);
 
@@ -343,7 +344,8 @@ function DeviceHealthCard() {
     }
   }
 
-  const waiting = stats ? stats.pending + stats.syncing + stats.failed + stats.conflict : 0;
+  const waiting = stats ? stats.pending + stats.syncing + stats.failed + stats.conflict + stats.blocked : 0;
+  const blocked = stats?.blocked ?? 0;
 
   return (
     <Card>
@@ -365,7 +367,9 @@ function DeviceHealthCard() {
       </div>
 
       <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50 p-3 text-xs text-slate-600">
-        {stats?.failed ? (
+        {blocked > 0 ? (
+          <span className="font-medium text-red-600">{t('settings.blockedSyncWarning', { count: blocked })}</span>
+        ) : stats?.failed ? (
           <span className="font-medium text-red-600">{t('settings.failedSyncWarning', { count: stats.failed })}</span>
         ) : waiting > 0 ? (
           <span className="font-medium text-blue-700">{t('settings.waitingSyncWarning', { count: waiting })}</span>

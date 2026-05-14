@@ -48,7 +48,7 @@ async function pullCollection<T>(uid: string, name: string): Promise<T[]> {
 }
 
 function isActiveLocalJob(job: SyncQueueItem | undefined): job is SyncQueueItem {
-  return Boolean(job && ['pending', 'failed', 'syncing', 'conflict'].includes(job.status));
+  return Boolean(job && ['pending', 'failed', 'syncing', 'conflict', 'blocked'].includes(job.status));
 }
 
 async function getPendingLocalJob(entity: SyncEntity, entityId: string): Promise<SyncQueueItem | undefined> {
