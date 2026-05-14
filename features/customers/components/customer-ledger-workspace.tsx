@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '@/lib/db/schema';
 import { getCustomerLedger, getCustomerLedgerDetails, recordCustomerPayment, type CustomerLedgerDetails, type CustomerLedgerRow } from '@/lib/services/customer-ledger-service';
 import { useLocale } from '@/components/providers/locale-context';
 import { useToast } from '@/components/ui/toast';

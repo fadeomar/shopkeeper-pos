@@ -15,7 +15,6 @@ import {
 } from "@/lib/utils/calculations";
 import { formatCurrency } from "@/lib/utils/money";
 import { createFinalizedBill } from "@/lib/services/billing-service";
-import { useAuth } from "@/components/providers/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -159,7 +158,6 @@ function SuccessPanel({
 
 export function PosScreen() {
   const { t } = useLocale();
-  const { user } = useAuth();
   const products = useLiveQuery(
     () => db.products.where("status").equals("active").sortBy("name"),
     [],
