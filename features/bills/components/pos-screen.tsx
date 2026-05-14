@@ -768,33 +768,63 @@ export function PosScreen() {
               </div>
 
               <FormField label={t("billing.actualPaid")}>
-                <div className="flex gap-2">
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={
-                      Number.isFinite(actualPaidAmount) ? actualPaidAmount : 0
-                    }
-                    onChange={(e) => {
-                      setIsPaidAmountManuallyEdited(true);
-                      const v =
-                        e.target.value === "" ? 0 : Number(e.target.value);
-                      form.setValue("paidAmount", Number.isFinite(v) ? v : 0, {
-                        shouldDirty: true,
-                        shouldValidate: true,
-                      });
-                    }}
-                    className="flex-1"
-                  />
-                  {isPaidAmountManuallyEdited && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setIsPaidAmountManuallyEdited(false)}
-                    >
-                      {t("common.reset")}
-                    </Button>
+                <div className="flex flex-col gap-2">
+                  <div className="flex gap-2">
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={
+                        Number.isFinite(actualPaidAmount) ? actualPaidAmount : 0
+                      }
+                      onChange={(e) => {
+                        setIsPaidAmountManuallyEdited(true);
+                        const v =
+                          e.target.value === "" ? 0 : Number(e.target.value);
+                        form.setValue("paidAmount", Number.isFinite(v) ? v : 0, {
+                          shouldDirty: true,
+                          shouldValidate: true,
+                        });
+                      }}
+                      className="flex-1"
+                    />
+                    {isPaidAmountManuallyEdited && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setIsPaidAmountManuallyEdited(false)}
+                      >
+                        {t("common.reset")}
+                      </Button>
+                    )}
+                  </div>
+                  {(watchedPaymentMethod === "cash" ||
+                    watchedPaymentMethod === "mixed") && (
+                    <div className="flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setIsPaidAmountManuallyEdited(false)}
+                        className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                      >
+                        {t("billing.exact")}
+                      </button>
+                      {[5, 10, 20, 50, 100].map((denomination) => (
+                        <button
+                          key={denomination}
+                          type="button"
+                          onClick={() => {
+                            setIsPaidAmountManuallyEdited(true);
+                            form.setValue("paidAmount", denomination, {
+                              shouldDirty: true,
+                              shouldValidate: true,
+                            });
+                          }}
+                          className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 tabular-nums hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                        >
+                          {denomination}
+                        </button>
+                      ))}
+                    </div>
                   )}
                 </div>
               </FormField>
