@@ -222,7 +222,10 @@ export interface TranslationDict {
     recordPayment: string;
     recordPaymentDesc: string;
     savePayment: string;
+    savePaymentCredit: string;
     paymentAmount: string;
+    overpaymentWarning: string;
+    creditBalanceNote: string;
     note: string;
     notePlaceholder: string;
     paymentSaved: string;
