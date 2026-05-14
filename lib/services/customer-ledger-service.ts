@@ -2,6 +2,7 @@ import { db } from '@/lib/db/schema';
 import { nowIso } from '@/lib/utils/date';
 import { createId } from '@/lib/utils/id';
 import { buildSyncQueueItem } from '@/lib/services/sync-queue-service';
+import { normalizeCustomerKey as sharedNormalizeCustomerKey } from '@/lib/utils/customer-key';
 import type { Bill, CustomerPayment } from '@/types/domain';
 
 export interface CustomerLedgerRow {
@@ -21,12 +22,8 @@ export interface CustomerLedgerDetails extends CustomerLedgerRow {
   paymentRows: CustomerPayment[];
 }
 
-export function normalizeCustomerKey(input: { name?: string; phone?: string }): string {
-  const phone = input.phone?.replace(/\s+/g, '').trim();
-  if (phone) return `phone:${phone}`;
-  const name = input.name?.trim().toLowerCase().replace(/\s+/g, ' ');
-  return name ? `name:${name}` : '';
-}
+// Re-exported from the shared util so existing call sites keep working.
+export const normalizeCustomerKey = sharedNormalizeCustomerKey;
 
 function netBillTotal(bill: Bill): number {
   return Math.max(0, bill.totalAmount - (bill.returnedAmount ?? 0));

@@ -2,7 +2,7 @@ export type EntityStatus = 'active' | 'inactive';
 export type UserRole = 'admin' | 'cashier';
 
 export type SyncStatus = 'pending' | 'syncing' | 'synced' | 'failed' | 'conflict' | 'blocked';
-export type SyncEntity = 'bill' | 'product' | 'settings' | 'stockMovement' | 'customerPayment';
+export type SyncEntity = 'bill' | 'product' | 'settings' | 'stockMovement' | 'customerPayment' | 'customer';
 export type SyncOperation = 'create' | 'update' | 'delete' | 'upsert';
 
 export interface SyncQueueItem {
@@ -89,6 +89,11 @@ export interface Bill {
   billNumber: string;
   createdAt: string;
   cashierName?: string;
+  // Reference into the customers table (populated for credit sales and
+  // anywhere the cashier selected/created a customer). The name/phone fields
+  // below stay as immutable snapshots so receipts, audit, and reports work
+  // even if the customer record is later renamed.
+  customerId?: string;
   customerName?: string;
   customerPhone?: string;
   paymentMethod: PaymentMethod;
@@ -137,6 +142,21 @@ export interface BillItem {
   lineProfit: number;
   quantityReturned?: number;
   createdAt: string;
+}
+
+export interface Customer {
+  id: string;
+  name: string;
+  phone?: string;
+  // Digits-only canonical phone for the Dexie index — lets dedup tolerate
+  // spaces, dashes, and country-code variations.
+  normalizedPhone?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+  syncStatus?: SyncStatus;
+  syncedAt?: string;
+  lastSyncError?: string;
 }
 
 export interface CustomerPayment {
