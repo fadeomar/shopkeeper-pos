@@ -77,7 +77,15 @@ export function summarizeReportBills(bills: Bill[]) {
       summary.sales += netSales;
       summary.profit += netProfit;
       summary.averageBill = summary.billCount ? summary.sales / summary.billCount : 0;
-      summary.cashExpected += bill.paymentMethod === 'cash' || bill.paymentMethod === 'mixed' ? Math.max(0, bill.paidAmount - (bill.returnedAmount ?? 0)) : 0;
+      // Cash actually retained in the drawer equals net sales for a pure cash
+      // bill — overpayment is handed back as change, so paidAmount overstates
+      // by exactly that change. Mixed bills cannot be split into cash vs card
+      // with the current schema (single paidAmount, no cashAmount/cardAmount),
+      // so they are excluded here until the payment-split model lands.
+      // TODO(payment-split): include the cashAmount portion of mixed bills.
+      if (bill.paymentMethod === 'cash') {
+        summary.cashExpected += netSales;
+      }
       summary.byPayment[bill.paymentMethod] += netSales;
       if (bill.status === 'voided') summary.voidedBills += 1;
       if (bill.status === 'returned' || bill.status === 'partially_returned') summary.returnedBills += 1;
