@@ -27,6 +27,7 @@ import { useLocale } from "@/components/providers/locale-context";
 import { Card } from "@/components/ui/card";
 import { QuickProductModal } from "./quick-product-modal";
 import { ReceiptView } from "./receipt-view";
+import { normalizeBarcode } from "@/lib/utils/barcode";
 import type { Bill, BillDraftItem, BillItem, Product, Settings } from "@/types/domain";
 
 const SUCCESS_AUTO_DISMISS_MS = 8000;
@@ -429,9 +430,9 @@ export function PosScreen() {
   }
 
   function addByBarcode() {
-    const bc = barcodeQuery.trim();
+    const bc = normalizeBarcode(barcodeQuery);
     if (!bc) return;
-    const product = products?.find((p) => p.barcode === bc);
+    const product = products?.find((p) => normalizeBarcode(p.barcode) === bc);
     if (!product) {
       promptQuickAddProduct(bc);
       return;
@@ -441,9 +442,10 @@ export function PosScreen() {
   }
 
   function handleScanForBill(barcode: string) {
-    const product = products?.find((p) => p.barcode === barcode);
+    const bc = normalizeBarcode(barcode);
+    const product = products?.find((p) => normalizeBarcode(p.barcode) === bc);
     if (!product) {
-      promptQuickAddProduct(barcode);
+      promptQuickAddProduct(bc);
       return;
     }
     appendProduct(product);
