@@ -312,6 +312,8 @@ export const en: TranslationDict = {
     paidBelowTotal: "Actual paid amount is lower than the final total.",
     creditCustomerRequired: "Customer name or phone is required for credit bills.",
     amountDue: "Amount due",
+    mixedSplit: "Cash + card split",
+    mixedSumMismatch: "Cash + card must equal the bill total.",
     invalidTotal: "Discount cannot be greater than subtotal plus tax.",
     clearDraft: "Clear draft",
     reviewFinalize: "Review & finalize",

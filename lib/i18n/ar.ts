@@ -309,6 +309,8 @@ export const ar: TranslationDict = {
     paidBelowTotal: "المبلغ المدفوع أقل من الإجمالي.",
     creditCustomerRequired: "اسم العميل أو الهاتف مطلوب لفواتير الآجل.",
     amountDue: "المبلغ المستحق",
+    mixedSplit: "تقسيم النقد والبطاقة",
+    mixedSumMismatch: "مجموع النقد والبطاقة يجب أن يساوي إجمالي الفاتورة.",
     invalidTotal: "لا يمكن أن يكون الخصم أكبر من المجموع الفرعي مع الضريبة.",
     clearDraft: "مسح المسودة",
     reviewFinalize: "مراجعة وإنهاء",

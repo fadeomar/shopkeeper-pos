@@ -300,6 +300,8 @@ export interface TranslationDict {
     paidBelowTotal: string;
     creditCustomerRequired: string;
     amountDue: string;
+    mixedSplit: string;
+    mixedSumMismatch: string;
     invalidTotal: string;
     clearDraft: string;
     reviewFinalize: string;
