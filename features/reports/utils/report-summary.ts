@@ -1,6 +1,7 @@
 import type { Bill, BillItem, PaymentMethod, Product } from '@/types/domain';
 import { getBillNetProfit, getBillNetTotal } from '@/features/bills/utils/bill-summary';
 import { roundMoney } from '@/lib/utils/money';
+import { netSplitField, normalizeBillSplit } from '@/lib/utils/bill-split';
 
 export type ReportRange = 'today' | 'week' | 'month' | 'all' | 'custom';
 
@@ -70,25 +71,21 @@ export function filterBillsForReport(bills: Bill[], filters: ReportFilters): Bil
 export function summarizeReportBills(bills: Bill[]) {
   return bills.reduce(
     (summary, bill) => {
-      const netSales = getBillNetTotal(bill);
-      const netProfit = getBillNetProfit(bill);
+      const billWithSplit = normalizeBillSplit(bill) as Bill;
+      const netSales = getBillNetTotal(billWithSplit);
+      const netProfit = getBillNetProfit(billWithSplit);
       summary.billCount += 1;
-      summary.itemCount += bill.status === 'voided' ? 0 : bill.itemCount;
+      summary.itemCount += billWithSplit.status === 'voided' ? 0 : billWithSplit.itemCount;
       summary.sales += netSales;
       summary.profit += netProfit;
       summary.averageBill = summary.billCount ? summary.sales / summary.billCount : 0;
-      // Cash actually retained in the drawer equals net sales for a pure cash
-      // bill — overpayment is handed back as change, so paidAmount overstates
-      // by exactly that change. Mixed bills cannot be split into cash vs card
-      // with the current schema (single paidAmount, no cashAmount/cardAmount),
-      // so they are excluded here until the payment-split model lands.
-      // TODO(payment-split): include the cashAmount portion of mixed bills.
-      if (bill.paymentMethod === 'cash') {
-        summary.cashExpected += netSales;
-      }
-      summary.byPayment[bill.paymentMethod] += netSales;
-      if (bill.status === 'voided') summary.voidedBills += 1;
-      if (bill.status === 'returned' || bill.status === 'partially_returned') summary.returnedBills += 1;
+      // Cash retained = the cashAmount portion of the bill, less the
+      // proportional share of any returns/voids. Works for pure cash and the
+      // cash leg of mixed bills uniformly, since both populate cashAmount.
+      summary.cashExpected += netSplitField(billWithSplit, billWithSplit.cashAmount);
+      summary.byPayment[billWithSplit.paymentMethod] += netSales;
+      if (billWithSplit.status === 'voided') summary.voidedBills += 1;
+      if (billWithSplit.status === 'returned' || billWithSplit.status === 'partially_returned') summary.returnedBills += 1;
       return summary;
     },
     {
