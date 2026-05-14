@@ -170,9 +170,45 @@ async function pullAppendOnlyCollections(uid: string): Promise<void> {
     pullCollection<CustomerPayment>(uid, 'customerPayments'),
   ]);
 
+  // Bills look append-only at create time, but voidBill() and returnBillItem()
+  // mutate status, returnedAmount, quantityReturned etc. on the original
+  // record. A device that already has the bill ID locally was being skipped
+  // here, so voids/returns from another device never propagated. Pull updates
+  // when cloud is newer and we have no active local job for that bill (an
+  // active job means this device made its own offline change and the next
+  // push will reconcile it).
   await db.transaction('rw', [db.bills, db.billItems, db.stockMovements, db.customerPayments], async () => {
-    for (const bill of bills) if (!(await db.bills.get(bill.id))) await db.bills.put({ ...bill, syncStatus: 'synced', lastSyncError: undefined });
-    for (const item of billItems) if (!(await db.billItems.get(item.id))) await db.billItems.put(item);
+    for (const bill of bills) {
+      const local = await db.bills.get(bill.id);
+      if (!local) {
+        await db.bills.put({ ...bill, syncStatus: 'synced', lastSyncError: undefined });
+        continue;
+      }
+      const billJob = await getPendingLocalJob('bill', bill.id);
+      if (billJob) continue;
+      if (!isCloudNewer(local.syncedAt, bill.syncedAt)) continue;
+      await db.bills.put({ ...bill, syncStatus: 'synced', lastSyncError: undefined });
+    }
+
+    for (const item of billItems) {
+      const local = await db.billItems.get(item.id);
+      if (!local) {
+        await db.billItems.put(item);
+        continue;
+      }
+      // Bill items are otherwise immutable snapshots; quantityReturned is the
+      // only field that changes after creation. If the parent bill has an
+      // active local job, leave items alone until that push reconciles.
+      const parentJob = await getPendingLocalJob('bill', item.billId);
+      if (parentJob) continue;
+      const localReturned = local.quantityReturned ?? 0;
+      const cloudReturned = item.quantityReturned ?? 0;
+      if (cloudReturned === localReturned) continue;
+      await db.billItems.update(item.id, { quantityReturned: cloudReturned });
+    }
+
+    // Stock movements are truly append-only — they record discrete events and
+    // never mutate. Customer payments likewise have no update path today.
     for (const movement of movements) if (!(await db.stockMovements.get(movement.id))) await db.stockMovements.put({ ...movement, syncStatus: 'synced', lastSyncError: undefined });
     for (const payment of payments) if (!(await db.customerPayments.get(payment.id))) await db.customerPayments.put({ ...payment, syncStatus: 'synced', lastSyncError: undefined });
   });
