@@ -107,10 +107,12 @@ export function summarizeBills(bills: Bill[]) {
       const netProfit = getBillNetProfit(bill);
       summary.totalSales += netTotal;
       summary.totalProfit += netProfit;
-      summary.totalPaid +=
-        bill.status === "voided"
-          ? 0
-          : Math.max(0, bill.paidAmount - (bill.returnedAmount ?? 0));
+      // "Paid back" here means revenue retained, not the cash handed over.
+      // For cash sales paidAmount overstates by any change given; for card
+      // sales paidAmount equals total by construction; for credit sales
+      // paidAmount is the up-front portion and the rest is debt. Net total
+      // (after returns) is the right figure for all non-voided bills.
+      summary.totalPaid += bill.status === 'voided' ? 0 : netTotal;
       summary.byPayment[bill.paymentMethod] += netTotal;
       return summary;
     },
