@@ -9,7 +9,7 @@ import {
 import { nowIso } from "@/lib/utils/date";
 import { addMoney, allocateMoney, roundMoney, subtractMoney } from "@/lib/utils/money";
 import { createBillNumber, createId } from "@/lib/utils/id";
-import { buildSyncQueueItem } from "@/lib/services/sync-queue-service";
+import { buildSyncQueueItem, getSyncQueueId } from "@/lib/services/sync-queue-service";
 import type {
   Bill,
   BillDraftItem,
@@ -226,17 +226,38 @@ export async function createFinalizedBill(input: {
         lastSyncError: undefined,
       });
 
+      // Bill creation only changes settings.nextBillSequence. Tagging the
+      // job as 'bill-sequence' routes it through syncBillSequenceToCloud
+      // instead of a full settings overwrite, so another device editing
+      // storeName/currency offline does not conflict with offline sales.
+      // But if a broader manual settings edit is already queued, keep that
+      // job's payload so the user's other changes still get pushed.
+      const settingsJobId = getSyncQueueId("settings", settings.id);
+      const existingSettingsJob = await db.syncQueue.get(settingsJobId);
+      const existingSettingsSource =
+        (existingSettingsJob?.payload as { source?: string } | undefined)?.source;
+      const isExistingSettingsActive =
+        existingSettingsJob &&
+        existingSettingsJob.status !== "synced" &&
+        existingSettingsSource !== "bill-sequence";
+
       await db.syncQueue.bulkPut([
         buildSyncQueueItem({
           entity: "bill",
           entityId: bill.id,
           operation: "create",
         }),
-        buildSyncQueueItem({
-          entity: "settings",
-          entityId: settings.id,
-          operation: "upsert",
-        }),
+        buildSyncQueueItem(
+          {
+            entity: "settings",
+            entityId: settings.id,
+            operation: "upsert",
+            payload: isExistingSettingsActive
+              ? existingSettingsJob?.payload
+              : { source: "bill-sequence" },
+          },
+          existingSettingsJob,
+        ),
         ...stockMovements.map((movement) =>
           buildSyncQueueItem({
             entity: "stockMovement",
