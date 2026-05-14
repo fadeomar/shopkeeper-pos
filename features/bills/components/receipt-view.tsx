@@ -9,6 +9,7 @@ import { formatCurrency } from "@/lib/utils/money";
 import { formatDateTime } from "@/lib/utils/date";
 import { getBillNetTotal } from "@/features/bills/utils/bill-summary";
 import { buildReceiptText } from "@/features/bills/utils/receipt-format";
+import { normalizeBillSplit } from "@/lib/utils/bill-split";
 import type { Bill, BillItem, Settings } from "@/types/domain";
 
 export function ReceiptView({
@@ -27,6 +28,13 @@ export function ReceiptView({
   const paymentLabel = t(
     `common.${bill.paymentMethod}` as Parameters<typeof t>[0],
   );
+
+  const billWithSplit = useMemo(() => normalizeBillSplit(bill) as Bill, [bill]);
+  const splitMethodCount =
+    (billWithSplit.cashAmount > 0 ? 1 : 0) +
+    (billWithSplit.cardAmount > 0 ? 1 : 0) +
+    (billWithSplit.creditAmount > 0 ? 1 : 0);
+  const showSplitSection = splitMethodCount > 1;
 
   const receiptText = useMemo(
     () =>
@@ -51,6 +59,9 @@ export function ReceiptView({
           billStatus: t(`common.${bill.status}` as Parameters<typeof t>[0]),
           paid: t("bills.paid"),
           change: t("bills.change"),
+          cashLabel: t("common.cash"),
+          cardLabel: t("common.card"),
+          creditLabel: t("common.credit"),
           qty: t("billing.qty"),
           thankYou: t("bills.thankYou"),
           walkin: t("common.walkin"),
@@ -194,6 +205,28 @@ export function ReceiptView({
             <div className="flex justify-between font-bold">
               <span>{t("bills.netTotal")}</span>
               <span>{formatCurrency(getBillNetTotal(bill), currency)}</span>
+            </div>
+          )}
+          {showSplitSection && (
+            <div className="mt-2 rounded-lg border border-dashed border-slate-300 px-2 py-1.5 text-xs text-slate-600 space-y-0.5">
+              {billWithSplit.cashAmount > 0 && (
+                <div className="flex justify-between">
+                  <span>{t("common.cash")}</span>
+                  <span className="tabular-nums">{formatCurrency(billWithSplit.cashAmount, currency)}</span>
+                </div>
+              )}
+              {billWithSplit.cardAmount > 0 && (
+                <div className="flex justify-between">
+                  <span>{t("common.card")}</span>
+                  <span className="tabular-nums">{formatCurrency(billWithSplit.cardAmount, currency)}</span>
+                </div>
+              )}
+              {billWithSplit.creditAmount > 0 && (
+                <div className="flex justify-between font-semibold text-red-600">
+                  <span>{t("common.credit")}</span>
+                  <span className="tabular-nums">{formatCurrency(billWithSplit.creditAmount, currency)}</span>
+                </div>
+              )}
             </div>
           )}
           <div className="flex justify-between text-slate-600">
