@@ -179,6 +179,11 @@ export function PosScreen() {
   const [lastFinalized, setLastFinalized] = useState<
     { bill: Bill; items: BillItem[] } | null
   >(null);
+  const [lastAdded, setLastAdded] = useState<{
+    name: string;
+    qty: number;
+    subtotal: number;
+  } | null>(null);
 
   const barcodeInputRef = useRef<HTMLInputElement | null>(null);
   const lastAppliedCashierNameRef = useRef("Owner");
@@ -327,6 +332,15 @@ export function PosScreen() {
     return () => window.clearTimeout(id);
   }, [lastFinalized]);
 
+  // Last-scanned banner fades out after a couple of seconds — long enough for
+  // the cashier to glance and confirm, short enough not to obscure the next
+  // scan's feedback.
+  useEffect(() => {
+    if (!lastAdded) return;
+    const id = window.setTimeout(() => setLastAdded(null), 2500);
+    return () => window.clearTimeout(id);
+  }, [lastAdded]);
+
   // ── FIXED double-toast: push() is called OUTSIDE setDraftItems updater ──
   function appendProduct(product: Product) {
     if (product.quantityInStock <= 0) {
@@ -348,6 +362,11 @@ export function PosScreen() {
         ),
       );
       push(t("billing.itemUpdated", { name: product.name, qty: nextQty }));
+      setLastAdded({
+        name: product.name,
+        qty: nextQty,
+        subtotal: calculateLineSubtotal(nextQty, product.sellPrice),
+      });
     } else {
       const newItem: BillDraftItem = {
         productId: product.id,
@@ -361,6 +380,11 @@ export function PosScreen() {
       };
       setDraftItems((cur) => [...cur, newItem]);
       push(t("billing.itemAdded", { name: product.name }));
+      setLastAdded({
+        name: product.name,
+        qty: 1,
+        subtotal: calculateLineSubtotal(1, product.sellPrice),
+      });
     }
 
     setTimeout(() => barcodeInputRef.current?.focus(), 0);
@@ -495,6 +519,22 @@ export function PosScreen() {
               </span>
             )}
           </div>
+
+          {lastAdded && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
+            >
+              <span aria-hidden className="text-emerald-600">
+                ✓
+              </span>
+              <span className="font-medium truncate">{lastAdded.name}</span>
+              <span className="ml-auto shrink-0 text-xs font-semibold tabular-nums text-emerald-700">
+                ×{lastAdded.qty} · {formatCurrency(lastAdded.subtotal, currency)}
+              </span>
+            </div>
+          )}
 
           {/* Barcode input row */}
           <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto] gap-2">
