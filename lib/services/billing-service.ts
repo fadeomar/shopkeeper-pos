@@ -8,6 +8,7 @@ import {
 } from "@/lib/utils/calculations";
 import { nowIso } from "@/lib/utils/date";
 import { addMoney, allocateMoney, roundMoney, subtractMoney } from "@/lib/utils/money";
+import type { BillSplit } from "@/lib/utils/bill-split";
 import { createBillNumber, createId } from "@/lib/utils/id";
 import { buildSyncQueueItem, getSyncQueueId } from "@/lib/services/sync-queue-service";
 import type {
@@ -51,6 +52,71 @@ function getRequestedQuantities(items: BillDraftItem[]): Map<string, number> {
   return requested;
 }
 
+/**
+ * Derive the cash/card/credit allocation plus the legacy paid/change figures
+ * from a finalized form + total. Invariant for the returned values:
+ *   cashAmount + cardAmount + creditAmount === totalAmount
+ *
+ * Mixed bills require the cashier to provide an explicit split that sums to
+ * the total. Cash overpayment with change is supported only for the pure
+ * 'cash' method — that's how typical POS interactions work; mixed-with-change
+ * is too rare to be worth a separate code path.
+ */
+function derivePaymentSplit(
+  paymentMethod: BillFormValues["paymentMethod"],
+  form: BillFormValues,
+  totalAmount: number,
+): BillSplit & { paidAmount: number; changeAmount: number } {
+  const total = roundMoney(totalAmount);
+  switch (paymentMethod) {
+    case "cash": {
+      const tendered = Math.max(0, Number(form.paidAmount) || 0);
+      const cashAmount = Math.min(tendered, total);
+      return {
+        cashAmount,
+        cardAmount: 0,
+        creditAmount: 0,
+        paidAmount: tendered,
+        changeAmount: Math.max(0, tendered - total),
+      };
+    }
+    case "card":
+      return {
+        cashAmount: 0,
+        cardAmount: total,
+        creditAmount: 0,
+        paidAmount: total,
+        changeAmount: 0,
+      };
+    case "credit": {
+      const deposit = Math.max(0, Math.min(Number(form.paidAmount) || 0, total));
+      return {
+        cashAmount: deposit,
+        cardAmount: 0,
+        creditAmount: roundMoney(total - deposit),
+        paidAmount: deposit,
+        changeAmount: 0,
+      };
+    }
+    case "mixed": {
+      const cashAmount = roundMoney(Math.max(0, Number(form.cashAmount) || 0));
+      const cardAmount = roundMoney(Math.max(0, Number(form.cardAmount) || 0));
+      if (Math.abs(cashAmount + cardAmount - total) > 0.005) {
+        throw new Error(
+          "Mixed payment cash + card must equal bill total.",
+        );
+      }
+      return {
+        cashAmount,
+        cardAmount,
+        creditAmount: 0,
+        paidAmount: roundMoney(cashAmount + cardAmount),
+        changeAmount: 0,
+      };
+    }
+  }
+}
+
 export async function createFinalizedBill(input: {
   items: BillDraftItem[];
   form: BillFormValues;
@@ -77,8 +143,15 @@ export async function createFinalizedBill(input: {
   if (isCreditSalePreview && !input.form.customerName?.trim() && !input.form.customerPhone?.trim()) {
     throw new Error('Customer name or phone is required for credit bills.');
   }
-  if (!isCreditSalePreview && calculateChange(input.form.paidAmount, totalAmountPreview) < 0) {
+  if (input.form.paymentMethod === 'cash' && calculateChange(input.form.paidAmount, totalAmountPreview) < 0) {
     throw new Error("Paid amount is lower than bill total.");
+  }
+  if (input.form.paymentMethod === 'mixed') {
+    const cashPreview = Math.max(0, Number(input.form.cashAmount) || 0);
+    const cardPreview = Math.max(0, Number(input.form.cardAmount) || 0);
+    if (Math.abs(cashPreview + cardPreview - totalAmountPreview) > 0.005) {
+      throw new Error("Mixed payment cash + card must equal bill total.");
+    }
   }
 
   const result = await db.transaction(
@@ -157,11 +230,8 @@ export async function createFinalizedBill(input: {
       if (isCreditSale && !input.form.customerName?.trim() && !input.form.customerPhone?.trim()) {
         throw new Error('Customer name or phone is required for credit bills.');
       }
-      const changeAmount = calculateChange(input.form.paidAmount, totalAmount);
-      if (!isCreditSale && changeAmount < 0) {
-        throw new Error("Paid amount is lower than bill total.");
-      }
-      const safeChangeAmount = isCreditSale ? Math.max(0, changeAmount) : changeAmount;
+
+      const split = derivePaymentSplit(input.form.paymentMethod, input.form, totalAmount);
 
       const bill: Bill = {
         id: billId,
@@ -175,8 +245,11 @@ export async function createFinalizedBill(input: {
         discountAmount: input.form.discountAmount,
         taxAmount: input.form.taxAmount,
         totalAmount,
-        paidAmount: input.form.paidAmount,
-        changeAmount: safeChangeAmount,
+        paidAmount: split.paidAmount,
+        changeAmount: split.changeAmount,
+        cashAmount: split.cashAmount,
+        cardAmount: split.cardAmount,
+        creditAmount: split.creditAmount,
         totalProfit: totals.totalProfit,
         itemCount: input.items.reduce((sum, item) => sum + item.quantity, 0),
         status: "finalized",

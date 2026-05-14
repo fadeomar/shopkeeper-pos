@@ -98,6 +98,16 @@ export interface Bill {
   totalAmount: number;
   paidAmount: number;
   changeAmount: number;
+  // Payment-split amounts. Invariant for finalized bills:
+  //   cashAmount + cardAmount + creditAmount === totalAmount
+  // Returns/voids leave these gross numbers intact and reduce them via
+  // returnedAmount + proportional allocation at read time. Local bills are
+  // guaranteed to have these via the Dexie v6 upgrade. Cloud bills written
+  // by older devices may not — readers should treat them as optional with
+  // `?? 0` fallback or run them through normalizeBillSplit().
+  cashAmount: number;
+  cardAmount: number;
+  creditAmount: number;
   totalProfit: number;
   itemCount: number;
   status: BillStatus;
@@ -208,5 +218,10 @@ export interface BillFormValues {
   discountAmount: number;
   taxAmount: number;
   paidAmount: number;
+  // For 'mixed' payment method: explicit cash + card breakdown that must sum
+  // to totalAmount. Ignored for cash/card/credit (the service derives those
+  // fields from paymentMethod + paidAmount).
+  cashAmount?: number;
+  cardAmount?: number;
   notes?: string;
 }

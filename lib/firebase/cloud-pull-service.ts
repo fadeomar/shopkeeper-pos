@@ -3,6 +3,7 @@ import { firestore } from '@/lib/firebase/config';
 import { db } from '@/lib/db/schema';
 import { saveConflict } from '@/lib/services/sync-conflict-service';
 import { buildSyncQueueItem, getSyncQueueId } from '@/lib/services/sync-queue-service';
+import { normalizeBillSplit } from '@/lib/utils/bill-split';
 import type { Bill, BillItem, CustomerPayment, Product, Settings, StockMovement, SyncEntity, SyncQueueItem } from '@/types/domain';
 
 const PRODUCT_FIELDS: Array<keyof Product> = [
@@ -179,15 +180,19 @@ async function pullAppendOnlyCollections(uid: string): Promise<void> {
   // push will reconcile it).
   await db.transaction('rw', [db.bills, db.billItems, db.stockMovements, db.customerPayments], async () => {
     for (const bill of bills) {
-      const local = await db.bills.get(bill.id);
+      // Bills authored by a pre-v6 device lack cashAmount/cardAmount/creditAmount.
+      // Fill them in once on the way into local storage so every reader downstream
+      // can rely on the split being present.
+      const normalized = normalizeBillSplit(bill) as Bill;
+      const local = await db.bills.get(normalized.id);
       if (!local) {
-        await db.bills.put({ ...bill, syncStatus: 'synced', lastSyncError: undefined });
+        await db.bills.put({ ...normalized, syncStatus: 'synced', lastSyncError: undefined });
         continue;
       }
-      const billJob = await getPendingLocalJob('bill', bill.id);
+      const billJob = await getPendingLocalJob('bill', normalized.id);
       if (billJob) continue;
-      if (!isCloudNewer(local.syncedAt, bill.syncedAt)) continue;
-      await db.bills.put({ ...bill, syncStatus: 'synced', lastSyncError: undefined });
+      if (!isCloudNewer(local.syncedAt, normalized.syncedAt)) continue;
+      await db.bills.put({ ...normalized, syncStatus: 'synced', lastSyncError: undefined });
     }
 
     for (const item of billItems) {
