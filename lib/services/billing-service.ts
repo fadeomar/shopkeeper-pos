@@ -1,5 +1,5 @@
 import { db } from "@/lib/db/schema";
-import { SETTINGS_ID } from "@/lib/db/repositories";
+import { SETTINGS_ID, customerRepo } from "@/lib/db/repositories";
 import {
   calculateBillTotals,
   calculateChange,
@@ -162,6 +162,7 @@ export async function createFinalizedBill(input: {
       db.products,
       db.stockMovements,
       db.settings,
+      db.customers,
       db.syncQueue,
     ],
     async () => {
@@ -233,11 +234,26 @@ export async function createFinalizedBill(input: {
 
       const split = derivePaymentSplit(input.form.paymentMethod, input.form, totalAmount);
 
+      // Resolve the customer once per bill. If the cashier supplied a phone
+      // that matches an existing Customer, reuse that row; otherwise create
+      // a new one and queue its sync. Bills with no customer at all (walk-
+      // ins) get undefined customerId — the snapshot fields below still
+      // capture name/phone for audit/receipt purposes.
+      let resolvedCustomerId: string | undefined;
+      const customerResolution = await customerRepo.findOrCreate({
+        name: input.form.customerName,
+        phone: input.form.customerPhone,
+      });
+      if (customerResolution) {
+        resolvedCustomerId = customerResolution.customer.id;
+      }
+
       const bill: Bill = {
         id: billId,
         billNumber,
         createdAt,
         cashierName: input.form.cashierName,
+        customerId: resolvedCustomerId,
         customerName: input.form.customerName,
         customerPhone: input.form.customerPhone,
         paymentMethod: input.form.paymentMethod,
@@ -314,7 +330,7 @@ export async function createFinalizedBill(input: {
         existingSettingsJob.status !== "synced" &&
         existingSettingsSource !== "bill-sequence";
 
-      await db.syncQueue.bulkPut([
+      const syncJobs = [
         buildSyncQueueItem({
           entity: "bill",
           entityId: bill.id,
@@ -338,7 +354,20 @@ export async function createFinalizedBill(input: {
             operation: "create",
           }),
         ),
-      ]);
+      ];
+      // Push the new customer ahead of the bill (sync-provider priority puts
+      // customer before bill anyway) so a fresh device pulling the bill never
+      // sees a dangling customerId.
+      if (customerResolution?.created) {
+        syncJobs.push(
+          buildSyncQueueItem({
+            entity: "customer",
+            entityId: customerResolution.customer.id,
+            operation: "create",
+          }),
+        );
+      }
+      await db.syncQueue.bulkPut(syncJobs);
 
       return { bill, billItems };
     },

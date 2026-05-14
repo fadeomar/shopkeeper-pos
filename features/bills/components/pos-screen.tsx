@@ -6,7 +6,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db/schema";
-import { settingsRepo } from "@/lib/db/repositories";
+import { customerRepo, settingsRepo } from "@/lib/db/repositories";
+import { normalizePhone } from "@/lib/utils/customer-key";
 import { billFormSchema, type BillFormSchema } from "@/features/bills/schema";
 import {
   calculateBillTotals,
@@ -27,7 +28,7 @@ import { Card } from "@/components/ui/card";
 import { QuickProductModal } from "./quick-product-modal";
 import { ReceiptView } from "./receipt-view";
 import { normalizeBarcode } from "@/lib/utils/barcode";
-import type { Bill, BillDraftItem, BillItem, Product, Settings } from "@/types/domain";
+import type { Bill, BillDraftItem, BillItem, Customer, Product, Settings } from "@/types/domain";
 
 const SUCCESS_AUTO_DISMISS_MS = 8000;
 
@@ -162,6 +163,7 @@ export function PosScreen() {
     () => db.products.where("status").equals("active").sortBy("name"),
     [],
   );
+  const customers = useLiveQuery(() => customerRepo.list(), []);
   const settings = useLiveQuery(() => settingsRepo.get(), []);
   const { push } = useToast();
   const currency = settings?.currency ?? "USD";
@@ -183,6 +185,7 @@ export function PosScreen() {
     qty: number;
     subtotal: number;
   } | null>(null);
+  const [customerFieldFocused, setCustomerFieldFocused] = useState(false);
 
   const barcodeInputRef = useRef<HTMLInputElement | null>(null);
   const lastAppliedCashierNameRef = useRef("Owner");
@@ -330,6 +333,39 @@ export function PosScreen() {
   const hasCreditCustomer = Boolean(
     watchedCustomerName?.trim() || watchedCustomerPhone?.trim(),
   );
+
+  // Typeahead: match the typed name/phone against the customers table. Filter
+  // out cases where the cashier has already selected an exact-match customer
+  // (no need to suggest the same row they're already on).
+  const customerSuggestions = useMemo<Customer[]>(() => {
+    if (!customers || customers.length === 0) return [];
+    if (!customerFieldFocused) return [];
+    const nameNeedle = watchedCustomerName?.trim().toLowerCase() ?? '';
+    const phoneNeedle = normalizePhone(watchedCustomerPhone ?? '');
+    if (!nameNeedle && !phoneNeedle) return [];
+    const matches = customers.filter((customer) => {
+      const nameMatches = nameNeedle && customer.name.toLowerCase().includes(nameNeedle);
+      const phoneMatches = phoneNeedle && customer.normalizedPhone?.includes(phoneNeedle);
+      return Boolean(nameMatches || phoneMatches);
+    });
+    // Hide the suggestion if the only match is already an exact one to avoid
+    // showing a "you already picked this" row.
+    if (matches.length === 1) {
+      const m = matches[0];
+      const exactName =
+        m.name.toLowerCase() === nameNeedle && (phoneNeedle === '' || m.normalizedPhone === phoneNeedle);
+      const exactPhone =
+        m.normalizedPhone === phoneNeedle && (nameNeedle === '' || m.name.toLowerCase() === nameNeedle);
+      if (exactName || exactPhone) return [];
+    }
+    return matches.slice(0, 5);
+  }, [customers, customerFieldFocused, watchedCustomerName, watchedCustomerPhone]);
+
+  function selectCustomer(customer: Customer) {
+    form.setValue('customerName', customer.name, { shouldDirty: true });
+    form.setValue('customerPhone', customer.phone ?? '', { shouldDirty: true });
+    setCustomerFieldFocused(false);
+  }
   const hasValidTotal = billSummary.totalAmount >= 0;
   const hasEnoughPayment =
     isCreditSale || isMixedSale || actualChangeAmount >= 0;
@@ -835,12 +871,46 @@ export function PosScreen() {
               <FormField label={t("billing.cashierName")}>
                 <Input {...form.register("cashierName")} />
               </FormField>
-              <FormField label={t("billing.customerName")}>
-                <Input {...form.register("customerName")} />
-              </FormField>
-              <FormField label={t("billing.customerPhone")}>
-                <Input {...form.register("customerPhone")} />
-              </FormField>
+              <div className="relative flex flex-col gap-3">
+                <FormField label={t("billing.customerName")}>
+                  <Input
+                    {...form.register("customerName")}
+                    onFocus={() => setCustomerFieldFocused(true)}
+                    onBlur={() => {
+                      // Delay so a click on a suggestion can still register.
+                      window.setTimeout(() => setCustomerFieldFocused(false), 120);
+                    }}
+                  />
+                </FormField>
+                <FormField label={t("billing.customerPhone")}>
+                  <Input
+                    {...form.register("customerPhone")}
+                    onFocus={() => setCustomerFieldFocused(true)}
+                    onBlur={() => {
+                      window.setTimeout(() => setCustomerFieldFocused(false), 120);
+                    }}
+                  />
+                </FormField>
+                {customerSuggestions.length > 0 && (
+                  <ul className="absolute left-0 right-0 top-full z-20 mt-1 max-h-44 overflow-auto rounded-xl border border-slate-200 bg-white shadow-md divide-y divide-slate-100">
+                    {customerSuggestions.map((customer) => (
+                      <li key={customer.id}>
+                        <button
+                          type="button"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => selectCustomer(customer)}
+                          className="w-full text-start px-3 py-2 hover:bg-slate-50"
+                        >
+                          <p className="text-sm font-medium text-slate-800 truncate">{customer.name}</p>
+                          {customer.phone && (
+                            <p className="text-xs text-slate-500 font-mono truncate">{customer.phone}</p>
+                          )}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
               <FormField label={t("billing.paymentMethod")}>
                 <Select {...form.register("paymentMethod")}>
                   <option value="cash">{t("common.cash")}</option>
