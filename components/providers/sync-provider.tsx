@@ -12,6 +12,7 @@ import {
   syncShiftsToCloud,
   syncStockMovementsToCloud,
   syncCustomerPaymentsToCloud,
+  syncSuppliersToCloud,
 } from '@/lib/firebase/sync-service';
 import {
   getPendingSyncJobs,
@@ -164,6 +165,8 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
         await db.customers.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
       } else if (job.entity === 'shift') {
         await db.shifts.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
+      } else if (job.entity === 'supplier') {
+        await db.suppliers.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
       } else if (job.entity === 'settings') {
         await db.settings.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
       }
@@ -257,6 +260,16 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
       if (syncedAt) {
         await db.shifts.update(job.entityId, { syncStatus: 'synced', syncedAt, lastSyncError: undefined });
       }
+    } else if (job.entity === 'supplier') {
+      const supplier = await db.suppliers.get(job.entityId);
+      if (!supplier) {
+        await markSynced(job.id);
+        return;
+      }
+      const syncedAt = await syncSuppliersToCloud(uid, [supplier]);
+      if (syncedAt) {
+        await db.suppliers.update(job.entityId, { syncStatus: 'synced', syncedAt, lastSyncError: undefined });
+      }
     } else if (job.entity === 'settings') {
       const settings = await db.settings.get(job.entityId);
       if (!settings) {
@@ -301,6 +314,8 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
       await db.customers.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
     } else if (job.entity === 'shift') {
       await db.shifts.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
+    } else if (job.entity === 'supplier') {
+      await db.suppliers.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
     } else if (job.entity === 'settings') {
       await db.settings.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
     }

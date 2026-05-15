@@ -1,5 +1,5 @@
 import { db } from '@/lib/db/schema';
-import type { Bill, BillItem, Customer, CustomerPayment, Product, Settings, Shift, StockMovement, SyncConflict, SyncQueueItem } from '@/types/domain';
+import type { Bill, BillItem, Customer, CustomerPayment, Product, Settings, Shift, StockMovement, Supplier, SyncConflict, SyncQueueItem } from '@/types/domain';
 
 /**
  * Portable local backup format.
@@ -21,6 +21,7 @@ export interface BackupSnapshotV1 {
     customerPayments: number;
     customers: number;
     shifts: number;
+    suppliers: number;
     settings: number;
     syncQueue: number;
     syncConflicts: number;
@@ -33,6 +34,7 @@ export interface BackupSnapshotV1 {
     customerPayments: CustomerPayment[];
     customers: Customer[];
     shifts: Shift[];
+    suppliers: Supplier[];
     settings: Settings[];
     syncQueue: SyncQueueItem[];
     syncConflicts: SyncConflict[];
@@ -40,7 +42,7 @@ export interface BackupSnapshotV1 {
 }
 
 export async function createLocalBackupSnapshot(): Promise<BackupSnapshotV1> {
-  const [products, bills, billItems, stockMovements, customerPayments, customers, shifts, settings, syncQueue, syncConflicts] = await Promise.all([
+  const [products, bills, billItems, stockMovements, customerPayments, customers, shifts, suppliers, settings, syncQueue, syncConflicts] = await Promise.all([
     db.products.toArray(),
     db.bills.toArray(),
     db.billItems.toArray(),
@@ -48,6 +50,7 @@ export async function createLocalBackupSnapshot(): Promise<BackupSnapshotV1> {
     db.customerPayments.toArray(),
     db.customers.toArray(),
     db.shifts.toArray().catch(() => [] as Shift[]),
+    db.suppliers.toArray().catch(() => [] as Supplier[]),
     db.settings.toArray(),
     db.syncQueue.toArray(),
     db.syncConflicts.toArray().catch(() => [] as SyncConflict[]),
@@ -65,6 +68,7 @@ export async function createLocalBackupSnapshot(): Promise<BackupSnapshotV1> {
       customerPayments: customerPayments.length,
       customers: customers.length,
       shifts: shifts.length,
+      suppliers: suppliers.length,
       settings: settings.length,
       syncQueue: syncQueue.length,
       syncConflicts: syncConflicts.length,
@@ -77,6 +81,7 @@ export async function createLocalBackupSnapshot(): Promise<BackupSnapshotV1> {
       customerPayments,
       customers,
       shifts,
+      suppliers,
       settings,
       syncQueue,
       syncConflicts,
@@ -109,6 +114,7 @@ export function createEmptyBackupPlan(): BackupSnapshotV1 {
       customerPayments: 0,
       customers: 0,
       shifts: 0,
+      suppliers: 0,
       settings: 0,
       syncQueue: 0,
       syncConflicts: 0,
@@ -121,6 +127,7 @@ export function createEmptyBackupPlan(): BackupSnapshotV1 {
       customerPayments: [],
       customers: [],
       shifts: [],
+      suppliers: [],
       settings: [],
       syncQueue: [],
       syncConflicts: [],

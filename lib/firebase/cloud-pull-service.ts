@@ -4,7 +4,7 @@ import { db } from '@/lib/db/schema';
 import { saveConflict } from '@/lib/services/sync-conflict-service';
 import { buildSyncQueueItem, getSyncQueueId } from '@/lib/services/sync-queue-service';
 import { normalizeBillSplit } from '@/lib/utils/bill-split';
-import type { Bill, BillItem, Customer, CustomerPayment, Product, Settings, Shift, StockMovement, SyncEntity, SyncQueueItem } from '@/types/domain';
+import type { Bill, BillItem, Customer, CustomerPayment, Product, Settings, Shift, StockMovement, Supplier, SyncEntity, SyncQueueItem } from '@/types/domain';
 
 const PRODUCT_FIELDS: Array<keyof Product> = [
   'barcode', 'name', 'category', 'brand', 'unit', 'quantityInStock', 'buyPrice', 'sellPrice',
@@ -244,6 +244,25 @@ async function pullCustomers(uid: string): Promise<void> {
   });
 }
 
+async function pullSuppliers(uid: string): Promise<void> {
+  const cloudSuppliers = await pullCollection<Supplier>(uid, 'suppliers');
+  if (cloudSuppliers.length === 0) return;
+
+  await db.transaction('rw', [db.suppliers, db.syncQueue], async () => {
+    for (const cloud of cloudSuppliers) {
+      const local = await db.suppliers.get(cloud.id);
+      if (!local) {
+        await db.suppliers.put({ ...cloud, syncStatus: 'synced', lastSyncError: undefined });
+        continue;
+      }
+      const pendingJob = await getPendingLocalJob('supplier', local.id);
+      if (pendingJob) continue;
+      if (!isCloudNewer(local.syncedAt, cloud.syncedAt)) continue;
+      await db.suppliers.put({ ...cloud, syncStatus: 'synced', lastSyncError: undefined });
+    }
+  });
+}
+
 async function pullShifts(uid: string): Promise<void> {
   const cloudShifts = await pullCollection<Shift>(uid, 'shifts');
   if (cloudShifts.length === 0) return;
@@ -268,6 +287,7 @@ async function pullShifts(uid: string): Promise<void> {
 export async function pullCloudChangesBeforePush(uid: string): Promise<void> {
   await pullAppendOnlyCollections(uid);
   await pullCustomers(uid);
+  await pullSuppliers(uid);
   await pullShifts(uid);
   await pullProducts(uid);
   await pullSettings(uid);
