@@ -619,6 +619,10 @@ export interface TranslationDict {
     creditAccrued: string;
     expectedCash: string;
     expectedCashHelper: string;
+    cashPaidOut: string;
+    cashPaidOutHelper: string;
+    purchasesInShift: string;
+    paymentsInShift: string;
     billsInShift: string;
     itemsInShift: string;
     voidedCount: string;
