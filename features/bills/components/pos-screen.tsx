@@ -183,6 +183,18 @@ export function PosScreen() {
   const currency = settings?.currency ?? "USD";
   const draftKey = user?.uid ? `${POS_DRAFT_KEY_PREFIX}:${user.uid}` : null;
 
+  // Mobile UX: tapping a numeric input opens the soft keyboard and leaves it
+  // up until the user taps far away. That keyboard covers the bill summary +
+  // finalize button on small screens. Hitting Enter (or "Done" on Android,
+  // shown via enterKeyHint below) blurs the field, which collapses the
+  // keyboard and exposes the rest of the page again.
+  function dismissKeyboardOnEnter(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      event.currentTarget.blur();
+    }
+  }
+
   const [draftItems, setDraftItems] = useState<BillDraftItem[]>([]);
   const [productId, setProductId] = useState("");
   const [barcodeQuery, setBarcodeQuery] = useState("");
@@ -810,12 +822,15 @@ export function PosScreen() {
                       </span>
                       <Input
                         type="number"
+                        inputMode="numeric"
+                        enterKeyHint="done"
                         min={1}
                         max={item.availableStock}
                         value={item.quantity}
                         onChange={(e) =>
                           updateQuantity(item.productId, Number(e.target.value))
                         }
+                        onKeyDown={dismissKeyboardOnEnter}
                         className="w-28 text-center"
                       />
                     </div>
@@ -859,6 +874,8 @@ export function PosScreen() {
                         <td className="px-3 py-2.5">
                           <Input
                             type="number"
+                            inputMode="numeric"
+                            enterKeyHint="done"
                             min={1}
                             max={item.availableStock}
                             value={item.quantity}
@@ -868,6 +885,7 @@ export function PosScreen() {
                                 Number(e.target.value),
                               )
                             }
+                            onKeyDown={dismissKeyboardOnEnter}
                             className="w-20 text-center"
                           />
                         </td>
@@ -997,7 +1015,10 @@ export function PosScreen() {
                   <FormField label={t("billing.discount")}>
                     <Input
                       type="number"
+                      inputMode="decimal"
+                      enterKeyHint="done"
                       step="0.01"
+                      onKeyDown={dismissKeyboardOnEnter}
                       {...form.register("discountAmount", {
                         valueAsNumber: true,
                       })}
@@ -1006,7 +1027,10 @@ export function PosScreen() {
                   <FormField label={t("billing.tax")}>
                     <Input
                       type="number"
+                      inputMode="decimal"
+                      enterKeyHint="done"
                       step="0.01"
+                      onKeyDown={dismissKeyboardOnEnter}
                       {...form.register("taxAmount", { valueAsNumber: true })}
                     />
                   </FormField>
@@ -1021,8 +1045,11 @@ export function PosScreen() {
                         </span>
                         <Input
                           type="number"
+                          inputMode="decimal"
+                          enterKeyHint="done"
                           step="0.01"
                           value={watchedCashAmount}
+                          onKeyDown={dismissKeyboardOnEnter}
                           onChange={(e) => {
                             const v =
                               e.target.value === ""
@@ -1050,8 +1077,11 @@ export function PosScreen() {
                         </span>
                         <Input
                           type="number"
+                          inputMode="decimal"
+                          enterKeyHint="done"
                           step="0.01"
                           value={watchedCardAmount}
+                          onKeyDown={dismissKeyboardOnEnter}
                           onChange={(e) => {
                             const v =
                               e.target.value === ""
@@ -1081,12 +1111,15 @@ export function PosScreen() {
                       <div className="flex gap-2">
                         <Input
                           type="number"
+                          inputMode="decimal"
+                          enterKeyHint="done"
                           step="0.01"
                           value={
                             Number.isFinite(actualPaidAmount)
                               ? actualPaidAmount
                               : 0
                           }
+                          onKeyDown={dismissKeyboardOnEnter}
                           onChange={(e) => {
                             setIsPaidAmountManuallyEdited(true);
                             const v =
