@@ -35,6 +35,8 @@ function validateDraftLine(
 ) {
   if (product.status !== "active")
     throw new Error(`Product ${product.name} is inactive.`);
+  if (!Number.isInteger(line.quantity))
+    throw new Error(`Quantity for ${product.name} must be a whole number.`);
   if (line.quantity <= 0)
     throw new Error(`Quantity for ${product.name} must be greater than zero.`);
   if (requestedQuantity > product.quantityInStock)
@@ -233,6 +235,17 @@ export async function createFinalizedBill(input: {
       }
 
       const split = derivePaymentSplit(input.form.paymentMethod, input.form, totalAmount);
+      // Defensive invariant: the bill type contract requires
+      //   cashAmount + cardAmount + creditAmount === totalAmount
+      // derivePaymentSplit honors this by construction today, but the check
+      // keeps future schema/refactors honest. 0.5¢ tolerance for rounding.
+      if (
+        Math.abs(
+          split.cashAmount + split.cardAmount + split.creditAmount - totalAmount,
+        ) > 0.005
+      ) {
+        throw new Error("Payment split does not sum to bill total.");
+      }
 
       // Resolve the customer once per bill. If the cashier supplied a phone
       // that matches an existing Customer, reuse that row; otherwise create
@@ -515,8 +528,8 @@ export async function returnBillItem(input: {
   const reason = input.reason.trim();
   const quantity = Number(input.quantity);
   if (!reason) throw new Error("Return reason is required.");
-  if (!Number.isFinite(quantity) || quantity <= 0)
-    throw new Error("Return quantity must be greater than zero.");
+  if (!Number.isInteger(quantity) || quantity <= 0)
+    throw new Error("Return quantity must be a positive whole number.");
 
   await db.transaction(
     "rw",
