@@ -7,3 +7,4 @@ coverage
 .env.local
 tsconfig.tsbuildinfo
 app.zip
+t.txt
