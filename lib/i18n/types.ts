@@ -438,6 +438,7 @@ export interface TranslationDict {
     lowStockHighlight: string;
     save: string;
     saved: string;
+    invalidCurrency: string;
     language: string;
     languageDesc: string;
     english: string;

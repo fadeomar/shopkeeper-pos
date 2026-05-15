@@ -458,6 +458,7 @@ export const en: TranslationDict = {
     lowStockHighlight: "Highlight low-stock products",
     save: "Save settings",
     saved: "Settings saved.",
+    invalidCurrency: "Currency must be a 3-letter ISO code (e.g. USD, EUR, ILS).",
     language: "Language",
     languageDesc: "Choose your preferred display language",
     english: "English",

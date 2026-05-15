@@ -1,7 +1,11 @@
 import { z } from 'zod';
+import { normalizeBarcode } from '@/lib/utils/barcode';
 
 export const productSchema = z.object({
-  barcode: z.string().trim().min(3, 'Barcode is required'),
+  // Normalize barcode at the schema seam so the product form, quick-add modal,
+  // and CSV import all save canonical values. "12345", " 12345 ", and "12 345"
+  // all become "12345" before the min-length check runs.
+  barcode: z.string().transform((v) => normalizeBarcode(v)).pipe(z.string().min(3, 'Barcode is required')),
   name: z.string().trim().min(2, 'Product name is required'),
   category: z.string().trim().min(2, 'Category is required'),
   brand: z.string().trim().optional(),

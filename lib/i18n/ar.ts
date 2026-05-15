@@ -454,6 +454,7 @@ export const ar: TranslationDict = {
     lowStockHighlight: "تمييز المنتجات منخفضة المخزون",
     save: "حفظ الإعدادات",
     saved: "تم حفظ الإعدادات.",
+    invalidCurrency: "يجب أن تكون العملة رمز ISO من ثلاثة أحرف (مثل USD أو EUR أو ILS).",
     language: "اللغة",
     languageDesc: "اختر لغة العرض المفضلة",
     english: "English",

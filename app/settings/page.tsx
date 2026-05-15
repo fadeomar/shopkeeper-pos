@@ -53,8 +53,17 @@ export default function SettingsPage() {
   }, [settings, form]);
 
   async function onSubmit(values: SettingsFormValues) {
+    // Normalize and validate the currency code so it can be safely passed to
+    // Intl.NumberFormat across the app. Free-text values like "us" or "$"
+    // would throw inside formatCurrency on any view that renders money.
+    const normalizedCurrency = (values.currency ?? '').trim().toUpperCase();
+    if (!/^[A-Z]{3}$/.test(normalizedCurrency)) {
+      push(t('settings.invalidCurrency'), 'error');
+      return;
+    }
     const saved = await settingsRepo.update({
       ...values,
+      currency: normalizedCurrency,
       syncStatus: 'pending',
       lastSyncError: undefined,
     });
