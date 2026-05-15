@@ -2,7 +2,7 @@ export type EntityStatus = 'active' | 'inactive';
 export type UserRole = 'admin' | 'cashier';
 
 export type SyncStatus = 'pending' | 'syncing' | 'synced' | 'failed' | 'conflict' | 'blocked';
-export type SyncEntity = 'bill' | 'product' | 'settings' | 'stockMovement' | 'customerPayment' | 'customer' | 'shift';
+export type SyncEntity = 'bill' | 'product' | 'settings' | 'stockMovement' | 'customerPayment' | 'customer' | 'shift' | 'supplier' | 'purchase' | 'supplierPayment';
 export type SyncOperation = 'create' | 'update' | 'delete' | 'upsert';
 
 export interface SyncQueueItem {
@@ -186,6 +186,103 @@ export interface Customer {
   notes?: string;
   createdAt: string;
   updatedAt: string;
+  syncStatus?: SyncStatus;
+  syncedAt?: string;
+  lastSyncError?: string;
+}
+
+/**
+ * A supplier we buy stock from. Structurally identical to Customer — the
+ * difference is direction-of-flow: a customer owes us money, we owe a
+ * supplier money.
+ */
+export interface Supplier {
+  id: string;
+  name: string;
+  phone?: string;
+  normalizedPhone?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+  syncStatus?: SyncStatus;
+  syncedAt?: string;
+  lastSyncError?: string;
+}
+
+/**
+ * A purchase delivery from one supplier — the buy-side mirror of Bill.
+ * Same payment-split invariant: cashAmount + cardAmount + creditAmount ===
+ * totalAmount. cashAmount represents money paid OUT of the drawer (negative
+ * pressure on shift cash), creditAmount represents money we owe the
+ * supplier. No totalProfit field — purchases produce cost, not profit.
+ */
+export interface Purchase {
+  id: string;
+  purchaseNumber: string;
+  createdAt: string;
+  cashierName?: string;
+  supplierId?: string;
+  supplierName?: string;
+  supplierPhone?: string;
+  paymentMethod: PaymentMethod;
+  subtotal: number;
+  discountAmount: number;
+  taxAmount: number;
+  totalAmount: number;
+  paidAmount: number;
+  changeAmount: number;
+  cashAmount: number;
+  cardAmount: number;
+  creditAmount: number;
+  itemCount: number;
+  status: BillStatus;
+  shiftId?: string;
+  notes?: string;
+  voidedAt?: string;
+  voidReason?: string;
+  returnedAmount?: number;
+  lastReturnAt?: string;
+  lastReturnReason?: string;
+  syncStatus?: SyncStatus;
+  syncedAt?: string;
+  lastSyncError?: string;
+}
+
+/**
+ * Line item snapshot at the moment of purchase — mirror of BillItem.
+ * unitCostAtPurchase is what we paid the supplier per unit. No
+ * unitSellPrice or lineProfit fields — that's a sell-side concept.
+ */
+export interface PurchaseItem {
+  id: string;
+  purchaseId: string;
+  originalProductId: string;
+  barcodeAtPurchase: string;
+  productNameAtPurchase: string;
+  categoryAtPurchase: string;
+  quantityPurchased: number;
+  unitCostAtPurchase: number;
+  lineSubtotal: number;
+  quantityReturned?: number;
+  createdAt: string;
+}
+
+/**
+ * A payment we made to a supplier against their debt — mirror of
+ * CustomerPayment. supplierKey + supplierName/Phone are kept as snapshots
+ * for the same reasons CustomerPayment keeps customerKey/Name (so old rows
+ * still resolve after rename), and shiftId binds cash payments to the
+ * drawer for end-of-shift reconciliation.
+ */
+export interface SupplierPayment {
+  id: string;
+  supplierKey: string;
+  supplierName: string;
+  supplierPhone?: string;
+  amount: number;
+  note?: string;
+  createdAt: string;
+  shiftId?: string;
   syncStatus?: SyncStatus;
   syncedAt?: string;
   lastSyncError?: string;

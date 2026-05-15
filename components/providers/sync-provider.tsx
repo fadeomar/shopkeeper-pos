@@ -75,25 +75,31 @@ function productsMatchAfterBillDelta(local: Product, cloud: Product): boolean {
 
 function jobPriority(job: SyncQueueItem): number {
   switch (job.entity) {
-    // Customer and shift rows must land in the cloud before any bill that
-    // references them; same ordering as SYNC_ENTITY_PRIORITY in
-    // sync-queue-service.ts.
+    // Reference targets (customer / supplier / shift) push first so child
+    // documents never reach the cloud before their parent. Same ordering as
+    // SYNC_ENTITY_PRIORITY in sync-queue-service.ts.
     case 'customer':
       return 0;
-    case 'shift':
+    case 'supplier':
       return 1;
-    case 'bill':
+    case 'shift':
       return 2;
-    case 'customerPayment':
+    case 'bill':
       return 3;
-    case 'stockMovement':
+    case 'purchase':
       return 4;
+    case 'customerPayment':
+      return 5;
+    case 'supplierPayment':
+      return 6;
+    case 'stockMovement':
+      return 7;
     case 'settings':
-      return isBillSequenceJob(job) ? 5 : 7;
+      return isBillSequenceJob(job) ? 8 : 10;
     case 'product':
-      return 8;
+      return 11;
     default:
-      return 10;
+      return 12;
   }
 }
 
