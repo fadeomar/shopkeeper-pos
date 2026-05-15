@@ -13,7 +13,6 @@ import type {
   PurchaseDraftItem,
   PurchaseFormValues,
   PurchaseItem,
-  Settings,
   StockMovement,
 } from "@/types/domain";
 

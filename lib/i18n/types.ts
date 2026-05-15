@@ -73,6 +73,7 @@ export interface TranslationDict {
     lowStock: string;
     totalSales: string;
     inventoryCost: string;
+    owedToSuppliers: string;
     recentMovements: string;
     demoInserted: string;
     demoExists: string;
@@ -260,6 +261,14 @@ export interface TranslationDict {
     billCount: string;
     averageBill: string;
     cashExpected: string;
+    purchaseCost: string;
+    purchaseCount: string;
+    cashPaidOut: string;
+    cashPaidOutHelper: string;
+    supplierPayments: string;
+    entries: string;
+    netSupplierDebt: string;
+    netSupplierDebtHelper: string;
     paymentBreakdown: string;
     adjustmentsNote: string;
     salesTrend: string;

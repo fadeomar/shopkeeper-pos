@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
 import { useLocale } from '@/components/providers/locale-context';
 import { getBillNetTotal } from '@/features/bills/utils/bill-summary';
+import { getSupplierLedger } from '@/lib/services/supplier-ledger-service';
 
 export default function DashboardPage() {
   const { t } = useLocale();
@@ -20,6 +21,7 @@ export default function DashboardPage() {
     () => db.stockMovements.orderBy('createdAt').reverse().limit(5).toArray(), [],
   );
   const settings = useLiveQuery(() => settingsRepo.get(), []);
+  const supplierLedger = useLiveQuery(() => getSupplierLedger(), []);
   const { push } = useToast();
 
   const liveProducts = products?.filter((p) => p.status === 'active') ?? [];
@@ -28,6 +30,14 @@ export default function DashboardPage() {
   // Use net total so voided bills contribute 0 and partial returns reduce the
   // figure correctly — matches what the bills page and reports already show.
   const totalSales = (bills ?? []).reduce((s, b) => s + getBillNetTotal(b), 0);
+  // Sum of positive supplier balances — what we owe to all suppliers combined.
+  // Negative balances (supplier credit / overpayments) aren't subtracted here
+  // because they aren't liquid: we can't use a $20 credit at supplier A to
+  // pay supplier B. They show up separately in the supplier ledger.
+  const owedToSuppliers = (supplierLedger ?? []).reduce(
+    (sum, row) => sum + Math.max(0, row.balanceOwed),
+    0,
+  );
   const currency = settings?.currency ?? 'USD';
 
   async function initializeDemo() {
@@ -40,6 +50,7 @@ export default function DashboardPage() {
     { label: t('dashboard.lowStock'),      value: lowStockCount },
     { label: t('dashboard.totalSales'),    value: formatCurrency(totalSales, currency) },
     { label: t('dashboard.inventoryCost'), value: formatCurrency(totalInventoryValue, currency) },
+    { label: t('dashboard.owedToSuppliers'), value: formatCurrency(owedToSuppliers, currency) },
   ];
 
   return (
@@ -66,7 +77,7 @@ export default function DashboardPage() {
       </section>
 
       {/* Stats grid */}
-      <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <section className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         {stats.map(({ label, value }) => (
           <Card key={label} className="flex flex-col gap-1.5">
             <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{label}</p>

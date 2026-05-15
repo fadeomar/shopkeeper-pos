@@ -14,9 +14,11 @@ import { useLocale } from '@/components/providers/locale-context';
 import {
   buildDailyTrend,
   filterBillsForReport,
+  filterByDateRange,
   getLowStockSoldProducts,
   summarizeProductSales,
   summarizeReportBills,
+  summarizeReportPurchases,
   type ProductSalesRow,
   type ReportRange,
   type TrendRow,
@@ -84,6 +86,8 @@ export function ReportsWorkspace() {
   const bills = useLiveQuery(() => db.bills.orderBy('createdAt').reverse().toArray(), []);
   const billItems = useLiveQuery(() => db.billItems.toArray(), []);
   const products = useLiveQuery(() => db.products.toArray(), []);
+  const purchases = useLiveQuery(() => db.purchases.orderBy('createdAt').reverse().toArray(), []);
+  const supplierPayments = useLiveQuery(() => db.supplierPayments.toArray(), []);
   const settings = useLiveQuery(() => settingsRepo.get(), []);
   const [range, setRange] = useState<ReportRange>('today');
   const [customFrom, setCustomFrom] = useState('');
@@ -96,7 +100,19 @@ export function ReportsWorkspace() {
     () => filterBillsForReport(bills ?? [], { range, customFrom, customTo }),
     [bills, range, customFrom, customTo],
   );
+  const filteredPurchases = useMemo(
+    () => filterByDateRange(purchases ?? [], { range, customFrom, customTo }),
+    [purchases, range, customFrom, customTo],
+  );
+  const filteredSupplierPayments = useMemo(
+    () => filterByDateRange(supplierPayments ?? [], { range, customFrom, customTo }),
+    [supplierPayments, range, customFrom, customTo],
+  );
   const summary = useMemo(() => summarizeReportBills(filteredBills), [filteredBills]);
+  const purchaseSummary = useMemo(
+    () => summarizeReportPurchases(filteredPurchases, filteredSupplierPayments),
+    [filteredPurchases, filteredSupplierPayments],
+  );
   const productSales = useMemo(
     () => summarizeProductSales(filteredBills, billItems ?? [], products ?? []),
     [filteredBills, billItems, products],
@@ -168,6 +184,29 @@ export function ReportsWorkspace() {
         <StatCard label={t('reports.totalProfit')} value={formatCurrency(summary.profit, currency)} />
         <StatCard label={t('reports.billCount')} value={String(summary.billCount)} helper={`${t('reports.averageBill')}: ${formatCurrency(summary.averageBill, currency)}`} />
         <StatCard label={t('reports.cashExpected')} value={formatCurrency(summary.cashExpected, currency)} />
+      </section>
+
+      <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatCard
+          label={t('reports.purchaseCost')}
+          value={formatCurrency(purchaseSummary.purchaseCost, currency)}
+          helper={`${t('reports.purchaseCount')}: ${purchaseSummary.purchaseCount}`}
+        />
+        <StatCard
+          label={t('reports.cashPaidOut')}
+          value={formatCurrency(purchaseSummary.cashPaidOut, currency)}
+          helper={t('reports.cashPaidOutHelper')}
+        />
+        <StatCard
+          label={t('reports.supplierPayments')}
+          value={formatCurrency(purchaseSummary.supplierPayments, currency)}
+          helper={`${filteredSupplierPayments.length} ${t('reports.entries')}`}
+        />
+        <StatCard
+          label={t('reports.netSupplierDebt')}
+          value={formatCurrency(purchaseSummary.netSupplierDebt, currency)}
+          helper={t('reports.netSupplierDebtHelper')}
+        />
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">
