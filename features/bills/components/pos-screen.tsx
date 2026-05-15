@@ -28,11 +28,24 @@ import { Card } from "@/components/ui/card";
 import { QuickProductModal } from "./quick-product-modal";
 import { ReceiptView } from "./receipt-view";
 import { normalizeBarcode } from "@/lib/utils/barcode";
-import type { Bill, BillDraftItem, BillItem, Customer, Product, Settings } from "@/types/domain";
+import { useAuth } from "@/components/providers/auth-context";
+import type {
+  Bill,
+  BillDraftItem,
+  BillItem,
+  Customer,
+  Product,
+  Settings,
+} from "@/types/domain";
 
 const SUCCESS_AUTO_DISMISS_MS = 8000;
 
-const POS_DRAFT_KEY = "shopkeeper-pos-bill-draft-v1";
+// Draft key is scoped per signed-in user so two cashiers sharing a browser
+// don't see each other's in-progress carts. Pre-uid drafts under the old
+// flat "shopkeeper-pos-bill-draft-v1" key are intentionally orphaned (no
+// data is lost — Dexie still has every saved bill — only the in-progress
+// scratch state is dropped on the migration).
+const POS_DRAFT_KEY_PREFIX = "shopkeeper-pos-bill-draft-v1";
 
 function FormField({
   label,
@@ -159,6 +172,7 @@ function SuccessPanel({
 
 export function PosScreen() {
   const { t } = useLocale();
+  const { user } = useAuth();
   const products = useLiveQuery(
     () => db.products.where("status").equals("active").sortBy("name"),
     [],
@@ -167,6 +181,7 @@ export function PosScreen() {
   const settings = useLiveQuery(() => settingsRepo.get(), []);
   const { push } = useToast();
   const currency = settings?.currency ?? "USD";
+  const draftKey = user?.uid ? `${POS_DRAFT_KEY_PREFIX}:${user.uid}` : null;
 
   const [draftItems, setDraftItems] = useState<BillDraftItem[]>([]);
   const [productId, setProductId] = useState("");
@@ -177,9 +192,10 @@ export function PosScreen() {
   const [missingBarcode, setMissingBarcode] = useState("");
   const [isPaidAmountManuallyEdited, setIsPaidAmountManuallyEdited] =
     useState(false);
-  const [lastFinalized, setLastFinalized] = useState<
-    { bill: Bill; items: BillItem[] } | null
-  >(null);
+  const [lastFinalized, setLastFinalized] = useState<{
+    bill: Bill;
+    items: BillItem[];
+  } | null>(null);
   const [lastAdded, setLastAdded] = useState<{
     name: string;
     qty: number;
@@ -220,9 +236,12 @@ export function PosScreen() {
     lastAppliedCashierNameRef.current = nextDefault;
   }, [settings, form]);
 
-  // Restore draft from localStorage
+  // Restore draft from localStorage — only when we know the user. Skipping
+  // when uid is unknown prevents loading another account's stale draft on
+  // a different login.
   useEffect(() => {
-    const raw = window.localStorage.getItem(POS_DRAFT_KEY);
+    if (!draftKey) return;
+    const raw = window.localStorage.getItem(draftKey);
     if (!raw) return;
     try {
       const parsed = JSON.parse(raw) as {
@@ -245,9 +264,9 @@ export function PosScreen() {
         Math.abs(parsed.form.paidAmount - autoTotal) > 0.001,
       );
     } catch {
-      window.localStorage.removeItem(POS_DRAFT_KEY);
+      window.localStorage.removeItem(draftKey);
     }
-  }, [form]);
+  }, [draftKey, form]);
 
   // Watch all form fields for draft persistence
   const watchedCashierName = form.watch("cashierName");
@@ -262,6 +281,7 @@ export function PosScreen() {
   const watchedNotes = form.watch("notes");
 
   useEffect(() => {
+    if (!draftKey) return;
     const payload = JSON.stringify({
       items: draftItems,
       form: {
@@ -277,8 +297,9 @@ export function PosScreen() {
         notes: watchedNotes ?? "",
       },
     });
-    window.localStorage.setItem(POS_DRAFT_KEY, payload);
+    window.localStorage.setItem(draftKey, payload);
   }, [
+    draftKey,
     draftItems,
     watchedCashierName,
     watchedCustomerName,
@@ -325,9 +346,16 @@ export function PosScreen() {
   const mixedSumDelta = useMemo(
     () =>
       isMixedSale
-        ? Math.abs(watchedCashAmount + watchedCardAmount - billSummary.totalAmount)
+        ? Math.abs(
+            watchedCashAmount + watchedCardAmount - billSummary.totalAmount,
+          )
         : 0,
-    [isMixedSale, watchedCashAmount, watchedCardAmount, billSummary.totalAmount],
+    [
+      isMixedSale,
+      watchedCashAmount,
+      watchedCardAmount,
+      billSummary.totalAmount,
+    ],
   );
   const isMixedSplitValid = !isMixedSale || mixedSumDelta < 0.005;
   const hasCreditCustomer = Boolean(
@@ -340,12 +368,14 @@ export function PosScreen() {
   const customerSuggestions = useMemo<Customer[]>(() => {
     if (!customers || customers.length === 0) return [];
     if (!customerFieldFocused) return [];
-    const nameNeedle = watchedCustomerName?.trim().toLowerCase() ?? '';
-    const phoneNeedle = normalizePhone(watchedCustomerPhone ?? '');
+    const nameNeedle = watchedCustomerName?.trim().toLowerCase() ?? "";
+    const phoneNeedle = normalizePhone(watchedCustomerPhone ?? "");
     if (!nameNeedle && !phoneNeedle) return [];
     const matches = customers.filter((customer) => {
-      const nameMatches = nameNeedle && customer.name.toLowerCase().includes(nameNeedle);
-      const phoneMatches = phoneNeedle && customer.normalizedPhone?.includes(phoneNeedle);
+      const nameMatches =
+        nameNeedle && customer.name.toLowerCase().includes(nameNeedle);
+      const phoneMatches =
+        phoneNeedle && customer.normalizedPhone?.includes(phoneNeedle);
       return Boolean(nameMatches || phoneMatches);
     });
     // Hide the suggestion if the only match is already an exact one to avoid
@@ -353,17 +383,24 @@ export function PosScreen() {
     if (matches.length === 1) {
       const m = matches[0];
       const exactName =
-        m.name.toLowerCase() === nameNeedle && (phoneNeedle === '' || m.normalizedPhone === phoneNeedle);
+        m.name.toLowerCase() === nameNeedle &&
+        (phoneNeedle === "" || m.normalizedPhone === phoneNeedle);
       const exactPhone =
-        m.normalizedPhone === phoneNeedle && (nameNeedle === '' || m.name.toLowerCase() === nameNeedle);
+        m.normalizedPhone === phoneNeedle &&
+        (nameNeedle === "" || m.name.toLowerCase() === nameNeedle);
       if (exactName || exactPhone) return [];
     }
     return matches.slice(0, 5);
-  }, [customers, customerFieldFocused, watchedCustomerName, watchedCustomerPhone]);
+  }, [
+    customers,
+    customerFieldFocused,
+    watchedCustomerName,
+    watchedCustomerPhone,
+  ]);
 
   function selectCustomer(customer: Customer) {
-    form.setValue('customerName', customer.name, { shouldDirty: true });
-    form.setValue('customerPhone', customer.phone ?? '', { shouldDirty: true });
+    form.setValue("customerName", customer.name, { shouldDirty: true });
+    form.setValue("customerPhone", customer.phone ?? "", { shouldDirty: true });
     setCustomerFieldFocused(false);
   }
   const hasValidTotal = billSummary.totalAmount >= 0;
@@ -392,8 +429,14 @@ export function PosScreen() {
     if (!isMixedSale) return;
     const total = Number(billSummary.totalAmount.toFixed(2));
     if (Math.abs(watchedCashAmount + watchedCardAmount - total) < 0.005) return;
-    form.setValue("cashAmount", total, { shouldDirty: false, shouldValidate: false });
-    form.setValue("cardAmount", 0, { shouldDirty: false, shouldValidate: false });
+    form.setValue("cashAmount", total, {
+      shouldDirty: false,
+      shouldValidate: false,
+    });
+    form.setValue("cardAmount", 0, {
+      shouldDirty: false,
+      shouldValidate: false,
+    });
     // Intentionally only depend on isMixedSale + total — moving the split
     // around afterwards is the cashier's job, not auto-correction.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -404,7 +447,10 @@ export function PosScreen() {
   // sale (appendProduct) or explicitly dismisses via the panel's buttons.
   useEffect(() => {
     if (!lastFinalized) return;
-    const id = window.setTimeout(() => setLastFinalized(null), SUCCESS_AUTO_DISMISS_MS);
+    const id = window.setTimeout(
+      () => setLastFinalized(null),
+      SUCCESS_AUTO_DISMISS_MS,
+    );
     return () => window.clearTimeout(id);
   }, [lastFinalized]);
 
@@ -431,7 +477,14 @@ export function PosScreen() {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [confirmOpen, scannerOpen, quickAddOpen, lastFinalized, canFinalize, form]);
+  }, [
+    confirmOpen,
+    scannerOpen,
+    quickAddOpen,
+    lastFinalized,
+    canFinalize,
+    form,
+  ]);
 
   // ── FIXED double-toast: push() is called OUTSIDE setDraftItems updater ──
   function appendProduct(product: Product) {
@@ -531,12 +584,16 @@ export function PosScreen() {
   }
 
   function updateQuantity(productId: string, quantity: number) {
+    // Number(""), Number("abc"), Number(".") all yield NaN/non-integer values.
+    // Coerce to a safe whole number before clamping so the draft never enters
+    // a state where totals/profit/tax derived from quantity become NaN.
+    const safeQuantity = Number.isFinite(quantity) ? Math.trunc(quantity) : 1;
     setDraftItems((cur) =>
       cur.map((i) => {
         if (i.productId !== productId) return i;
         return {
           ...i,
-          quantity: Math.max(1, Math.min(quantity, i.availableStock)),
+          quantity: Math.max(1, Math.min(safeQuantity, i.availableStock)),
         };
       }),
     );
@@ -557,7 +614,7 @@ export function PosScreen() {
       cardAmount: 0,
       notes: "",
     });
-    window.localStorage.removeItem(POS_DRAFT_KEY);
+    if (draftKey) window.localStorage.removeItem(draftKey);
     barcodeInputRef.current?.focus();
   }
 
@@ -569,7 +626,12 @@ export function PosScreen() {
     try {
       const { bill, billItems } = await createFinalizedBill({
         items: draftItems,
-        form: { ...values, paidAmount: actualPaidAmount, cashAmount: watchedCashAmount, cardAmount: watchedCardAmount },
+        form: {
+          ...values,
+          paidAmount: actualPaidAmount,
+          cashAmount: watchedCashAmount,
+          cardAmount: watchedCardAmount,
+        },
       });
       clearDraft();
       setConfirmOpen(false);
@@ -618,7 +680,8 @@ export function PosScreen() {
               </span>
               <span className="font-medium truncate">{lastAdded.name}</span>
               <span className="ml-auto shrink-0 text-xs font-semibold tabular-nums text-emerald-700">
-                ×{lastAdded.qty} · {formatCurrency(lastAdded.subtotal, currency)}
+                ×{lastAdded.qty} ·{" "}
+                {formatCurrency(lastAdded.subtotal, currency)}
               </span>
             </div>
           )}
@@ -859,281 +922,309 @@ export function PosScreen() {
               }}
             />
           ) : (
-          <Card className="flex flex-col gap-4" padding="sm">
-            <h3 className="text-base font-semibold text-slate-800">
-              {t("billing.billSummary")}
-            </h3>
+            <Card className="flex flex-col gap-4" padding="sm">
+              <h3 className="text-base font-semibold text-slate-800">
+                {t("billing.billSummary")}
+              </h3>
 
-            <form
-              className="flex flex-col gap-3"
-              onSubmit={form.handleSubmit(() => setConfirmOpen(true))}
-            >
-              <FormField label={t("billing.cashierName")}>
-                <Input {...form.register("cashierName")} />
-              </FormField>
-              <div className="relative flex flex-col gap-3">
-                <FormField label={t("billing.customerName")}>
-                  <Input
-                    {...form.register("customerName")}
-                    onFocus={() => setCustomerFieldFocused(true)}
-                    onBlur={() => {
-                      // Delay so a click on a suggestion can still register.
-                      window.setTimeout(() => setCustomerFieldFocused(false), 120);
-                    }}
-                  />
+              <form
+                className="flex flex-col gap-3"
+                onSubmit={form.handleSubmit(() => setConfirmOpen(true))}
+              >
+                <FormField label={t("billing.cashierName")}>
+                  <Input {...form.register("cashierName")} />
                 </FormField>
-                <FormField label={t("billing.customerPhone")}>
-                  <Input
-                    {...form.register("customerPhone")}
-                    onFocus={() => setCustomerFieldFocused(true)}
-                    onBlur={() => {
-                      window.setTimeout(() => setCustomerFieldFocused(false), 120);
-                    }}
-                  />
-                </FormField>
-                {customerSuggestions.length > 0 && (
-                  <ul className="absolute left-0 right-0 top-full z-20 mt-1 max-h-44 overflow-auto rounded-xl border border-slate-200 bg-white shadow-md divide-y divide-slate-100">
-                    {customerSuggestions.map((customer) => (
-                      <li key={customer.id}>
-                        <button
-                          type="button"
-                          onMouseDown={(e) => e.preventDefault()}
-                          onClick={() => selectCustomer(customer)}
-                          className="w-full text-start px-3 py-2 hover:bg-slate-50"
-                        >
-                          <p className="text-sm font-medium text-slate-800 truncate">{customer.name}</p>
-                          {customer.phone && (
-                            <p className="text-xs text-slate-500 font-mono truncate">{customer.phone}</p>
-                          )}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-              <FormField label={t("billing.paymentMethod")}>
-                <Select {...form.register("paymentMethod")}>
-                  <option value="cash">{t("common.cash")}</option>
-                  <option value="card">{t("common.card")}</option>
-                  <option value="mixed">{t("common.mixed")}</option>
-                  <option value="credit">{t("common.credit")}</option>
-                </Select>
-              </FormField>
-
-              <div className="grid grid-cols-2 gap-3">
-                <FormField label={t("billing.discount")}>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    {...form.register("discountAmount", {
-                      valueAsNumber: true,
-                    })}
-                  />
-                </FormField>
-                <FormField label={t("billing.tax")}>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    {...form.register("taxAmount", { valueAsNumber: true })}
-                  />
-                </FormField>
-              </div>
-
-              {isMixedSale ? (
-                <FormField label={t("billing.mixedSplit")}>
-                  <div className="grid grid-cols-2 gap-2">
-                    <label className="flex flex-col gap-1">
-                      <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">
-                        {t("common.cash")}
-                      </span>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        value={watchedCashAmount}
-                        onChange={(e) => {
-                          const v =
-                            e.target.value === "" ? 0 : Number(e.target.value);
-                          const safe = Number.isFinite(v) ? Math.max(0, v) : 0;
-                          form.setValue("cashAmount", safe, {
-                            shouldDirty: true,
-                            shouldValidate: true,
-                          });
-                          // Auto-balance card so the sum lands on total.
-                          form.setValue(
-                            "cardAmount",
-                            Math.max(0, billSummary.totalAmount - safe),
-                            { shouldDirty: true, shouldValidate: false },
-                          );
-                        }}
-                      />
-                    </label>
-                    <label className="flex flex-col gap-1">
-                      <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">
-                        {t("common.card")}
-                      </span>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        value={watchedCardAmount}
-                        onChange={(e) => {
-                          const v =
-                            e.target.value === "" ? 0 : Number(e.target.value);
-                          const safe = Number.isFinite(v) ? Math.max(0, v) : 0;
-                          form.setValue("cardAmount", safe, {
-                            shouldDirty: true,
-                            shouldValidate: true,
-                          });
-                          // Auto-balance cash so the sum lands on total.
-                          form.setValue(
-                            "cashAmount",
-                            Math.max(0, billSummary.totalAmount - safe),
-                            { shouldDirty: true, shouldValidate: false },
-                          );
-                        }}
-                      />
-                    </label>
-                  </div>
-                </FormField>
-              ) : watchedPaymentMethod === "card" ? null : (
-                <FormField label={t("billing.actualPaid")}>
-                  <div className="flex flex-col gap-2">
-                    <div className="flex gap-2">
-                      <Input
-                        type="number"
-                        step="0.01"
-                        value={
-                          Number.isFinite(actualPaidAmount)
-                            ? actualPaidAmount
-                            : 0
-                        }
-                        onChange={(e) => {
-                          setIsPaidAmountManuallyEdited(true);
-                          const v =
-                            e.target.value === "" ? 0 : Number(e.target.value);
-                          form.setValue("paidAmount", Number.isFinite(v) ? v : 0, {
-                            shouldDirty: true,
-                            shouldValidate: true,
-                          });
-                        }}
-                        className="flex-1"
-                      />
-                      {isPaidAmountManuallyEdited && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setIsPaidAmountManuallyEdited(false)}
-                        >
-                          {t("common.reset")}
-                        </Button>
-                      )}
-                    </div>
-                    {watchedPaymentMethod === "cash" && (
-                      <div className="flex flex-wrap gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setIsPaidAmountManuallyEdited(false)}
-                          className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-colors"
-                        >
-                          {t("billing.exact")}
-                        </button>
-                        {[5, 10, 20, 50, 100].map((denomination) => (
+                <div className="relative flex flex-col gap-3">
+                  <FormField label={t("billing.customerName")}>
+                    <Input
+                      {...form.register("customerName")}
+                      onFocus={() => setCustomerFieldFocused(true)}
+                      onBlur={() => {
+                        // Delay so a click on a suggestion can still register.
+                        window.setTimeout(
+                          () => setCustomerFieldFocused(false),
+                          120,
+                        );
+                      }}
+                    />
+                  </FormField>
+                  <FormField label={t("billing.customerPhone")}>
+                    <Input
+                      {...form.register("customerPhone")}
+                      onFocus={() => setCustomerFieldFocused(true)}
+                      onBlur={() => {
+                        window.setTimeout(
+                          () => setCustomerFieldFocused(false),
+                          120,
+                        );
+                      }}
+                    />
+                  </FormField>
+                  {customerSuggestions.length > 0 && (
+                    <ul className="absolute left-0 right-0 top-full z-20 mt-1 max-h-44 overflow-auto rounded-xl border border-slate-200 bg-white shadow-md divide-y divide-slate-100">
+                      {customerSuggestions.map((customer) => (
+                        <li key={customer.id}>
                           <button
-                            key={denomination}
                             type="button"
-                            onClick={() => {
-                              setIsPaidAmountManuallyEdited(true);
-                              form.setValue("paidAmount", denomination, {
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => selectCustomer(customer)}
+                            className="w-full text-start px-3 py-2 hover:bg-slate-50"
+                          >
+                            <p className="text-sm font-medium text-slate-800 truncate">
+                              {customer.name}
+                            </p>
+                            {customer.phone && (
+                              <p className="text-xs text-slate-500 font-mono truncate">
+                                {customer.phone}
+                              </p>
+                            )}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <FormField label={t("billing.paymentMethod")}>
+                  <Select {...form.register("paymentMethod")}>
+                    <option value="cash">{t("common.cash")}</option>
+                    <option value="card">{t("common.card")}</option>
+                    <option value="mixed">{t("common.mixed")}</option>
+                    <option value="credit">{t("common.credit")}</option>
+                  </Select>
+                </FormField>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField label={t("billing.discount")}>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      {...form.register("discountAmount", {
+                        valueAsNumber: true,
+                      })}
+                    />
+                  </FormField>
+                  <FormField label={t("billing.tax")}>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      {...form.register("taxAmount", { valueAsNumber: true })}
+                    />
+                  </FormField>
+                </div>
+
+                {isMixedSale ? (
+                  <FormField label={t("billing.mixedSplit")}>
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="flex flex-col gap-1">
+                        <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">
+                          {t("common.cash")}
+                        </span>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={watchedCashAmount}
+                          onChange={(e) => {
+                            const v =
+                              e.target.value === ""
+                                ? 0
+                                : Number(e.target.value);
+                            const safe = Number.isFinite(v)
+                              ? Math.max(0, v)
+                              : 0;
+                            form.setValue("cashAmount", safe, {
+                              shouldDirty: true,
+                              shouldValidate: true,
+                            });
+                            // Auto-balance card so the sum lands on total.
+                            form.setValue(
+                              "cardAmount",
+                              Math.max(0, billSummary.totalAmount - safe),
+                              { shouldDirty: true, shouldValidate: false },
+                            );
+                          }}
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1">
+                        <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">
+                          {t("common.card")}
+                        </span>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={watchedCardAmount}
+                          onChange={(e) => {
+                            const v =
+                              e.target.value === ""
+                                ? 0
+                                : Number(e.target.value);
+                            const safe = Number.isFinite(v)
+                              ? Math.max(0, v)
+                              : 0;
+                            form.setValue("cardAmount", safe, {
+                              shouldDirty: true,
+                              shouldValidate: true,
+                            });
+                            // Auto-balance cash so the sum lands on total.
+                            form.setValue(
+                              "cashAmount",
+                              Math.max(0, billSummary.totalAmount - safe),
+                              { shouldDirty: true, shouldValidate: false },
+                            );
+                          }}
+                        />
+                      </label>
+                    </div>
+                  </FormField>
+                ) : watchedPaymentMethod === "card" ? null : (
+                  <FormField label={t("billing.actualPaid")}>
+                    <div className="flex flex-col gap-2">
+                      <div className="flex gap-2">
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={
+                            Number.isFinite(actualPaidAmount)
+                              ? actualPaidAmount
+                              : 0
+                          }
+                          onChange={(e) => {
+                            setIsPaidAmountManuallyEdited(true);
+                            const v =
+                              e.target.value === ""
+                                ? 0
+                                : Number(e.target.value);
+                            form.setValue(
+                              "paidAmount",
+                              Number.isFinite(v) ? v : 0,
+                              {
                                 shouldDirty: true,
                                 shouldValidate: true,
-                              });
-                            }}
-                            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 tabular-nums hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                              },
+                            );
+                          }}
+                          className="flex-1"
+                        />
+                        {isPaidAmountManuallyEdited && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setIsPaidAmountManuallyEdited(false)}
                           >
-                            {denomination}
-                          </button>
-                        ))}
+                            {t("common.reset")}
+                          </Button>
+                        )}
                       </div>
-                    )}
-                  </div>
+                      {watchedPaymentMethod === "cash" && (
+                        <div className="flex flex-wrap gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setIsPaidAmountManuallyEdited(false)}
+                            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                          >
+                            {t("billing.exact")}
+                          </button>
+                          {[5, 10, 20, 50, 100].map((denomination) => (
+                            <button
+                              key={denomination}
+                              type="button"
+                              onClick={() => {
+                                setIsPaidAmountManuallyEdited(true);
+                                form.setValue("paidAmount", denomination, {
+                                  shouldDirty: true,
+                                  shouldValidate: true,
+                                });
+                              }}
+                              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 tabular-nums hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                            >
+                              {denomination}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </FormField>
+                )}
+
+                <FormField label={t("billing.notes")}>
+                  <Input {...form.register("notes")} />
                 </FormField>
-              )}
 
-              <FormField label={t("billing.notes")}>
-                <Input {...form.register("notes")} />
-              </FormField>
-
-              {/* Totals card */}
-              <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3">
-                <SummaryRow
-                  label={t("billing.subtotal")}
-                  value={formatCurrency(billSummary.subtotal, currency)}
-                />
-                <SummaryRow
-                  label={t("billing.total")}
-                  value={formatCurrency(billSummary.totalAmount, currency)}
-                  highlight
-                />
-                <SummaryRow
-                  label={t("billing.change")}
-                  value={formatCurrency(
-                    Math.max(0, actualChangeAmount),
-                    currency,
-                  )}
-                  highlight
-                />
-                {isCreditSale && amountDue > 0 && (
+                {/* Totals card */}
+                <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3">
                   <SummaryRow
-                    label={t("billing.amountDue")}
-                    value={formatCurrency(amountDue, currency)}
+                    label={t("billing.subtotal")}
+                    value={formatCurrency(billSummary.subtotal, currency)}
+                  />
+                  <SummaryRow
+                    label={t("billing.total")}
+                    value={formatCurrency(billSummary.totalAmount, currency)}
                     highlight
                   />
+                  <SummaryRow
+                    label={t("billing.change")}
+                    value={formatCurrency(
+                      Math.max(0, actualChangeAmount),
+                      currency,
+                    )}
+                    highlight
+                  />
+                  {isCreditSale && amountDue > 0 && (
+                    <SummaryRow
+                      label={t("billing.amountDue")}
+                      value={formatCurrency(amountDue, currency)}
+                      highlight
+                    />
+                  )}
+                </div>
+
+                {!hasValidTotal && draftItems.length > 0 && (
+                  <p className="text-xs text-red-600 font-medium">
+                    {t("billing.invalidTotal")}
+                  </p>
                 )}
-              </div>
 
-              {!hasValidTotal && draftItems.length > 0 && (
-                <p className="text-xs text-red-600 font-medium">
-                  {t("billing.invalidTotal")}
-                </p>
-              )}
+                {isCreditSale &&
+                  !hasCreditCustomer &&
+                  draftItems.length > 0 && (
+                    <p className="text-xs text-red-600 font-medium">
+                      {t("billing.creditCustomerRequired")}
+                    </p>
+                  )}
 
-              {isCreditSale && !hasCreditCustomer && draftItems.length > 0 && (
-                <p className="text-xs text-red-600 font-medium">
-                  {t("billing.creditCustomerRequired")}
-                </p>
-              )}
+                {isMixedSale && !isMixedSplitValid && draftItems.length > 0 && (
+                  <p className="text-xs text-red-600 font-medium">
+                    {t("billing.mixedSumMismatch")}
+                  </p>
+                )}
 
-              {isMixedSale && !isMixedSplitValid && draftItems.length > 0 && (
-                <p className="text-xs text-red-600 font-medium">
-                  {t("billing.mixedSumMismatch")}
-                </p>
-              )}
+                {hasValidTotal &&
+                  !hasEnoughPayment &&
+                  draftItems.length > 0 && (
+                    <p className="text-xs text-red-600 font-medium">
+                      {t("billing.paidBelowTotal")}
+                    </p>
+                  )}
 
-              {hasValidTotal && !hasEnoughPayment && draftItems.length > 0 && (
-                <p className="text-xs text-red-600 font-medium">
-                  {t("billing.paidBelowTotal")}
-                </p>
-              )}
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={clearDraft}
-                  className="flex-1"
-                >
-                  {t("billing.clearDraft")}
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={!canFinalize}
-                  className="flex-1"
-                >
-                  {t("billing.reviewFinalize")}
-                </Button>
-              </div>
-            </form>
-          </Card>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={clearDraft}
+                    className="flex-1"
+                  >
+                    {t("billing.clearDraft")}
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={!canFinalize}
+                    className="flex-1"
+                  >
+                    {t("billing.reviewFinalize")}
+                  </Button>
+                </div>
+              </form>
+            </Card>
           )}
         </div>
       </div>
