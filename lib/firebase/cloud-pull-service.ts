@@ -4,7 +4,7 @@ import { db } from '@/lib/db/schema';
 import { saveConflict } from '@/lib/services/sync-conflict-service';
 import { buildSyncQueueItem, getSyncQueueId } from '@/lib/services/sync-queue-service';
 import { normalizeBillSplit } from '@/lib/utils/bill-split';
-import type { Bill, BillItem, Customer, CustomerPayment, Product, Settings, StockMovement, SyncEntity, SyncQueueItem } from '@/types/domain';
+import type { Bill, BillItem, Customer, CustomerPayment, Product, Settings, Shift, StockMovement, SyncEntity, SyncQueueItem } from '@/types/domain';
 
 const PRODUCT_FIELDS: Array<keyof Product> = [
   'barcode', 'name', 'category', 'brand', 'unit', 'quantityInStock', 'buyPrice', 'sellPrice',
@@ -244,9 +244,31 @@ async function pullCustomers(uid: string): Promise<void> {
   });
 }
 
+async function pullShifts(uid: string): Promise<void> {
+  const cloudShifts = await pullCollection<Shift>(uid, 'shifts');
+  if (cloudShifts.length === 0) return;
+
+  await db.transaction('rw', [db.shifts, db.syncQueue], async () => {
+    for (const cloud of cloudShifts) {
+      const local = await db.shifts.get(cloud.id);
+      if (!local) {
+        await db.shifts.put({ ...cloud, syncStatus: 'synced', lastSyncError: undefined });
+        continue;
+      }
+      // Skip if this device has unsynced edits to the shift — the push path
+      // will reconcile. Otherwise pull the newer cloud version.
+      const pendingJob = await getPendingLocalJob('shift', local.id);
+      if (pendingJob) continue;
+      if (!isCloudNewer(local.syncedAt, cloud.syncedAt)) continue;
+      await db.shifts.put({ ...cloud, syncStatus: 'synced', lastSyncError: undefined });
+    }
+  });
+}
+
 export async function pullCloudChangesBeforePush(uid: string): Promise<void> {
   await pullAppendOnlyCollections(uid);
   await pullCustomers(uid);
+  await pullShifts(uid);
   await pullProducts(uid);
   await pullSettings(uid);
 }

@@ -13,7 +13,7 @@ import { db } from '@/lib/db/schema';
 import { createBillNumber } from '@/lib/utils/id';
 import { normalizeBillSplit } from '@/lib/utils/bill-split';
 import { normalizePhone } from '@/lib/utils/customer-key';
-import type { Bill, BillItem, Customer, Product, Settings, StockMovement, CustomerPayment } from '@/types/domain';
+import type { Bill, BillItem, Customer, Product, Settings, Shift, StockMovement, CustomerPayment } from '@/types/domain';
 import type { SyncMeta } from './sync-service';
 
 const SETTINGS_ID = 'app-settings';
@@ -156,6 +156,18 @@ function normalizeCustomerPayment(snapshot: QueryDocumentSnapshot<DocumentData>,
     createdAt: payment.createdAt || syncedAt,
     ...syncedMeta(syncedAt),
   } as CustomerPayment;
+}
+
+function normalizeShift(snapshot: QueryDocumentSnapshot<DocumentData>, syncedAt: string): Shift {
+  const shift = withDocId<Shift>(snapshot) as Partial<Shift> & { id: string };
+  return {
+    ...shift,
+    openedAt: shift.openedAt || syncedAt,
+    openedByCashierName: shift.openedByCashierName || 'Cashier',
+    openingCash: Math.max(0, finiteNumber(shift.openingCash)),
+    status: shift.status === 'closed' ? 'closed' : 'open',
+    ...syncedMeta(syncedAt),
+  } as Shift;
 }
 
 function normalizeCustomer(snapshot: QueryDocumentSnapshot<DocumentData>, syncedAt: string): Customer {
@@ -582,6 +594,9 @@ export async function restoreFromCloud(
   onProgress?.('Fetching customers…');
   const customers = await readUserCollection(uid, 'customers', (snapshot) => normalizeCustomer(snapshot, restoredAt));
 
+  onProgress?.('Fetching shifts…');
+  const shifts = await readUserCollection(uid, 'shifts', (snapshot) => normalizeShift(snapshot, restoredAt));
+
   const productRepair = repairDuplicateProductBarcodes({
     products: cloudProducts,
     billItems: cloudBillItems,
@@ -609,6 +624,7 @@ export async function restoreFromCloud(
       stockMovements: productRepair.stockMovements.length,
       customerPayments: customerPayments.length,
       customers: customers.length,
+      shifts: shifts.length,
     },
   };
 
@@ -616,7 +632,7 @@ export async function restoreFromCloud(
   try {
     await db.transaction(
       'rw',
-      [db.bills, db.billItems, db.products, db.stockMovements, db.customerPayments, db.customers, db.settings, db.syncQueue, db.syncConflicts],
+      [db.bills, db.billItems, db.products, db.stockMovements, db.customerPayments, db.customers, db.shifts, db.settings, db.syncQueue, db.syncConflicts],
       async () => {
         // Clear first so stale local rows that no longer exist in the cloud are removed.
         // This is still safe because fetch/normalization already succeeded and Dexie
@@ -628,6 +644,7 @@ export async function restoreFromCloud(
           db.stockMovements.clear(),
           db.customerPayments.clear(),
           db.customers.clear(),
+          db.shifts.clear(),
           db.settings.clear(),
           db.syncQueue.clear(),
           db.syncConflicts.clear(),
@@ -638,6 +655,7 @@ export async function restoreFromCloud(
         if (productRepair.stockMovements.length) await db.stockMovements.bulkPut(productRepair.stockMovements);
         if (customerPayments.length) await db.customerPayments.bulkPut(customerPayments);
         if (customers.length) await db.customers.bulkPut(customers);
+        if (shifts.length) await db.shifts.bulkPut(shifts);
         if (settings.length) await db.settings.bulkPut(settings);
       },
     );
