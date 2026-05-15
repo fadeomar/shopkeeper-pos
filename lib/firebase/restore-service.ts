@@ -11,7 +11,9 @@ import {
 import { firestore } from './config';
 import { db } from '@/lib/db/schema';
 import { createBillNumber } from '@/lib/utils/id';
-import type { Bill, BillItem, Product, Settings, StockMovement, CustomerPayment } from '@/types/domain';
+import { normalizeBillSplit } from '@/lib/utils/bill-split';
+import { normalizePhone } from '@/lib/utils/customer-key';
+import type { Bill, BillItem, Customer, Product, Settings, StockMovement, CustomerPayment } from '@/types/domain';
 import type { SyncMeta } from './sync-service';
 
 const SETTINGS_ID = 'app-settings';
@@ -95,11 +97,18 @@ function withDocId<T extends { id: string }>(snapshot: QueryDocumentSnapshot<Doc
 
 function normalizeBill(snapshot: QueryDocumentSnapshot<DocumentData>, syncedAt: string): Bill {
   const bill = withDocId<Bill>(snapshot) as Partial<Bill> & { id: string };
-  return {
+  // Older devices may have written this bill before the Bα payment-split
+  // migration added cashAmount/cardAmount/creditAmount. Fill in the canonical
+  // split here so every restored bill respects the current Bill type contract
+  // and downstream readers (reports, ledger, drawer reconciliation) work.
+  const withSplit = normalizeBillSplit({
     ...bill,
     status: bill.status ?? 'finalized',
     returnedAmount: bill.returnedAmount ?? 0,
     returnedProfit: bill.returnedProfit ?? 0,
+  });
+  return {
+    ...withSplit,
     ...syncedMeta(syncedAt),
   } as Bill;
 }
@@ -147,6 +156,20 @@ function normalizeCustomerPayment(snapshot: QueryDocumentSnapshot<DocumentData>,
     createdAt: payment.createdAt || syncedAt,
     ...syncedMeta(syncedAt),
   } as CustomerPayment;
+}
+
+function normalizeCustomer(snapshot: QueryDocumentSnapshot<DocumentData>, syncedAt: string): Customer {
+  const customer = withDocId<Customer>(snapshot) as Partial<Customer> & { id: string };
+  const phone = typeof customer.phone === 'string' ? customer.phone.trim() : undefined;
+  return {
+    ...customer,
+    name: typeof customer.name === 'string' && customer.name.trim() ? customer.name.trim() : 'Customer',
+    phone: phone || undefined,
+    normalizedPhone: phone ? normalizePhone(phone) || undefined : customer.normalizedPhone,
+    createdAt: customer.createdAt || syncedAt,
+    updatedAt: customer.updatedAt || customer.createdAt || syncedAt,
+    ...syncedMeta(syncedAt),
+  } as Customer;
 }
 
 function normalizeSettings(snapshot: QueryDocumentSnapshot<DocumentData>, syncedAt: string): Settings {
@@ -556,6 +579,9 @@ export async function restoreFromCloud(
   onProgress?.('Fetching customer payments…');
   const customerPayments = await readUserCollection(uid, 'customerPayments', (snapshot) => normalizeCustomerPayment(snapshot, restoredAt));
 
+  onProgress?.('Fetching customers…');
+  const customers = await readUserCollection(uid, 'customers', (snapshot) => normalizeCustomer(snapshot, restoredAt));
+
   const productRepair = repairDuplicateProductBarcodes({
     products: cloudProducts,
     billItems: cloudBillItems,
@@ -582,6 +608,7 @@ export async function restoreFromCloud(
       products: productRepair.products.length,
       stockMovements: productRepair.stockMovements.length,
       customerPayments: customerPayments.length,
+      customers: customers.length,
     },
   };
 
@@ -589,7 +616,7 @@ export async function restoreFromCloud(
   try {
     await db.transaction(
       'rw',
-      [db.bills, db.billItems, db.products, db.stockMovements, db.customerPayments, db.settings, db.syncQueue, db.syncConflicts],
+      [db.bills, db.billItems, db.products, db.stockMovements, db.customerPayments, db.customers, db.settings, db.syncQueue, db.syncConflicts],
       async () => {
         // Clear first so stale local rows that no longer exist in the cloud are removed.
         // This is still safe because fetch/normalization already succeeded and Dexie
@@ -600,6 +627,7 @@ export async function restoreFromCloud(
           db.products.clear(),
           db.stockMovements.clear(),
           db.customerPayments.clear(),
+          db.customers.clear(),
           db.settings.clear(),
           db.syncQueue.clear(),
           db.syncConflicts.clear(),
@@ -609,6 +637,7 @@ export async function restoreFromCloud(
         if (productRepair.products.length) await db.products.bulkPut(productRepair.products);
         if (productRepair.stockMovements.length) await db.stockMovements.bulkPut(productRepair.stockMovements);
         if (customerPayments.length) await db.customerPayments.bulkPut(customerPayments);
+        if (customers.length) await db.customers.bulkPut(customers);
         if (settings.length) await db.settings.bulkPut(settings);
       },
     );
