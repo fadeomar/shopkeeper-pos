@@ -1,5 +1,6 @@
 import { collection, doc, getDoc, getDocs, limit, orderBy, query, setDoc } from 'firebase/firestore';
 import { firestore } from './config';
+import { netSplitField, normalizeBillSplit } from '@/lib/utils/bill-split';
 import type { Bill, BillItem, CustomerPayment, Product, Settings, StockMovement } from '@/types/domain';
 
 export interface CloudSyncMeta {
@@ -149,9 +150,15 @@ export async function fetchUserSummary(uid: string): Promise<UserSummary> {
 
   const activeProducts = products.filter((p) => p.status === 'active');
   const totalRevenue = bills.reduce((sum, b) => sum + netBillTotal(b), 0);
+  // creditAmount is set on every bill (including mixed and credit-with-deposit),
+  // proportionally reduced by any returns. Sum it directly — no need to special-
+  // case paymentMethod === 'credit' or recompute total - paidAmount.
   const creditDueBeforePayments = bills
-    .filter((b) => b.paymentMethod === 'credit' && b.status !== 'voided')
-    .reduce((sum, b) => sum + Math.max(0, netBillTotal(b) - b.paidAmount), 0);
+    .filter((b) => b.status !== 'voided')
+    .reduce((sum, b) => {
+      const withSplit = normalizeBillSplit(b) as Bill;
+      return sum + netSplitField(withSplit, withSplit.creditAmount);
+    }, 0);
   const paymentsTotal = customerPayments.reduce((sum, p) => sum + p.amount, 0);
 
   return {
@@ -178,9 +185,12 @@ export async function fetchUserSupportSnapshot(uid: string): Promise<UserSupport
 
   const activeProducts = products.filter((p) => p.status === 'active');
   const totalRevenue = bills.reduce((sum, b) => sum + netBillTotal(b), 0);
-  const creditDueBeforePayments = bills
-    .filter((b) => b.paymentMethod === 'credit' && b.status !== 'voided')
-    .reduce((sum, b) => sum + Math.max(0, netBillTotal(b) - b.paidAmount), 0);
+  // See fetchUserSummary for the rationale — sum creditAmount directly across
+  // all non-voided bills so mixed bills with a credit leg are included.
+  const billsWithSplit = bills.map((b) => normalizeBillSplit(b) as Bill);
+  const creditDueBeforePayments = billsWithSplit
+    .filter((b) => b.status !== 'voided')
+    .reduce((sum, b) => sum + netSplitField(b, b.creditAmount), 0);
   const paymentsTotal = customerPayments.reduce((sum, p) => sum + p.amount, 0);
   const creditDebt = Math.max(0, creditDueBeforePayments - paymentsTotal);
   const health = syncHealth(syncMeta?.lastSyncedAt);
@@ -215,9 +225,13 @@ export async function fetchUserSupportSnapshot(uid: string): Promise<UserSupport
     stockMovementCount: stockMovements.length,
     voidedBillCount: bills.filter((b) => b.status === 'voided').length,
     returnedBillCount: bills.filter((b) => b.status === 'returned' || b.status === 'partially_returned').length,
-    cashSales: bills.filter((b) => b.paymentMethod === 'cash').reduce((sum, b) => sum + netBillTotal(b), 0),
-    cardSales: bills.filter((b) => b.paymentMethod === 'card').reduce((sum, b) => sum + netBillTotal(b), 0),
-    creditSales: bills.filter((b) => b.paymentMethod === 'credit').reduce((sum, b) => sum + netBillTotal(b), 0),
+    // Tender totals: sum each split field across all non-voided bills, so
+    // mixed bills correctly contribute their cash leg + card leg. Voided
+    // bills naturally yield zero because returnedAmount = totalAmount makes
+    // every netSplitField return 0 for them.
+    cashSales: billsWithSplit.reduce((sum, b) => sum + netSplitField(b, b.cashAmount), 0),
+    cardSales: billsWithSplit.reduce((sum, b) => sum + netSplitField(b, b.cardAmount), 0),
+    creditSales: billsWithSplit.reduce((sum, b) => sum + netSplitField(b, b.creditAmount), 0),
     warnings,
     syncMeta,
   };
