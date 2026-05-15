@@ -178,7 +178,10 @@ async function pullAppendOnlyCollections(uid: string): Promise<void> {
   // when cloud is newer and we have no active local job for that bill (an
   // active job means this device made its own offline change and the next
   // push will reconcile it).
-  await db.transaction('rw', [db.bills, db.billItems, db.stockMovements, db.customerPayments], async () => {
+  // db.syncQueue is read inside via getPendingLocalJob; Dexie requires it
+  // in the transaction tables list or it throws a scope error in strict
+  // transactional mode.
+  await db.transaction('rw', [db.bills, db.billItems, db.stockMovements, db.customerPayments, db.syncQueue], async () => {
     for (const bill of bills) {
       // Bills authored by a pre-v6 device lack cashAmount/cardAmount/creditAmount.
       // Fill them in once on the way into local storage so every reader downstream
@@ -223,7 +226,9 @@ async function pullCustomers(uid: string): Promise<void> {
   const cloudCustomers = await pullCollection<Customer>(uid, 'customers');
   if (cloudCustomers.length === 0) return;
 
-  await db.transaction('rw', db.customers, async () => {
+  // db.syncQueue is read inside via getPendingLocalJob — include it in the
+  // transaction scope.
+  await db.transaction('rw', [db.customers, db.syncQueue], async () => {
     for (const cloud of cloudCustomers) {
       const local = await db.customers.get(cloud.id);
       if (!local) {
