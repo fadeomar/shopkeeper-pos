@@ -1,7 +1,7 @@
 import { collection, doc, getDoc, getDocs, limit, orderBy, query, setDoc } from 'firebase/firestore';
 import { firestore } from './config';
 import { netSplitField, normalizeBillSplit } from '@/lib/utils/bill-split';
-import type { Bill, BillItem, CustomerPayment, Product, Settings, StockMovement } from '@/types/domain';
+import type { Bill, BillItem, Customer, CustomerPayment, Product, Settings, StockMovement } from '@/types/domain';
 
 export interface CloudSyncMeta {
   lastSyncedAt: string;
@@ -80,6 +80,11 @@ export async function fetchUserBills(uid: string, maxRows = 100): Promise<Bill[]
 export async function fetchUserBillItems(uid: string): Promise<BillItem[]> {
   const snap = await getDocs(collection(firestore, `users/${uid}/billItems`));
   return snap.docs.map((d) => d.data() as BillItem);
+}
+
+export async function fetchUserCustomers(uid: string): Promise<Customer[]> {
+  const snap = await getDocs(collection(firestore, `users/${uid}/customers`));
+  return snap.docs.map((d) => d.data() as Customer);
 }
 
 export async function fetchUserProducts(uid: string): Promise<Product[]> {

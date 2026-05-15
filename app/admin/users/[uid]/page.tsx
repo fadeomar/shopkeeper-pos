@@ -8,7 +8,9 @@ import { useAuth } from '@/components/providers/auth-context';
 import { fetchUserDoc, updateUserStatus } from '@/lib/firebase/auth-service';
 import {
   fetchUserBills,
+  fetchUserBillItems,
   fetchUserCustomerPayments,
+  fetchUserCustomers,
   fetchUserProducts,
   fetchUserSettings,
   fetchUserStockMovements,
@@ -20,7 +22,7 @@ import {
   type UserSupportSnapshot,
 } from '@/lib/firebase/admin-service';
 import { downloadCSV } from '@/lib/utils/export-csv';
-import type { AppUser, Bill, CustomerPayment, Product, Settings, StockMovement } from '@/types/domain';
+import type { AppUser, Bill, BillItem, Customer, CustomerPayment, Product, Settings, StockMovement } from '@/types/domain';
 
 const STATUS_COLORS = {
   active:   'bg-green-100 text-green-700',
@@ -111,11 +113,26 @@ export default function UserDetailPage() {
 
   async function exportBackupJSON() {
     if (!profile) return;
-    const [allBills, allProducts, allMovements, allPayments, currentSettings, syncMeta] = await Promise.all([
+    // Bills without bill items aren't enough to reconstruct receipts or
+    // product-level sales; customers without their table aren't enough to
+    // resolve customerId references on bills. Fetch both alongside the
+    // existing collections so the support backup is actually portable.
+    const [
+      allBills,
+      allBillItems,
+      allProducts,
+      allMovements,
+      allPayments,
+      allCustomers,
+      currentSettings,
+      syncMeta,
+    ] = await Promise.all([
       fetchUserBills(profile.uid, 5000),
+      fetchUserBillItems(profile.uid).catch(() => [] as BillItem[]),
       fetchUserProducts(profile.uid),
       fetchUserStockMovements(profile.uid, 5000).catch(() => [] as StockMovement[]),
       fetchUserCustomerPayments(profile.uid).catch(() => [] as CustomerPayment[]),
+      fetchUserCustomers(profile.uid).catch(() => [] as Customer[]),
       fetchUserSettings(profile.uid),
       fetchUserSyncMeta(profile.uid),
     ]);
@@ -128,14 +145,18 @@ export default function UserDetailPage() {
       settings: currentSettings,
       counts: {
         bills: allBills.length,
+        billItems: allBillItems.length,
         products: allProducts.length,
         stockMovements: allMovements.length,
         customerPayments: allPayments.length,
+        customers: allCustomers.length,
       },
       bills: allBills,
+      billItems: allBillItems,
       products: allProducts,
       stockMovements: allMovements,
       customerPayments: allPayments,
+      customers: allCustomers,
     };
     downloadJSON(payload, `support_backup_${profile.name || profile.uid}_${today()}.json`);
   }
