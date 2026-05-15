@@ -515,6 +515,9 @@ export const en: TranslationDict = {
     close: "Close",
     doneScan: "Done scanning",
   },
+  auth: {
+    previousAccountUnsynced: "Previous account on this device had {{count}} unsynced change(s) — saved locally and will sync when that account signs in here again.",
+  },
   sync: {
     status: "Sync",
     pending: "Saved on this device",

@@ -491,6 +491,9 @@ export interface TranslationDict {
     close: string;
     doneScan: string;
   };
+  auth: {
+    previousAccountUnsynced: string;
+  };
   sync: {
     status: string;
     pending: string;

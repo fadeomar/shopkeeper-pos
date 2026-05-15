@@ -512,6 +512,9 @@ export const ar: TranslationDict = {
     close: "إغلاق",
     doneScan: "إنهاء المسح",
   },
+  auth: {
+    previousAccountUnsynced: "الحساب السابق على هذا الجهاز كان لديه {{count}} تغيير غير متزامن — محفوظ محلياً وسيُزامن عند تسجيل ذلك الحساب الدخول هنا مرة أخرى.",
+  },
   sync: {
     status: "المزامنة",
     pending: "محفوظ على هذا الجهاز",
