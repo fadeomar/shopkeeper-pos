@@ -1,9 +1,13 @@
 import { db } from '@/lib/db/schema';
-import type { Bill, BillItem, CustomerPayment, Product, Settings, StockMovement, SyncQueueItem } from '@/types/domain';
+import type { Bill, BillItem, Customer, CustomerPayment, Product, Settings, Shift, StockMovement, SyncConflict, SyncQueueItem } from '@/types/domain';
 
 /**
  * Portable local backup format.
  * JSON is only used for manual export/support snapshots, never as live storage.
+ *
+ * Snapshots are append-only on field additions — older parsers will see
+ * `undefined` for new fields and can safely default. The `version` field
+ * stays at 1 until we make a breaking change to the shape.
  */
 export interface BackupSnapshotV1 {
   version: 1;
@@ -15,8 +19,11 @@ export interface BackupSnapshotV1 {
     billItems: number;
     stockMovements: number;
     customerPayments: number;
+    customers: number;
+    shifts: number;
     settings: number;
     syncQueue: number;
+    syncConflicts: number;
   };
   data: {
     products: Product[];
@@ -24,20 +31,26 @@ export interface BackupSnapshotV1 {
     billItems: BillItem[];
     stockMovements: StockMovement[];
     customerPayments: CustomerPayment[];
+    customers: Customer[];
+    shifts: Shift[];
     settings: Settings[];
     syncQueue: SyncQueueItem[];
+    syncConflicts: SyncConflict[];
   };
 }
 
 export async function createLocalBackupSnapshot(): Promise<BackupSnapshotV1> {
-  const [products, bills, billItems, stockMovements, customerPayments, settings, syncQueue] = await Promise.all([
+  const [products, bills, billItems, stockMovements, customerPayments, customers, shifts, settings, syncQueue, syncConflicts] = await Promise.all([
     db.products.toArray(),
     db.bills.toArray(),
     db.billItems.toArray(),
     db.stockMovements.toArray(),
     db.customerPayments.toArray(),
+    db.customers.toArray(),
+    db.shifts.toArray().catch(() => [] as Shift[]),
     db.settings.toArray(),
     db.syncQueue.toArray(),
+    db.syncConflicts.toArray().catch(() => [] as SyncConflict[]),
   ]);
 
   return {
@@ -50,8 +63,11 @@ export async function createLocalBackupSnapshot(): Promise<BackupSnapshotV1> {
       billItems: billItems.length,
       stockMovements: stockMovements.length,
       customerPayments: customerPayments.length,
+      customers: customers.length,
+      shifts: shifts.length,
       settings: settings.length,
       syncQueue: syncQueue.length,
+      syncConflicts: syncConflicts.length,
     },
     data: {
       products,
@@ -59,8 +75,11 @@ export async function createLocalBackupSnapshot(): Promise<BackupSnapshotV1> {
       billItems,
       stockMovements,
       customerPayments,
+      customers,
+      shifts,
       settings,
       syncQueue,
+      syncConflicts,
     },
   };
 }
@@ -88,8 +107,11 @@ export function createEmptyBackupPlan(): BackupSnapshotV1 {
       billItems: 0,
       stockMovements: 0,
       customerPayments: 0,
+      customers: 0,
+      shifts: 0,
       settings: 0,
       syncQueue: 0,
+      syncConflicts: 0,
     },
     data: {
       products: [],
@@ -97,8 +119,11 @@ export function createEmptyBackupPlan(): BackupSnapshotV1 {
       billItems: [],
       stockMovements: [],
       customerPayments: [],
+      customers: [],
+      shifts: [],
       settings: [],
       syncQueue: [],
+      syncConflicts: [],
     },
   };
 }

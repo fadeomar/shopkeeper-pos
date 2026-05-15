@@ -1,9 +1,11 @@
-import type { ButtonHTMLAttributes, PropsWithChildren } from 'react';
+import type { ButtonHTMLAttributes, PropsWithChildren, Ref } from 'react';
 import clsx from 'clsx';
 
 interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
   size?: 'sm' | 'md';
+  // React 19 forwards a `ref` prop on function components automatically.
+  ref?: Ref<HTMLButtonElement>;
 }
 
 export function Button({

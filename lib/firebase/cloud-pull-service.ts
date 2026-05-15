@@ -3,7 +3,8 @@ import { firestore } from '@/lib/firebase/config';
 import { db } from '@/lib/db/schema';
 import { saveConflict } from '@/lib/services/sync-conflict-service';
 import { buildSyncQueueItem, getSyncQueueId } from '@/lib/services/sync-queue-service';
-import type { Bill, BillItem, CustomerPayment, Product, Settings, StockMovement, SyncEntity, SyncQueueItem } from '@/types/domain';
+import { normalizeBillSplit } from '@/lib/utils/bill-split';
+import type { Bill, BillItem, Customer, CustomerPayment, Product, Settings, Shift, StockMovement, SyncEntity, SyncQueueItem } from '@/types/domain';
 
 const PRODUCT_FIELDS: Array<keyof Product> = [
   'barcode', 'name', 'category', 'brand', 'unit', 'quantityInStock', 'buyPrice', 'sellPrice',
@@ -48,7 +49,7 @@ async function pullCollection<T>(uid: string, name: string): Promise<T[]> {
 }
 
 function isActiveLocalJob(job: SyncQueueItem | undefined): job is SyncQueueItem {
-  return Boolean(job && ['pending', 'failed', 'syncing', 'conflict'].includes(job.status));
+  return Boolean(job && ['pending', 'failed', 'syncing', 'conflict', 'blocked'].includes(job.status));
 }
 
 async function getPendingLocalJob(entity: SyncEntity, entityId: string): Promise<SyncQueueItem | undefined> {
@@ -170,16 +171,104 @@ async function pullAppendOnlyCollections(uid: string): Promise<void> {
     pullCollection<CustomerPayment>(uid, 'customerPayments'),
   ]);
 
-  await db.transaction('rw', [db.bills, db.billItems, db.stockMovements, db.customerPayments], async () => {
-    for (const bill of bills) if (!(await db.bills.get(bill.id))) await db.bills.put({ ...bill, syncStatus: 'synced', lastSyncError: undefined });
-    for (const item of billItems) if (!(await db.billItems.get(item.id))) await db.billItems.put(item);
+  // Bills look append-only at create time, but voidBill() and returnBillItem()
+  // mutate status, returnedAmount, quantityReturned etc. on the original
+  // record. A device that already has the bill ID locally was being skipped
+  // here, so voids/returns from another device never propagated. Pull updates
+  // when cloud is newer and we have no active local job for that bill (an
+  // active job means this device made its own offline change and the next
+  // push will reconcile it).
+  // db.syncQueue is read inside via getPendingLocalJob; Dexie requires it
+  // in the transaction tables list or it throws a scope error in strict
+  // transactional mode.
+  await db.transaction('rw', [db.bills, db.billItems, db.stockMovements, db.customerPayments, db.syncQueue], async () => {
+    for (const bill of bills) {
+      // Bills authored by a pre-v6 device lack cashAmount/cardAmount/creditAmount.
+      // Fill them in once on the way into local storage so every reader downstream
+      // can rely on the split being present.
+      const normalized = normalizeBillSplit(bill) as Bill;
+      const local = await db.bills.get(normalized.id);
+      if (!local) {
+        await db.bills.put({ ...normalized, syncStatus: 'synced', lastSyncError: undefined });
+        continue;
+      }
+      const billJob = await getPendingLocalJob('bill', normalized.id);
+      if (billJob) continue;
+      if (!isCloudNewer(local.syncedAt, normalized.syncedAt)) continue;
+      await db.bills.put({ ...normalized, syncStatus: 'synced', lastSyncError: undefined });
+    }
+
+    for (const item of billItems) {
+      const local = await db.billItems.get(item.id);
+      if (!local) {
+        await db.billItems.put(item);
+        continue;
+      }
+      // Bill items are otherwise immutable snapshots; quantityReturned is the
+      // only field that changes after creation. If the parent bill has an
+      // active local job, leave items alone until that push reconciles.
+      const parentJob = await getPendingLocalJob('bill', item.billId);
+      if (parentJob) continue;
+      const localReturned = local.quantityReturned ?? 0;
+      const cloudReturned = item.quantityReturned ?? 0;
+      if (cloudReturned === localReturned) continue;
+      await db.billItems.update(item.id, { quantityReturned: cloudReturned });
+    }
+
+    // Stock movements are truly append-only — they record discrete events and
+    // never mutate. Customer payments likewise have no update path today.
     for (const movement of movements) if (!(await db.stockMovements.get(movement.id))) await db.stockMovements.put({ ...movement, syncStatus: 'synced', lastSyncError: undefined });
     for (const payment of payments) if (!(await db.customerPayments.get(payment.id))) await db.customerPayments.put({ ...payment, syncStatus: 'synced', lastSyncError: undefined });
   });
 }
 
+async function pullCustomers(uid: string): Promise<void> {
+  const cloudCustomers = await pullCollection<Customer>(uid, 'customers');
+  if (cloudCustomers.length === 0) return;
+
+  // db.syncQueue is read inside via getPendingLocalJob — include it in the
+  // transaction scope.
+  await db.transaction('rw', [db.customers, db.syncQueue], async () => {
+    for (const cloud of cloudCustomers) {
+      const local = await db.customers.get(cloud.id);
+      if (!local) {
+        await db.customers.put({ ...cloud, syncStatus: 'synced', lastSyncError: undefined });
+        continue;
+      }
+      // Skip if local has an unsynced edit — that push will reconcile it.
+      const pendingJob = await getPendingLocalJob('customer', local.id);
+      if (pendingJob) continue;
+      if (!isCloudNewer(local.syncedAt, cloud.syncedAt)) continue;
+      await db.customers.put({ ...cloud, syncStatus: 'synced', lastSyncError: undefined });
+    }
+  });
+}
+
+async function pullShifts(uid: string): Promise<void> {
+  const cloudShifts = await pullCollection<Shift>(uid, 'shifts');
+  if (cloudShifts.length === 0) return;
+
+  await db.transaction('rw', [db.shifts, db.syncQueue], async () => {
+    for (const cloud of cloudShifts) {
+      const local = await db.shifts.get(cloud.id);
+      if (!local) {
+        await db.shifts.put({ ...cloud, syncStatus: 'synced', lastSyncError: undefined });
+        continue;
+      }
+      // Skip if this device has unsynced edits to the shift — the push path
+      // will reconcile. Otherwise pull the newer cloud version.
+      const pendingJob = await getPendingLocalJob('shift', local.id);
+      if (pendingJob) continue;
+      if (!isCloudNewer(local.syncedAt, cloud.syncedAt)) continue;
+      await db.shifts.put({ ...cloud, syncStatus: 'synced', lastSyncError: undefined });
+    }
+  });
+}
+
 export async function pullCloudChangesBeforePush(uid: string): Promise<void> {
   await pullAppendOnlyCollections(uid);
+  await pullCustomers(uid);
+  await pullShifts(uid);
   await pullProducts(uid);
   await pullSettings(uid);
 }

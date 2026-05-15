@@ -66,6 +66,13 @@ export async function adjustProductStock(
   note: string,
   movementType: StockMovementType = 'adjustment',
 ) {
+  // The inventory model is integer-based (receiveProductStock and
+  // countProductStock both enforce Number.isInteger). Matching here keeps
+  // adjustment movements consistent and prevents fractional stock drift.
+  if (!Number.isInteger(quantityChange) || quantityChange === 0) {
+    throw new Error('Stock adjustment must be a non-zero whole number.');
+  }
+
   const createdAt = nowIso();
 
   await db.transaction('rw', db.products, db.stockMovements, db.syncQueue, async () => {

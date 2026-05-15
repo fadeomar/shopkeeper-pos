@@ -2,7 +2,9 @@ import { db } from '@/lib/db/schema';
 import { nowIso } from '@/lib/utils/date';
 import { createId } from '@/lib/utils/id';
 import { buildSyncQueueItem } from '@/lib/services/sync-queue-service';
-import type { Bill, CustomerPayment } from '@/types/domain';
+import { normalizeCustomerKey as sharedNormalizeCustomerKey } from '@/lib/utils/customer-key';
+import { netSplitField, normalizeBillSplit } from '@/lib/utils/bill-split';
+import type { Bill, Customer, CustomerPayment } from '@/types/domain';
 
 export interface CustomerLedgerRow {
   key: string;
@@ -21,26 +23,61 @@ export interface CustomerLedgerDetails extends CustomerLedgerRow {
   paymentRows: CustomerPayment[];
 }
 
-export function normalizeCustomerKey(input: { name?: string; phone?: string }): string {
-  const phone = input.phone?.replace(/\s+/g, '').trim();
-  if (phone) return `phone:${phone}`;
-  const name = input.name?.trim().toLowerCase().replace(/\s+/g, ' ');
-  return name ? `name:${name}` : '';
+// Re-exported from the shared util so existing call sites keep working.
+export const normalizeCustomerKey = sharedNormalizeCustomerKey;
+
+/**
+ * Build the legacy → customerId mapping for the current Customer table.
+ *
+ * Bills authored before the v7 migration carry a phone/name snapshot but no
+ * customerId; CustomerPayment rows still use the legacy customerKey too.
+ * This mapping lets every ledger reader resolve those legacy keys to the
+ * unified Customer.id at query time without rewriting the underlying rows.
+ */
+function buildLegacyKeyToCustomerId(customers: Customer[]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const customer of customers) {
+    const key = normalizeCustomerKey({ name: customer.name, phone: customer.phone });
+    if (key) map.set(key, customer.id);
+  }
+  return map;
 }
 
-function netBillTotal(bill: Bill): number {
-  return Math.max(0, bill.totalAmount - (bill.returnedAmount ?? 0));
+/**
+ * Resolve a bill to its canonical ledger key. Prefer bill.customerId (set
+ * by createFinalizedBill or the v7 migration). Fall back to the legacy
+ * normalized key if the bill predates the customer table and no matching
+ * Customer row exists yet.
+ */
+function canonicalBillKey(bill: Bill, legacyToCustomerId: Map<string, string>): string {
+  if (bill.customerId) return bill.customerId;
+  const legacy = normalizeCustomerKey({ name: bill.customerName, phone: bill.customerPhone });
+  if (!legacy) return '';
+  return legacyToCustomerId.get(legacy) ?? legacy;
+}
+
+function canonicalPaymentKey(payment: CustomerPayment, legacyToCustomerId: Map<string, string>): string {
+  // New payments authored after Bβ6 will store the customerId directly. Old
+  // payments stored a `phone:...` or `name:...` legacy key — resolve those
+  // through the mapping when possible so they line up with their bills.
+  return legacyToCustomerId.get(payment.customerKey) ?? payment.customerKey;
 }
 
 function updateRowFromBill(row: CustomerLedgerRow, bill: Bill): CustomerLedgerRow {
-  const netTotal = netBillTotal(bill);
-  const paidOnBill = Math.min(Math.max(0, bill.paidAmount || 0), netTotal);
+  const withSplit = normalizeBillSplit(bill) as Bill;
+  // Net credit (after returns) is the bill's contribution to outstanding debt.
+  // Net paid (cash + card, after returns) is what the customer already paid
+  // at sale time.
+  const netCredit = netSplitField(withSplit, withSplit.creditAmount);
+  const netPaid =
+    netSplitField(withSplit, withSplit.cashAmount) +
+    netSplitField(withSplit, withSplit.cardAmount);
   return {
     ...row,
     name: bill.customerName?.trim() || row.name,
     phone: bill.customerPhone?.trim() || row.phone,
-    creditSales: row.creditSales + netTotal,
-    paidOnBills: row.paidOnBills + paidOnBill,
+    creditSales: row.creditSales + netCredit + netPaid,
+    paidOnBills: row.paidOnBills + netPaid,
     billCount: row.billCount + 1,
     lastActivityAt: bill.createdAt > row.lastActivityAt ? bill.createdAt : row.lastActivityAt,
   };
@@ -71,24 +108,37 @@ function createEmptyRow(key: string, name = 'Unknown customer', phone?: string):
 }
 
 export async function getCustomerLedger(): Promise<CustomerLedgerRow[]> {
-  const [bills, payments] = await Promise.all([
+  const [bills, payments, customers] = await Promise.all([
     db.bills.where('paymentMethod').equals('credit').toArray(),
     db.customerPayments.toArray(),
+    db.customers.toArray(),
   ]);
 
+  const legacyToCustomerId = buildLegacyKeyToCustomerId(customers);
+  const customersById = new Map(customers.map((c) => [c.id, c]));
   const rows = new Map<string, CustomerLedgerRow>();
 
   for (const bill of bills) {
     if (bill.status === 'voided') continue;
-    const key = normalizeCustomerKey({ name: bill.customerName, phone: bill.customerPhone });
+    const key = canonicalBillKey(bill, legacyToCustomerId);
     if (!key) continue;
-    const row = rows.get(key) ?? createEmptyRow(key, bill.customerName || 'Credit customer', bill.customerPhone);
+    const customer = customersById.get(key);
+    const row = rows.get(key) ?? createEmptyRow(
+      key,
+      customer?.name || bill.customerName || 'Credit customer',
+      customer?.phone || bill.customerPhone,
+    );
     rows.set(key, updateRowFromBill(row, bill));
   }
 
   for (const payment of payments) {
-    const key = payment.customerKey;
-    const row = rows.get(key) ?? createEmptyRow(key, payment.customerName, payment.customerPhone);
+    const key = canonicalPaymentKey(payment, legacyToCustomerId);
+    const customer = customersById.get(key);
+    const row = rows.get(key) ?? createEmptyRow(
+      key,
+      customer?.name || payment.customerName,
+      customer?.phone || payment.customerPhone,
+    );
     rows.set(key, updateRowFromPayment(row, payment));
   }
 
@@ -101,21 +151,28 @@ export async function getCustomerLedger(): Promise<CustomerLedgerRow[]> {
 }
 
 export async function getCustomerLedgerDetails(customerKey: string): Promise<CustomerLedgerDetails | null> {
-  const [ledger, bills, payments] = await Promise.all([
+  const [ledger, bills, payments, customers] = await Promise.all([
     getCustomerLedger(),
     db.bills.where('paymentMethod').equals('credit').toArray(),
-    db.customerPayments.where('customerKey').equals(customerKey).reverse().sortBy('createdAt'),
+    db.customerPayments.toArray(),
+    db.customers.toArray(),
   ]);
 
   const row = ledger.find((item) => item.key === customerKey);
   if (!row) return null;
 
+  const legacyToCustomerId = buildLegacyKeyToCustomerId(customers);
+
   const customerBills = bills
     .filter((bill) => bill.status !== 'voided')
-    .filter((bill) => normalizeCustomerKey({ name: bill.customerName, phone: bill.customerPhone }) === customerKey)
+    .filter((bill) => canonicalBillKey(bill, legacyToCustomerId) === customerKey)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
-  return { ...row, bills: customerBills, paymentRows: payments };
+  const customerPayments = payments
+    .filter((payment) => canonicalPaymentKey(payment, legacyToCustomerId) === customerKey)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+  return { ...row, bills: customerBills, paymentRows: customerPayments };
 }
 
 export async function recordCustomerPayment(input: {

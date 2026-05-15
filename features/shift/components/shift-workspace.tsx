@@ -1,0 +1,494 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
+import { db } from "@/lib/db/schema";
+import { settingsRepo } from "@/lib/db/repositories";
+import {
+  closeShift,
+  computeExpectedCash,
+  getActiveShift,
+  listShifts,
+  openShift,
+  summarizeShiftBills,
+} from "@/lib/services/shift-service";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card } from "@/components/ui/card";
+import { Modal } from "@/components/ui/modal";
+import { EmptyState } from "@/components/ui/empty-state";
+import { useToast } from "@/components/ui/toast";
+import { useLocale } from "@/components/providers/locale-context";
+import { formatCurrency } from "@/lib/utils/money";
+import { formatDateTime } from "@/lib/utils/date";
+import { ShiftReport } from "./shift-report";
+import type { Bill, Shift } from "@/types/domain";
+
+function dismissOnEnter(e: React.KeyboardEvent<HTMLInputElement>) {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    e.currentTarget.blur();
+  }
+}
+
+function StatCard({
+  label,
+  value,
+  helper,
+  tone,
+}: {
+  label: string;
+  value: string;
+  helper?: string;
+  tone?: "neutral" | "positive" | "warning";
+}) {
+  const toneClasses =
+    tone === "positive"
+      ? "text-emerald-700"
+      : tone === "warning"
+        ? "text-red-700"
+        : "text-slate-900";
+  return (
+    <Card className="flex flex-col gap-1 p-4">
+      <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">
+        {label}
+      </p>
+      <p className={`text-2xl font-bold tabular-nums ${toneClasses}`}>{value}</p>
+      {helper && <p className="text-xs text-slate-500">{helper}</p>}
+    </Card>
+  );
+}
+
+export function ShiftWorkspace() {
+  const { t, dir } = useLocale();
+  const { push } = useToast();
+  const settings = useLiveQuery(() => settingsRepo.get(), []);
+  const activeShift = useLiveQuery(() => getActiveShift(), []);
+  const pastShifts = useLiveQuery(() => listShifts(), []);
+  // Live-queries on bills so the active-shift expected cash updates as new
+  // sales come in. Filter to the active shift's id when it exists.
+  const activeShiftBills = useLiveQuery<Bill[]>(
+    () =>
+      activeShift?.id
+        ? db.bills.where("shiftId").equals(activeShift.id).toArray()
+        : Promise.resolve<Bill[]>([]),
+    [activeShift?.id],
+  );
+  const currency = settings?.currency ?? "USD";
+
+  const [openingCash, setOpeningCash] = useState("");
+  const [openNotes, setOpenNotes] = useState("");
+  const [cashierName, setCashierName] = useState("");
+  const [submittingOpen, setSubmittingOpen] = useState(false);
+
+  const [closeDialogOpen, setCloseDialogOpen] = useState(false);
+  const [countedCash, setCountedCash] = useState("");
+  const [closingNotes, setClosingNotes] = useState("");
+  const [submittingClose, setSubmittingClose] = useState(false);
+
+  const [reportShift, setReportShift] = useState<Shift | null>(null);
+
+  const totals = useMemo(
+    () => summarizeShiftBills(activeShiftBills ?? []),
+    [activeShiftBills],
+  );
+
+  const expectedCash = activeShift
+    ? (activeShift.openingCash ?? 0) + totals.cashCollected
+    : 0;
+
+  // Used inside the close dialog to show live counted vs expected diff while
+  // the cashier is typing.
+  const countedCashNumeric = Number(countedCash);
+  const liveDifference = Number.isFinite(countedCashNumeric)
+    ? countedCashNumeric - expectedCash
+    : 0;
+
+  async function handleOpenShift() {
+    if (submittingOpen) return;
+    setSubmittingOpen(true);
+    try {
+      await openShift({
+        openingCash: Number(openingCash || 0),
+        cashierName: (cashierName || settings?.cashierName || "Owner").trim(),
+        notes: openNotes,
+      });
+      setOpeningCash("");
+      setOpenNotes("");
+      setCashierName("");
+      push(t("shift.openShiftSuccess"));
+    } catch (error) {
+      push(
+        error instanceof Error ? error.message : t("shift.openShiftFailed"),
+        "error",
+      );
+    } finally {
+      setSubmittingOpen(false);
+    }
+  }
+
+  async function handleCloseShift() {
+    if (!activeShift || submittingClose) return;
+    setSubmittingClose(true);
+    try {
+      const closed = await closeShift({
+        shiftId: activeShift.id,
+        countedCash: Number(countedCash || 0),
+        notes: closingNotes,
+      });
+      setCloseDialogOpen(false);
+      setCountedCash("");
+      setClosingNotes("");
+      push(t("shift.closeShiftSuccess"));
+      setReportShift(closed);
+    } catch (error) {
+      push(
+        error instanceof Error ? error.message : t("shift.closeShiftFailed"),
+        "error",
+      );
+    } finally {
+      setSubmittingClose(false);
+    }
+  }
+
+  return (
+    <div className="space-y-5" dir={dir}>
+      <section>
+        <h1 className="text-2xl font-bold text-slate-900">{t("shift.title")}</h1>
+        <p className="mt-1 max-w-2xl text-sm text-slate-500">
+          {t("shift.subtitle")}
+        </p>
+      </section>
+
+      {activeShift === undefined ? null : activeShift === null ? (
+        // ── No active shift: show the open-shift form ──────────────────
+        <Card className="flex flex-col gap-4" padding="md">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900">
+              {t("shift.noActiveShift")}
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              {t("shift.noActiveShiftDesc")}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium text-slate-600 uppercase tracking-wide">
+                {t("shift.openingCash")}
+              </span>
+              <Input
+                type="number"
+                inputMode="decimal"
+                enterKeyHint="done"
+                step="0.01"
+                min="0"
+                value={openingCash}
+                onChange={(e) => setOpeningCash(e.target.value)}
+                onKeyDown={dismissOnEnter}
+                placeholder="0.00"
+              />
+              <span className="text-xs text-slate-500">
+                {t("shift.openingCashHelper")}
+              </span>
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium text-slate-600 uppercase tracking-wide">
+                {t("shift.cashierName")}
+              </span>
+              <Input
+                value={cashierName}
+                onChange={(e) => setCashierName(e.target.value)}
+                placeholder={settings?.cashierName || "Owner"}
+              />
+              <span className="text-xs text-slate-500">
+                {t("shift.cashierNameHelper")}
+              </span>
+            </label>
+          </div>
+
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-slate-600 uppercase tracking-wide">
+              {t("shift.openShiftNotes")}
+            </span>
+            <Input
+              value={openNotes}
+              onChange={(e) => setOpenNotes(e.target.value)}
+              placeholder={t("shift.openShiftNotesPlaceholder")}
+            />
+          </label>
+
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              onClick={handleOpenShift}
+              disabled={submittingOpen}
+            >
+              {t("shift.openShiftCta")}
+            </Button>
+          </div>
+        </Card>
+      ) : (
+        // ── Active shift: live summary + close button ──────────────────
+        <Card className="flex flex-col gap-4" padding="md">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">
+                {t("shift.activeShift")}
+              </h2>
+              <p className="mt-1 text-xs text-slate-500">
+                {t("shift.openedAt")}: {formatDateTime(activeShift.openedAt)} ·{" "}
+                {t("shift.openedBy")}: {activeShift.openedByCashierName}
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="danger"
+              onClick={() => {
+                setCountedCash(expectedCash.toFixed(2));
+                setCloseDialogOpen(true);
+              }}
+            >
+              {t("shift.closeShift")}
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <StatCard
+              label={t("shift.openingCash")}
+              value={formatCurrency(activeShift.openingCash, currency)}
+            />
+            <StatCard
+              label={t("shift.cashCollected")}
+              value={formatCurrency(totals.cashCollected, currency)}
+            />
+            <StatCard
+              label={t("shift.expectedCash")}
+              value={formatCurrency(expectedCash, currency)}
+              helper={t("shift.expectedCashHelper")}
+              tone="positive"
+            />
+            <StatCard
+              label={t("shift.creditAccrued")}
+              value={formatCurrency(totals.creditAccrued, currency)}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <StatCard
+              label={t("shift.billsInShift")}
+              value={String(totals.billCount)}
+            />
+            <StatCard
+              label={t("shift.itemsInShift")}
+              value={String(totals.itemCount)}
+            />
+            <StatCard
+              label={t("shift.voidedCount")}
+              value={String(totals.voidedBillCount)}
+            />
+            <StatCard
+              label={t("shift.returnedCount")}
+              value={String(totals.returnedBillCount)}
+            />
+          </div>
+
+          {activeShift.notes && (
+            <p className="text-xs text-slate-500 italic">
+              &ldquo;{activeShift.notes}&rdquo;
+            </p>
+          )}
+        </Card>
+      )}
+
+      {/* ── Past shifts history ────────────────────────────────────────── */}
+      <Card padding="md">
+        <div className="flex items-end justify-between gap-3 mb-3">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900">
+              {t("shift.history")}
+            </h2>
+            <p className="text-sm text-slate-500">{t("shift.historyDesc")}</p>
+          </div>
+        </div>
+
+        {!pastShifts || pastShifts.length === 0 ? (
+          <EmptyState
+            title={t("shift.noPastShifts")}
+            description={t("shift.history")}
+          />
+        ) : (
+          <div className="overflow-x-auto rounded-xl border border-slate-100">
+            <table className="min-w-[720px] w-full text-sm">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  {[
+                    t("shift.openedAt"),
+                    t("shift.openedBy"),
+                    t("shift.openingCash"),
+                    t("shift.expectedCash"),
+                    t("shift.countedCash"),
+                    t("shift.cashDifference"),
+                    "",
+                  ].map((h) => (
+                    <th
+                      key={h}
+                      className="px-3 py-2.5 text-start text-xs font-semibold text-slate-500 uppercase tracking-wide"
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {pastShifts
+                  .filter((s) => s.status === "closed")
+                  .map((shift) => {
+                    const diff = shift.cashDifference ?? 0;
+                    return (
+                      <tr key={shift.id} className="hover:bg-slate-50/60">
+                        <td className="px-3 py-3 text-slate-700">
+                          {formatDateTime(shift.openedAt)}
+                        </td>
+                        <td className="px-3 py-3 text-slate-700">
+                          {shift.openedByCashierName}
+                        </td>
+                        <td className="px-3 py-3 tabular-nums">
+                          {formatCurrency(shift.openingCash, currency)}
+                        </td>
+                        <td className="px-3 py-3 tabular-nums">
+                          {formatCurrency(shift.expectedCash ?? 0, currency)}
+                        </td>
+                        <td className="px-3 py-3 tabular-nums">
+                          {formatCurrency(shift.countedCash ?? 0, currency)}
+                        </td>
+                        <td
+                          className={`px-3 py-3 tabular-nums font-semibold ${
+                            diff > 0.005
+                              ? "text-emerald-700"
+                              : diff < -0.005
+                                ? "text-red-700"
+                                : "text-slate-700"
+                          }`}
+                        >
+                          {formatCurrency(diff, currency)}
+                        </td>
+                        <td className="px-3 py-3 text-end">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => setReportShift(shift)}
+                          >
+                            {t("shift.viewReport")}
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      {/* ── Close-shift dialog ────────────────────────────────────────── */}
+      <Modal
+        open={closeDialogOpen}
+        title={t("shift.closeShift")}
+        description={t("shift.closeShiftDesc")}
+        onClose={() => setCloseDialogOpen(false)}
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setCloseDialogOpen(false)}
+              disabled={submittingClose}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              type="button"
+              onClick={handleCloseShift}
+              disabled={submittingClose}
+            >
+              {t("shift.confirmClose")}
+            </Button>
+          </>
+        }
+      >
+        {activeShift && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <StatCard
+                label={t("shift.expectedCash")}
+                value={formatCurrency(expectedCash, currency)}
+              />
+              <StatCard
+                label={t("shift.cashDifference")}
+                value={formatCurrency(liveDifference, currency)}
+                tone={
+                  liveDifference > 0.005
+                    ? "positive"
+                    : liveDifference < -0.005
+                      ? "warning"
+                      : "neutral"
+                }
+              />
+            </div>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium text-slate-600 uppercase tracking-wide">
+                {t("shift.countedCash")}
+              </span>
+              <Input
+                type="number"
+                inputMode="decimal"
+                enterKeyHint="done"
+                step="0.01"
+                min="0"
+                value={countedCash}
+                onChange={(e) => setCountedCash(e.target.value)}
+                onKeyDown={dismissOnEnter}
+              />
+              <span className="text-xs text-slate-500">
+                {t("shift.countedCashHelper")}
+              </span>
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium text-slate-600 uppercase tracking-wide">
+                {t("shift.closingNotes")}
+              </span>
+              <Input
+                value={closingNotes}
+                onChange={(e) => setClosingNotes(e.target.value)}
+              />
+            </label>
+          </div>
+        )}
+      </Modal>
+
+      {/* ── Shift report viewer ───────────────────────────────────────── */}
+      <Modal
+        open={reportShift !== null}
+        title={t("shift.viewReport")}
+        onClose={() => setReportShift(null)}
+        footer={
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => setReportShift(null)}
+          >
+            {t("common.close")}
+          </Button>
+        }
+      >
+        {reportShift && <ShiftReport shift={reportShift} settings={settings} />}
+      </Modal>
+    </div>
+  );
+}
+
+// Stub re-export so the route file can import a single name even before the
+// real report lands (D6 fills it in). Keeps the workspace import stable.
+export { computeExpectedCash };

@@ -13,6 +13,7 @@ const routes = [
   { href: '/inventory', key: 'nav.inventory',   short: 'Stock'     },
   { href: '/reports',   key: 'nav.reports',     short: 'Reports'   },
   { href: '/customers', key: 'nav.customers',   short: 'Customers' },
+  { href: '/shift',     key: 'nav.shift',       short: 'Shift'     },
   { href: '/settings',  key: 'nav.settings',    short: 'Settings'  },
 ] as const;
 

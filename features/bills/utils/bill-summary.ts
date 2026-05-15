@@ -1,4 +1,5 @@
 import type { Bill, BillItem, PaymentMethod } from "@/types/domain";
+import { netSplitField, normalizeBillSplit } from "@/lib/utils/bill-split";
 
 export type BillDateFilter =
   | "all"
@@ -101,17 +102,21 @@ export function getBillReturnedItemCount(items: BillItem[]): number {
 export function summarizeBills(bills: Bill[]) {
   return bills.reduce(
     (summary, bill) => {
+      const billWithSplit = normalizeBillSplit(bill) as Bill;
       summary.billCount += 1;
-      summary.itemCount += bill.itemCount;
-      const netTotal = getBillNetTotal(bill);
-      const netProfit = getBillNetProfit(bill);
+      summary.itemCount += billWithSplit.itemCount;
+      const netTotal = getBillNetTotal(billWithSplit);
+      const netProfit = getBillNetProfit(billWithSplit);
       summary.totalSales += netTotal;
       summary.totalProfit += netProfit;
+      // Revenue retained = cash kept + card collected, net of returns/voids.
+      // Excludes the unpaid creditAmount portion (that's debt, not retained
+      // revenue). Voided bills naturally yield 0 because returnedAmount =
+      // totalAmount makes every netSplitField call return 0.
       summary.totalPaid +=
-        bill.status === "voided"
-          ? 0
-          : Math.max(0, bill.paidAmount - (bill.returnedAmount ?? 0));
-      summary.byPayment[bill.paymentMethod] += netTotal;
+        netSplitField(billWithSplit, billWithSplit.cashAmount) +
+        netSplitField(billWithSplit, billWithSplit.cardAmount);
+      summary.byPayment[billWithSplit.paymentMethod] += netTotal;
       return summary;
     },
     {

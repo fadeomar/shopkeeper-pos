@@ -49,7 +49,7 @@ export function AuthenticatedShell({
 // Auto-redirects to /admin/users if landed on a POS route.
 
 function AdminShell({ children }: { children: React.ReactNode }) {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
 
@@ -118,7 +118,7 @@ function AdminShell({ children }: { children: React.ReactNode }) {
 // daily auto-sync, and new-device cloud restore detection.
 
 function CashierShell({ children }: { children: React.ReactNode }) {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const { setSettings } = useSettings();
   const uid = user?.uid;
 

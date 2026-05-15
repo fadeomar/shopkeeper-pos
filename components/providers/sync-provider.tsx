@@ -6,8 +6,10 @@ import {
   applyStockMovementDeltasToCloudProducts,
   syncBillSequenceToCloud,
   syncBillToCloud,
+  syncCustomersToCloud,
   syncProductsToCloud,
   syncSettingsToCloud,
+  syncShiftsToCloud,
   syncStockMovementsToCloud,
   syncCustomerPaymentsToCloud,
 } from '@/lib/firebase/sync-service';
@@ -17,6 +19,7 @@ import {
   markSyncing,
   markSynced,
   markFailed,
+  markBlocked,
   markConflict,
 } from '@/lib/services/sync-queue-service';
 import { useAuth } from './auth-context';
@@ -53,7 +56,13 @@ function isBillSequenceJob(job: SyncQueueItem): boolean {
 }
 
 function isActiveQueueStatus(status?: SyncStatus): boolean {
-  return status === 'pending' || status === 'failed' || status === 'syncing' || status === 'conflict';
+  return (
+    status === 'pending' ||
+    status === 'failed' ||
+    status === 'syncing' ||
+    status === 'conflict' ||
+    status === 'blocked'
+  );
 }
 
 function sameValue(a: unknown, b: unknown): boolean {
@@ -66,16 +75,23 @@ function productsMatchAfterBillDelta(local: Product, cloud: Product): boolean {
 
 function jobPriority(job: SyncQueueItem): number {
   switch (job.entity) {
-    case 'bill':
+    // Customer and shift rows must land in the cloud before any bill that
+    // references them; same ordering as SYNC_ENTITY_PRIORITY in
+    // sync-queue-service.ts.
+    case 'customer':
       return 0;
-    case 'customerPayment':
+    case 'shift':
       return 1;
-    case 'stockMovement':
+    case 'bill':
       return 2;
+    case 'customerPayment':
+      return 3;
+    case 'stockMovement':
+      return 4;
     case 'settings':
-      return isBillSequenceJob(job) ? 3 : 5;
+      return isBillSequenceJob(job) ? 5 : 7;
     case 'product':
-      return payloadSource(job) === 'bill-stock' ? 4 : 6;
+      return 8;
     default:
       return 10;
   }
@@ -122,7 +138,32 @@ async function syncBillProductDeltas(uid: string, movements: StockMovement[]): P
 }
 
 async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
-  if ((job.retryCount ?? 0) >= MAX_RETRIES) return;
+  // A job that has burned through its retry budget without succeeding needs
+  // human attention. Mark it `blocked` so it shows up in Device Health with
+  // a clear "manual retry required" affordance instead of silently being
+  // skipped on every sync run.
+  if ((job.retryCount ?? 0) >= MAX_RETRIES) {
+    if (job.status !== 'blocked') {
+      const message = `Sync stopped after ${MAX_RETRIES} failed attempts. Manual retry required.`;
+      await markBlocked(job.id, message);
+      if (job.entity === 'bill') {
+        await db.bills.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
+      } else if (job.entity === 'product') {
+        await db.products.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
+      } else if (job.entity === 'stockMovement') {
+        await db.stockMovements.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
+      } else if (job.entity === 'customerPayment') {
+        await db.customerPayments.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
+      } else if (job.entity === 'customer') {
+        await db.customers.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
+      } else if (job.entity === 'shift') {
+        await db.shifts.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
+      } else if (job.entity === 'settings') {
+        await db.settings.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
+      }
+    }
+    return;
+  }
 
   await markSyncing(job.id);
   try {
@@ -153,11 +194,6 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
         movements.map((movement) => markSynced(getSyncQueueId('stockMovement', movement.id))),
       );
     } else if (job.entity === 'product') {
-      if (payloadSource(job) === 'bill-stock') {
-        await markSynced(job.id);
-        return;
-      }
-
       const product = await db.products.get(job.entityId);
       if (!product) {
         await markSynced(job.id);
@@ -194,6 +230,26 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
       const syncedAt = await syncCustomerPaymentsToCloud(uid, [payment]);
       if (syncedAt) {
         await db.customerPayments.update(job.entityId, { syncStatus: 'synced', syncedAt, lastSyncError: undefined });
+      }
+    } else if (job.entity === 'customer') {
+      const customer = await db.customers.get(job.entityId);
+      if (!customer) {
+        await markSynced(job.id);
+        return;
+      }
+      const syncedAt = await syncCustomersToCloud(uid, [customer]);
+      if (syncedAt) {
+        await db.customers.update(job.entityId, { syncStatus: 'synced', syncedAt, lastSyncError: undefined });
+      }
+    } else if (job.entity === 'shift') {
+      const shift = await db.shifts.get(job.entityId);
+      if (!shift) {
+        await markSynced(job.id);
+        return;
+      }
+      const syncedAt = await syncShiftsToCloud(uid, [shift]);
+      if (syncedAt) {
+        await db.shifts.update(job.entityId, { syncStatus: 'synced', syncedAt, lastSyncError: undefined });
       }
     } else if (job.entity === 'settings') {
       const settings = await db.settings.get(job.entityId);
@@ -235,6 +291,10 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
       await db.stockMovements.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
     } else if (job.entity === 'customerPayment') {
       await db.customerPayments.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
+    } else if (job.entity === 'customer') {
+      await db.customers.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
+    } else if (job.entity === 'shift') {
+      await db.shifts.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
     } else if (job.entity === 'settings') {
       await db.settings.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
     }

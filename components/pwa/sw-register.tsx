@@ -10,8 +10,9 @@ const OFFLINE_NAV_ROUTES = [
 
 // These are the routes the store must have offline. Admin is intentionally not
 // required because many devices are normal cashier devices and may not have
-// permission to cache it.
-const REQUIRED_OFFLINE_ROUTES = ['/', '/products', '/billing', '/bills', '/settings'] as const;
+// permission to cache it. Inventory and customers are core daily workflows
+// (stock receive / count, customer credit ledger) and must work offline too.
+const REQUIRED_OFFLINE_ROUTES = ['/', '/products', '/billing', '/bills', '/inventory', '/customers', '/settings'] as const;
 const OFFLINE_NAV_ROUTE_SET = new Set<string>(OFFLINE_NAV_ROUTES);
 const FIRST_CONTROL_RELOAD_KEY = 'shopkeeper_sw_first_control_reload_v3';
 
@@ -93,7 +94,7 @@ export function ServiceWorkerRegister() {
     let cancelled = false;
     async function refreshPendingCount() {
       try {
-        const count = await db.syncQueue.where('status').anyOf(['pending', 'failed', 'syncing']).count();
+        const count = await db.syncQueue.where('status').anyOf(['pending', 'failed', 'syncing', 'blocked']).count();
         if (!cancelled) setPendingCount(count);
       } catch {
         if (!cancelled) setPendingCount(0);

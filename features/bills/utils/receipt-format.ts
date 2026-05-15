@@ -2,6 +2,7 @@ import type { Bill, BillItem, Settings } from "@/types/domain";
 import { formatCurrency } from "@/lib/utils/money";
 import { formatDateTime } from "@/lib/utils/date";
 import { getBillNetTotal } from "@/features/bills/utils/bill-summary";
+import { normalizeBillSplit } from "@/lib/utils/bill-split";
 
 export function buildReceiptText({
   bill,
@@ -29,6 +30,9 @@ export function buildReceiptText({
     billStatus: string;
     paid: string;
     change: string;
+    cashLabel: string;
+    cardLabel: string;
+    creditLabel: string;
     qty: string;
     thankYou: string;
     walkin: string;
@@ -37,6 +41,18 @@ export function buildReceiptText({
 }) {
   const currency = settings?.currency ?? "USD";
   const storeName = settings?.storeName || "Shopkeeper POS";
+  const withSplit = normalizeBillSplit(bill) as Bill;
+  // Show the split breakdown only when the bill exercises more than one
+  // method — pure cash / pure card / pure credit bills don't need an extra
+  // section.
+  const splitLines: string[] = [];
+  const usedMethods = [
+    withSplit.cashAmount > 0 ? `${labels.cashLabel}: ${formatCurrency(withSplit.cashAmount, currency)}` : null,
+    withSplit.cardAmount > 0 ? `${labels.cardLabel}: ${formatCurrency(withSplit.cardAmount, currency)}` : null,
+    withSplit.creditAmount > 0 ? `${labels.creditLabel}: ${formatCurrency(withSplit.creditAmount, currency)}` : null,
+  ].filter((line): line is string => line !== null);
+  if (usedMethods.length > 1) splitLines.push(...usedMethods);
+
   const lines = [
     storeName,
     labels.receipt,
@@ -65,6 +81,7 @@ export function buildReceiptText({
           `${labels.netTotal}: ${formatCurrency(getBillNetTotal(bill), currency)}`,
         ]
       : []),
+    ...splitLines,
     `${labels.paid}: ${formatCurrency(bill.paidAmount, currency)}`,
     `${labels.change}: ${formatCurrency(bill.changeAmount, currency)}`,
     "------------------------------",

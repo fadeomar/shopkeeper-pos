@@ -1,8 +1,13 @@
 import Dexie from "dexie";
 import { db } from "./schema";
+import { createId } from "@/lib/utils/id";
+import { nowIso } from "@/lib/utils/date";
+import { normalizePhone } from "@/lib/utils/customer-key";
+import { buildSyncQueueItem } from "@/lib/services/sync-queue-service";
 import type {
   Bill,
   BillItem,
+  Customer,
   Product,
   Settings,
   StockMovement,
@@ -165,6 +170,96 @@ export const settingsRepo = {
 
       return sequence;
     });
+  },
+};
+
+export const customerRepo = {
+  async list(): Promise<Customer[]> {
+    return db.customers.orderBy('name').toArray();
+  },
+
+  async findById(id: string): Promise<Customer | undefined> {
+    return db.customers.get(id);
+  },
+
+  async findByNormalizedPhone(normalizedPhone: string): Promise<Customer | undefined> {
+    if (!normalizedPhone) return undefined;
+    return db.customers.where('normalizedPhone').equals(normalizedPhone).first();
+  },
+
+  /**
+   * Look up an existing customer matching the given phone (if any) or
+   * create a new one inside the current Dexie transaction. The caller is
+   * responsible for queuing the sync job — this keeps the repo focused on
+   * data shape and lets billing-service decide whether the bill creation
+   * itself should also trigger a customer sync push.
+   *
+   * Returns the resolved Customer plus whether it was newly created and
+   * whether an existing row was changed in place, so the caller can decide
+   * whether (and how) to enqueue a 'customer' sync job.
+   */
+  async findOrCreate(input: {
+    name?: string;
+    phone?: string;
+  }): Promise<{ customer: Customer; created: boolean; changed: boolean } | null> {
+    const cleanName = input.name?.trim();
+    const cleanPhone = input.phone?.trim();
+    if (!cleanName && !cleanPhone) return null;
+
+    const normalizedPhone = normalizePhone(cleanPhone);
+    if (normalizedPhone) {
+      const existing = await db.customers.where('normalizedPhone').equals(normalizedPhone).first();
+      if (existing) {
+        // Refresh name if the new bill supplied a non-empty one that differs.
+        if (cleanName && cleanName !== existing.name) {
+          const updated: Customer = {
+            ...existing,
+            name: cleanName,
+            updatedAt: nowIso(),
+            syncStatus: 'pending',
+            lastSyncError: undefined,
+          };
+          await db.customers.put(updated);
+          return { customer: updated, created: false, changed: true };
+        }
+        return { customer: existing, created: false, changed: false };
+      }
+    }
+
+    const now = nowIso();
+    const customer: Customer = {
+      id: createId('cust'),
+      name: cleanName || 'Customer',
+      phone: cleanPhone || undefined,
+      normalizedPhone: normalizedPhone || undefined,
+      createdAt: now,
+      updatedAt: now,
+      syncStatus: 'pending',
+    };
+    await db.customers.put(customer);
+    return { customer, created: true, changed: false };
+  },
+
+  async save(customer: Customer): Promise<void> {
+    await db.transaction('rw', [db.customers, db.syncQueue], async () => {
+      const now = nowIso();
+      const next: Customer = {
+        ...customer,
+        updatedAt: now,
+        normalizedPhone: customer.phone ? normalizePhone(customer.phone) : undefined,
+        syncStatus: 'pending',
+        lastSyncError: undefined,
+      };
+      await db.customers.put(next);
+      await db.syncQueue.put(buildSyncQueueItem({
+        entity: 'customer',
+        entityId: next.id,
+        operation: 'upsert',
+      }));
+    });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('shopkeeper:sync-requested'));
+    }
   },
 };
 

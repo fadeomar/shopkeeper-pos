@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '@/lib/db/schema';
 import { getCustomerLedger, getCustomerLedgerDetails, recordCustomerPayment, type CustomerLedgerDetails, type CustomerLedgerRow } from '@/lib/services/customer-ledger-service';
 import { useLocale } from '@/components/providers/locale-context';
 import { useToast } from '@/components/ui/toast';
@@ -51,6 +50,18 @@ export function CustomerLedgerWorkspace() {
     balanceDue: acc.balanceDue + row.balanceDue,
     customersWithDebt: acc.customersWithDebt + (row.balanceDue > 0.001 ? 1 : 0),
   }), { creditSales: 0, payments: 0, balanceDue: 0, customersWithDebt: 0 }), [rows]);
+
+  const paymentAmountNumeric = Number(amount);
+  const safePaymentAmount = Number.isFinite(paymentAmountNumeric) ? paymentAmountNumeric : 0;
+  const balanceDueAtModal = selected?.balanceDue ?? 0;
+  // Only treat amounts above an existing positive balance as overpayments;
+  // a payment toward an already-credit customer (balanceDue <= 0) is
+  // always a deposit on top of credit.
+  const overpaymentExtra =
+    safePaymentAmount > Math.max(0, balanceDueAtModal)
+      ? safePaymentAmount - Math.max(0, balanceDueAtModal)
+      : 0;
+  const isOverpayment = overpaymentExtra > 0.005;
 
   async function openDetails(row: CustomerLedgerRow) {
     const details = await getCustomerLedgerDetails(row.key);
@@ -130,7 +141,14 @@ export function CustomerLedgerWorkspace() {
                     <td className="px-3 py-3 text-slate-500">{row.phone || '—'}</td>
                     <td className="px-3 py-3 tabular-nums">{formatCurrency(row.creditSales, currency)}</td>
                     <td className="px-3 py-3 tabular-nums">{formatCurrency(row.paidOnBills + row.payments, currency)}</td>
-                    <td className={`px-3 py-3 tabular-nums font-semibold ${row.balanceDue > 0 ? 'text-red-600' : 'text-green-600'}`}>{formatCurrency(row.balanceDue, currency)}</td>
+                    <td className={`px-3 py-3 tabular-nums font-semibold ${row.balanceDue > 0.005 ? 'text-red-600' : row.balanceDue < -0.005 ? 'text-blue-600' : 'text-green-600'}`}>
+                      {formatCurrency(row.balanceDue, currency)}
+                      {row.balanceDue < -0.005 && (
+                        <span className="ms-1 text-[10px] font-medium uppercase tracking-wide text-blue-500">
+                          {t('customers.creditBalanceNote')}
+                        </span>
+                      )}
+                    </td>
                     <td className="px-3 py-3 tabular-nums">{row.billCount}</td>
                     <td className="px-3 py-3 text-slate-500">{row.lastActivityAt ? new Date(row.lastActivityAt).toLocaleString() : '—'}</td>
                     <td className="px-3 py-3 text-end">
@@ -212,7 +230,9 @@ export function CustomerLedgerWorkspace() {
         footer={
           <>
             <Button type="button" variant="ghost" onClick={() => setPaymentOpen(false)}>{t('common.cancel')}</Button>
-            <Button type="button" onClick={savePayment}>{t('customers.savePayment')}</Button>
+            <Button type="button" onClick={savePayment}>
+              {isOverpayment ? t('customers.savePaymentCredit') : t('customers.savePayment')}
+            </Button>
           </>
         }
       >
@@ -221,6 +241,13 @@ export function CustomerLedgerWorkspace() {
             <span className="text-xs font-medium text-slate-600 uppercase tracking-wide">{t('customers.paymentAmount')}</span>
             <Input type="number" step="0.01" min="0" value={amount} onChange={(event) => setAmount(event.target.value)} />
           </label>
+          {isOverpayment && (
+            <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              {t('customers.overpaymentWarning', {
+                extra: formatCurrency(overpaymentExtra, currency),
+              })}
+            </p>
+          )}
           <label className="flex flex-col gap-1.5">
             <span className="text-xs font-medium text-slate-600 uppercase tracking-wide">{t('customers.note')}</span>
             <Input value={note} onChange={(event) => setNote(event.target.value)} placeholder={t('customers.notePlaceholder')} />

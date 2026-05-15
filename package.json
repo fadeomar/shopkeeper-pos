@@ -16,17 +16,17 @@
     "@hookform/resolvers": "^3.9.1",
     "@tailwindcss/postcss": "^4.2.2",
     "@zxing/browser": "^0.1.5",
+    "@zxing/library": "^0.21.3",
     "clsx": "^2.1.1",
     "dexie": "^4.0.10",
     "dexie-react-hooks": "^1.1.7",
     "firebase": "^11.10.0",
-    "next": "16.2.4",
+    "next": "^16.2.6",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "react-hook-form": "^7.54.2",
     "tailwindcss": "^4.2.2",
-    "zod": "^3.24.1",
-    "@zxing/library": "^0.21.3"
+    "zod": "^3.24.1"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",
@@ -34,7 +34,7 @@
     "@types/react-dom": "^19.0.4",
     "cross-env": "^7.0.3",
     "eslint": "^9.19.0",
-    "eslint-config-next": "16.2.4",
+    "eslint-config-next": "^16.2.6",
     "typescript": "^5.7.3"
   }
 }

@@ -3,6 +3,7 @@ import { db } from '@/lib/db/schema';
 import { buildSyncQueueItem } from '@/lib/services/sync-queue-service';
 import { createId } from '@/lib/utils/id';
 import { nowIso } from '@/lib/utils/date';
+import { normalizeBarcode } from '@/lib/utils/barcode';
 import { parseCsv } from '@/lib/utils/product-csv';
 import type { Product, StockMovement } from '@/types/domain';
 
@@ -93,7 +94,9 @@ function statusOrDefault(value: string): ProductSchema['status'] {
 
 function rowToProductValues(row: string[], headers: HeaderMap): ProductSchema {
   return {
-    barcode: getCell(row, headers, 'barcode'),
+    // Normalize early so dedup-within-CSV and dedup-vs-existing both use the
+    // canonical form. Otherwise " 12345 " and "12345" become two products.
+    barcode: normalizeBarcode(getCell(row, headers, 'barcode')),
     name: getCell(row, headers, 'name'),
     category: getCell(row, headers, 'category') || 'General',
     brand: getCell(row, headers, 'brand'),

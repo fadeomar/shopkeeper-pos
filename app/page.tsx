@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
 import { useLocale } from '@/components/providers/locale-context';
+import { getBillNetTotal } from '@/features/bills/utils/bill-summary';
 
 export default function DashboardPage() {
   const { t } = useLocale();
@@ -24,7 +25,9 @@ export default function DashboardPage() {
   const liveProducts = products?.filter((p) => p.status === 'active') ?? [];
   const lowStockCount = liveProducts.filter((p) => p.quantityInStock <= p.minimumStockAlert).length;
   const totalInventoryValue = liveProducts.reduce((s, p) => s + p.quantityInStock * p.buyPrice, 0);
-  const totalSales = (bills ?? []).reduce((s, b) => s + b.totalAmount, 0);
+  // Use net total so voided bills contribute 0 and partial returns reduce the
+  // figure correctly — matches what the bills page and reports already show.
+  const totalSales = (bills ?? []).reduce((s, b) => s + getBillNetTotal(b), 0);
   const currency = settings?.currency ?? 'USD';
 
   async function initializeDemo() {

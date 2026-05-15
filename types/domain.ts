@@ -1,8 +1,8 @@
 export type EntityStatus = 'active' | 'inactive';
 export type UserRole = 'admin' | 'cashier';
 
-export type SyncStatus = 'pending' | 'syncing' | 'synced' | 'failed' | 'conflict';
-export type SyncEntity = 'bill' | 'product' | 'settings' | 'stockMovement' | 'customerPayment';
+export type SyncStatus = 'pending' | 'syncing' | 'synced' | 'failed' | 'conflict' | 'blocked';
+export type SyncEntity = 'bill' | 'product' | 'settings' | 'stockMovement' | 'customerPayment' | 'customer' | 'shift';
 export type SyncOperation = 'create' | 'update' | 'delete' | 'upsert';
 
 export interface SyncQueueItem {
@@ -89,6 +89,11 @@ export interface Bill {
   billNumber: string;
   createdAt: string;
   cashierName?: string;
+  // Reference into the customers table (populated for credit sales and
+  // anywhere the cashier selected/created a customer). The name/phone fields
+  // below stay as immutable snapshots so receipts, audit, and reports work
+  // even if the customer record is later renamed.
+  customerId?: string;
   customerName?: string;
   customerPhone?: string;
   paymentMethod: PaymentMethod;
@@ -98,9 +103,24 @@ export interface Bill {
   totalAmount: number;
   paidAmount: number;
   changeAmount: number;
+  // Payment-split amounts. Invariant for finalized bills:
+  //   cashAmount + cardAmount + creditAmount === totalAmount
+  // Returns/voids leave these gross numbers intact and reduce them via
+  // returnedAmount + proportional allocation at read time. Local bills are
+  // guaranteed to have these via the Dexie v6 upgrade. Cloud bills written
+  // by older devices may not — readers should treat them as optional with
+  // `?? 0` fallback or run them through normalizeBillSplit().
+  cashAmount: number;
+  cardAmount: number;
+  creditAmount: number;
   totalProfit: number;
   itemCount: number;
   status: BillStatus;
+  // Set at finalize when a shift is open on this device; left undefined when
+  // no shift is open (the shop doesn't use drawer reconciliation, or the
+  // cashier forgot to open one). Reports/drawer math only count bills that
+  // carry the active shift's id.
+  shiftId?: string;
   notes?: string;
   voidedAt?: string;
   voidReason?: string;
@@ -127,6 +147,48 @@ export interface BillItem {
   lineProfit: number;
   quantityReturned?: number;
   createdAt: string;
+}
+
+export type ShiftStatus = 'open' | 'closed';
+
+/**
+ * A cashier session bracketing the cash drawer between opening and closing.
+ * Bills created while a shift is `open` carry that shift's id (Bill.shiftId);
+ * at close, expected cash equals openingCash + net cash collected for those
+ * bills (sales − proportional return refunds). cashDifference = counted −
+ * expected, allowing variance audit.
+ */
+export interface Shift {
+  id: string;
+  openedAt: string;
+  openedByCashierName: string;
+  openingCash: number;
+  notes?: string;
+  status: ShiftStatus;
+  // Populated when the shift is closed.
+  closedAt?: string;
+  expectedCash?: number;
+  countedCash?: number;
+  cashDifference?: number;
+  closingNotes?: string;
+  syncStatus?: SyncStatus;
+  syncedAt?: string;
+  lastSyncError?: string;
+}
+
+export interface Customer {
+  id: string;
+  name: string;
+  phone?: string;
+  // Digits-only canonical phone for the Dexie index — lets dedup tolerate
+  // spaces, dashes, and country-code variations.
+  normalizedPhone?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+  syncStatus?: SyncStatus;
+  syncedAt?: string;
+  lastSyncError?: string;
 }
 
 export interface CustomerPayment {
@@ -208,5 +270,10 @@ export interface BillFormValues {
   discountAmount: number;
   taxAmount: number;
   paidAmount: number;
+  // For 'mixed' payment method: explicit cash + card breakdown that must sum
+  // to totalAmount. Ignored for cash/card/credit (the service derives those
+  // fields from paymentMethod + paidAmount).
+  cashAmount?: number;
+  cardAmount?: number;
   notes?: string;
 }

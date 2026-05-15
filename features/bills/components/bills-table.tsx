@@ -33,6 +33,7 @@ function SyncBadge({ status }: { status?: SyncStatus }) {
     syncing: "bg-blue-50 text-blue-700 border-blue-100",
     failed: "bg-red-50 text-red-700 border-red-100",
     conflict: "bg-amber-100 text-amber-800 border-amber-200",
+    blocked: "bg-red-100 text-red-800 border-red-200",
   };
   return (
     <span

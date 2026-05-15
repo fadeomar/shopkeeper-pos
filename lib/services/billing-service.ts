@@ -1,5 +1,5 @@
 import { db } from "@/lib/db/schema";
-import { SETTINGS_ID } from "@/lib/db/repositories";
+import { SETTINGS_ID, customerRepo } from "@/lib/db/repositories";
 import {
   calculateBillTotals,
   calculateChange,
@@ -8,8 +8,9 @@ import {
 } from "@/lib/utils/calculations";
 import { nowIso } from "@/lib/utils/date";
 import { addMoney, allocateMoney, roundMoney, subtractMoney } from "@/lib/utils/money";
+import type { BillSplit } from "@/lib/utils/bill-split";
 import { createBillNumber, createId } from "@/lib/utils/id";
-import { buildSyncQueueItem } from "@/lib/services/sync-queue-service";
+import { buildSyncQueueItem, getSyncQueueId } from "@/lib/services/sync-queue-service";
 import type {
   Bill,
   BillDraftItem,
@@ -34,6 +35,8 @@ function validateDraftLine(
 ) {
   if (product.status !== "active")
     throw new Error(`Product ${product.name} is inactive.`);
+  if (!Number.isInteger(line.quantity))
+    throw new Error(`Quantity for ${product.name} must be a whole number.`);
   if (line.quantity <= 0)
     throw new Error(`Quantity for ${product.name} must be greater than zero.`);
   if (requestedQuantity > product.quantityInStock)
@@ -49,6 +52,71 @@ function getRequestedQuantities(items: BillDraftItem[]): Map<string, number> {
     requested.set(item.productId, (requested.get(item.productId) ?? 0) + item.quantity);
   }
   return requested;
+}
+
+/**
+ * Derive the cash/card/credit allocation plus the legacy paid/change figures
+ * from a finalized form + total. Invariant for the returned values:
+ *   cashAmount + cardAmount + creditAmount === totalAmount
+ *
+ * Mixed bills require the cashier to provide an explicit split that sums to
+ * the total. Cash overpayment with change is supported only for the pure
+ * 'cash' method — that's how typical POS interactions work; mixed-with-change
+ * is too rare to be worth a separate code path.
+ */
+function derivePaymentSplit(
+  paymentMethod: BillFormValues["paymentMethod"],
+  form: BillFormValues,
+  totalAmount: number,
+): BillSplit & { paidAmount: number; changeAmount: number } {
+  const total = roundMoney(totalAmount);
+  switch (paymentMethod) {
+    case "cash": {
+      const tendered = Math.max(0, Number(form.paidAmount) || 0);
+      const cashAmount = Math.min(tendered, total);
+      return {
+        cashAmount,
+        cardAmount: 0,
+        creditAmount: 0,
+        paidAmount: tendered,
+        changeAmount: Math.max(0, tendered - total),
+      };
+    }
+    case "card":
+      return {
+        cashAmount: 0,
+        cardAmount: total,
+        creditAmount: 0,
+        paidAmount: total,
+        changeAmount: 0,
+      };
+    case "credit": {
+      const deposit = Math.max(0, Math.min(Number(form.paidAmount) || 0, total));
+      return {
+        cashAmount: deposit,
+        cardAmount: 0,
+        creditAmount: roundMoney(total - deposit),
+        paidAmount: deposit,
+        changeAmount: 0,
+      };
+    }
+    case "mixed": {
+      const cashAmount = roundMoney(Math.max(0, Number(form.cashAmount) || 0));
+      const cardAmount = roundMoney(Math.max(0, Number(form.cardAmount) || 0));
+      if (Math.abs(cashAmount + cardAmount - total) > 0.005) {
+        throw new Error(
+          "Mixed payment cash + card must equal bill total.",
+        );
+      }
+      return {
+        cashAmount,
+        cardAmount,
+        creditAmount: 0,
+        paidAmount: roundMoney(cashAmount + cardAmount),
+        changeAmount: 0,
+      };
+    }
+  }
 }
 
 export async function createFinalizedBill(input: {
@@ -77,8 +145,15 @@ export async function createFinalizedBill(input: {
   if (isCreditSalePreview && !input.form.customerName?.trim() && !input.form.customerPhone?.trim()) {
     throw new Error('Customer name or phone is required for credit bills.');
   }
-  if (!isCreditSalePreview && calculateChange(input.form.paidAmount, totalAmountPreview) < 0) {
+  if (input.form.paymentMethod === 'cash' && calculateChange(input.form.paidAmount, totalAmountPreview) < 0) {
     throw new Error("Paid amount is lower than bill total.");
+  }
+  if (input.form.paymentMethod === 'mixed') {
+    const cashPreview = Math.max(0, Number(input.form.cashAmount) || 0);
+    const cardPreview = Math.max(0, Number(input.form.cardAmount) || 0);
+    if (Math.abs(cashPreview + cardPreview - totalAmountPreview) > 0.005) {
+      throw new Error("Mixed payment cash + card must equal bill total.");
+    }
   }
 
   const result = await db.transaction(
@@ -89,6 +164,8 @@ export async function createFinalizedBill(input: {
       db.products,
       db.stockMovements,
       db.settings,
+      db.customers,
+      db.shifts,
       db.syncQueue,
     ],
     async () => {
@@ -157,26 +234,61 @@ export async function createFinalizedBill(input: {
       if (isCreditSale && !input.form.customerName?.trim() && !input.form.customerPhone?.trim()) {
         throw new Error('Customer name or phone is required for credit bills.');
       }
-      const changeAmount = calculateChange(input.form.paidAmount, totalAmount);
-      if (!isCreditSale && changeAmount < 0) {
-        throw new Error("Paid amount is lower than bill total.");
+
+      const split = derivePaymentSplit(input.form.paymentMethod, input.form, totalAmount);
+      // Defensive invariant: the bill type contract requires
+      //   cashAmount + cardAmount + creditAmount === totalAmount
+      // derivePaymentSplit honors this by construction today, but the check
+      // keeps future schema/refactors honest. 0.5¢ tolerance for rounding.
+      if (
+        Math.abs(
+          split.cashAmount + split.cardAmount + split.creditAmount - totalAmount,
+        ) > 0.005
+      ) {
+        throw new Error("Payment split does not sum to bill total.");
       }
-      const safeChangeAmount = isCreditSale ? Math.max(0, changeAmount) : changeAmount;
+
+      // Resolve the customer once per bill. If the cashier supplied a phone
+      // that matches an existing Customer, reuse that row; otherwise create
+      // a new one and queue its sync. Bills with no customer at all (walk-
+      // ins) get undefined customerId — the snapshot fields below still
+      // capture name/phone for audit/receipt purposes.
+      let resolvedCustomerId: string | undefined;
+      const customerResolution = await customerRepo.findOrCreate({
+        name: input.form.customerName,
+        phone: input.form.customerPhone,
+      });
+      if (customerResolution) {
+        resolvedCustomerId = customerResolution.customer.id;
+      }
+
+      // Tag the bill with the active shift if one is open on this device.
+      // No shift = no shiftId; reports/drawer reconciliation simply won't
+      // count this bill. The shift document doesn't need a re-push here —
+      // its open-state fields are immutable and totals are derived from
+      // bills at read time.
+      const activeShift = await db.shifts.where('status').equals('open').first();
+      const resolvedShiftId = activeShift?.id;
 
       const bill: Bill = {
         id: billId,
         billNumber,
         createdAt,
         cashierName: input.form.cashierName,
+        customerId: resolvedCustomerId,
         customerName: input.form.customerName,
         customerPhone: input.form.customerPhone,
+        shiftId: resolvedShiftId,
         paymentMethod: input.form.paymentMethod,
         subtotal: totals.subtotal,
         discountAmount: input.form.discountAmount,
         taxAmount: input.form.taxAmount,
         totalAmount,
-        paidAmount: input.form.paidAmount,
-        changeAmount: safeChangeAmount,
+        paidAmount: split.paidAmount,
+        changeAmount: split.changeAmount,
+        cashAmount: split.cashAmount,
+        cardAmount: split.cardAmount,
+        creditAmount: split.creditAmount,
         totalProfit: totals.totalProfit,
         itemCount: input.items.reduce((sum, item) => sum + item.quantity, 0),
         status: "finalized",
@@ -226,17 +338,38 @@ export async function createFinalizedBill(input: {
         lastSyncError: undefined,
       });
 
-      await db.syncQueue.bulkPut([
+      // Bill creation only changes settings.nextBillSequence. Tagging the
+      // job as 'bill-sequence' routes it through syncBillSequenceToCloud
+      // instead of a full settings overwrite, so another device editing
+      // storeName/currency offline does not conflict with offline sales.
+      // But if a broader manual settings edit is already queued, keep that
+      // job's payload so the user's other changes still get pushed.
+      const settingsJobId = getSyncQueueId("settings", settings.id);
+      const existingSettingsJob = await db.syncQueue.get(settingsJobId);
+      const existingSettingsSource =
+        (existingSettingsJob?.payload as { source?: string } | undefined)?.source;
+      const isExistingSettingsActive =
+        existingSettingsJob &&
+        existingSettingsJob.status !== "synced" &&
+        existingSettingsSource !== "bill-sequence";
+
+      const syncJobs = [
         buildSyncQueueItem({
           entity: "bill",
           entityId: bill.id,
           operation: "create",
         }),
-        buildSyncQueueItem({
-          entity: "settings",
-          entityId: settings.id,
-          operation: "upsert",
-        }),
+        buildSyncQueueItem(
+          {
+            entity: "settings",
+            entityId: settings.id,
+            operation: "upsert",
+            payload: isExistingSettingsActive
+              ? existingSettingsJob?.payload
+              : { source: "bill-sequence" },
+          },
+          existingSettingsJob,
+        ),
         ...stockMovements.map((movement) =>
           buildSyncQueueItem({
             entity: "stockMovement",
@@ -244,7 +377,21 @@ export async function createFinalizedBill(input: {
             operation: "create",
           }),
         ),
-      ]);
+      ];
+      // Push the new (or renamed) customer ahead of the bill — sync-provider
+      // priority puts customer before bill anyway. `created` covers brand-new
+      // rows; `changed` covers the rename-existing-customer case where the
+      // local row was updated but would otherwise stay only on this device.
+      if (customerResolution?.created || customerResolution?.changed) {
+        syncJobs.push(
+          buildSyncQueueItem({
+            entity: "customer",
+            entityId: customerResolution.customer.id,
+            operation: customerResolution.created ? "create" : "upsert",
+          }),
+        );
+      }
+      await db.syncQueue.bulkPut(syncJobs);
 
       return { bill, billItems };
     },
@@ -391,8 +538,8 @@ export async function returnBillItem(input: {
   const reason = input.reason.trim();
   const quantity = Number(input.quantity);
   if (!reason) throw new Error("Return reason is required.");
-  if (!Number.isFinite(quantity) || quantity <= 0)
-    throw new Error("Return quantity must be greater than zero.");
+  if (!Number.isInteger(quantity) || quantity <= 0)
+    throw new Error("Return quantity must be a positive whole number.");
 
   await db.transaction(
     "rw",
