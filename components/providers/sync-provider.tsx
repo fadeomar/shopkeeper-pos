@@ -362,11 +362,39 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
 
     requestSync();
 
+    // The original triggers (app start, online event, local write event) only
+    // fire on this device's activity. They don't cover the cross-device case
+    // where another device pushes new bills to the cloud — without an explicit
+    // pull, this device keeps showing stale data until the user does something
+    // that fires a sync. Two extra triggers below cover that:
+    //
+    //   1. visibilitychange — when the tab/app becomes visible again (Alt-Tab
+    //      back, switching browser tabs, returning from background), pull.
+    //   2. periodic poll while visible + online — runs every 30 s. The
+    //      runningRef guard inside requestSync makes overlapping calls no-ops,
+    //      and pullCloudChangesBeforePush is a no-op when there is nothing
+    //      new to pull, so the bandwidth cost is bounded by the actual delta.
+    function handleVisibilityChange() {
+      if (typeof document === 'undefined') return;
+      if (document.visibilityState !== 'visible') return;
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      requestSync();
+    }
+
+    const pollInterval = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      requestSync();
+    }, 30_000);
+
     window.addEventListener('online', requestSync);
     window.addEventListener('shopkeeper:sync-requested', requestSync);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
       window.removeEventListener('online', requestSync);
       window.removeEventListener('shopkeeper:sync-requested', requestSync);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.clearInterval(pollInterval);
     };
   }, [user?.uid]);
 
