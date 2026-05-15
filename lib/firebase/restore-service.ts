@@ -13,7 +13,7 @@ import { db } from '@/lib/db/schema';
 import { createBillNumber } from '@/lib/utils/id';
 import { normalizeBillSplit } from '@/lib/utils/bill-split';
 import { normalizePhone } from '@/lib/utils/customer-key';
-import type { Bill, BillItem, Customer, Product, Settings, Shift, StockMovement, Supplier, CustomerPayment } from '@/types/domain';
+import type { Bill, BillItem, Customer, Product, Purchase, PurchaseItem, Settings, Shift, StockMovement, Supplier, CustomerPayment } from '@/types/domain';
 import type { SyncMeta } from './sync-service';
 
 const SETTINGS_ID = 'app-settings';
@@ -119,6 +119,30 @@ function normalizeBillItem(snapshot: QueryDocumentSnapshot<DocumentData>): BillI
     ...item,
     quantityReturned: item.quantityReturned ?? 0,
   } as BillItem;
+}
+
+function normalizePurchase(snapshot: QueryDocumentSnapshot<DocumentData>, syncedAt: string): Purchase {
+  const purchase = withDocId<Purchase>(snapshot) as Partial<Purchase> & { id: string };
+  // Purchases share the bill payment-split invariant. Run them through the
+  // same normalizer so older cloud documents land locally with cashAmount /
+  // cardAmount / creditAmount populated.
+  const withSplit = normalizeBillSplit({
+    ...purchase,
+    status: purchase.status ?? 'finalized',
+    returnedAmount: purchase.returnedAmount ?? 0,
+  } as unknown as Bill) as unknown as Purchase;
+  return {
+    ...withSplit,
+    ...syncedMeta(syncedAt),
+  } as Purchase;
+}
+
+function normalizePurchaseItem(snapshot: QueryDocumentSnapshot<DocumentData>): PurchaseItem {
+  const item = withDocId<PurchaseItem>(snapshot) as Partial<PurchaseItem> & { id: string };
+  return {
+    ...item,
+    quantityReturned: item.quantityReturned ?? 0,
+  } as PurchaseItem;
 }
 
 function normalizeProduct(snapshot: QueryDocumentSnapshot<DocumentData>, syncedAt: string): Product {
@@ -614,6 +638,12 @@ export async function restoreFromCloud(
   onProgress?.('Fetching suppliers…');
   const suppliers = await readUserCollection(uid, 'suppliers', (snapshot) => normalizeSupplier(snapshot, restoredAt));
 
+  onProgress?.('Fetching purchases…');
+  const purchases = await readUserCollection(uid, 'purchases', (snapshot) => normalizePurchase(snapshot, restoredAt));
+
+  onProgress?.('Fetching purchase items…');
+  const purchaseItems = await readUserCollection(uid, 'purchaseItems', (snapshot) => normalizePurchaseItem(snapshot));
+
   const productRepair = repairDuplicateProductBarcodes({
     products: cloudProducts,
     billItems: cloudBillItems,
@@ -643,6 +673,8 @@ export async function restoreFromCloud(
       customers: customers.length,
       shifts: shifts.length,
       suppliers: suppliers.length,
+      purchases: purchases.length,
+      purchaseItems: purchaseItems.length,
     },
   };
 
@@ -650,7 +682,7 @@ export async function restoreFromCloud(
   try {
     await db.transaction(
       'rw',
-      [db.bills, db.billItems, db.products, db.stockMovements, db.customerPayments, db.customers, db.shifts, db.suppliers, db.settings, db.syncQueue, db.syncConflicts],
+      [db.bills, db.billItems, db.products, db.stockMovements, db.customerPayments, db.customers, db.shifts, db.suppliers, db.purchases, db.purchaseItems, db.settings, db.syncQueue, db.syncConflicts],
       async () => {
         // Clear first so stale local rows that no longer exist in the cloud are removed.
         // This is still safe because fetch/normalization already succeeded and Dexie
@@ -664,6 +696,8 @@ export async function restoreFromCloud(
           db.customers.clear(),
           db.shifts.clear(),
           db.suppliers.clear(),
+          db.purchases.clear(),
+          db.purchaseItems.clear(),
           db.settings.clear(),
           db.syncQueue.clear(),
           db.syncConflicts.clear(),
@@ -676,6 +710,8 @@ export async function restoreFromCloud(
         if (customers.length) await db.customers.bulkPut(customers);
         if (shifts.length) await db.shifts.bulkPut(shifts);
         if (suppliers.length) await db.suppliers.bulkPut(suppliers);
+        if (purchases.length) await db.purchases.bulkPut(purchases);
+        if (purchaseItems.length) await db.purchaseItems.bulkPut(purchaseItems);
         if (settings.length) await db.settings.bulkPut(settings);
       },
     );

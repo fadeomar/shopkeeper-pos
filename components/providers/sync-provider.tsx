@@ -8,6 +8,7 @@ import {
   syncBillToCloud,
   syncCustomersToCloud,
   syncProductsToCloud,
+  syncPurchaseToCloud,
   syncSettingsToCloud,
   syncShiftsToCloud,
   syncStockMovementsToCloud,
@@ -155,6 +156,8 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
       await markBlocked(job.id, message);
       if (job.entity === 'bill') {
         await db.bills.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
+      } else if (job.entity === 'purchase') {
+        await db.purchases.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
       } else if (job.entity === 'product') {
         await db.products.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
       } else if (job.entity === 'stockMovement') {
@@ -192,6 +195,35 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
 
       await db.transaction('rw', db.bills, db.stockMovements, async () => {
         await db.bills.update(job.entityId, { syncStatus: 'synced', syncedAt, lastSyncError: undefined });
+        await Promise.all(
+          movements.map((movement) =>
+            db.stockMovements.update(movement.id, { syncStatus: 'synced', syncedAt, lastSyncError: undefined }),
+          ),
+        );
+      });
+
+      await Promise.all(
+        movements.map((movement) => markSynced(getSyncQueueId('stockMovement', movement.id))),
+      );
+    } else if (job.entity === 'purchase') {
+      const [purchase, items, movements] = await Promise.all([
+        db.purchases.get(job.entityId),
+        db.purchaseItems.where('purchaseId').equals(job.entityId).toArray(),
+        db.stockMovements.where('referenceId').equals(job.entityId).toArray(),
+      ]);
+      if (!purchase) {
+        await markSynced(job.id);
+        return;
+      }
+
+      const syncedAt = await syncPurchaseToCloud(uid, purchase, items, movements);
+      // Apply stock movement deltas to cloud products — same idempotent path
+      // bills use. Purchase movements increase stock; void/return movements
+      // decrease it. The helper handles direction via quantityChange sign.
+      await syncBillProductDeltas(uid, movements);
+
+      await db.transaction('rw', db.purchases, db.stockMovements, async () => {
+        await db.purchases.update(job.entityId, { syncStatus: 'synced', syncedAt, lastSyncError: undefined });
         await Promise.all(
           movements.map((movement) =>
             db.stockMovements.update(movement.id, { syncStatus: 'synced', syncedAt, lastSyncError: undefined }),
@@ -304,6 +336,8 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
     await markFailed(job.id, msg);
     if (job.entity === 'bill') {
       await db.bills.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
+    } else if (job.entity === 'purchase') {
+      await db.purchases.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
     } else if (job.entity === 'product') {
       await db.products.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
     } else if (job.entity === 'stockMovement') {
