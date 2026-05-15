@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie';
-import type { Bill, BillItem, Customer, Product, Settings, Shift, StockMovement, AuthCacheEntry, SyncQueueItem, CustomerPayment, SyncConflict, PaymentMethod } from '@/types/domain';
+import type { Bill, BillItem, Customer, Product, Purchase, PurchaseItem, Settings, Shift, StockMovement, AuthCacheEntry, SyncQueueItem, CustomerPayment, Supplier, SupplierPayment, SyncConflict, PaymentMethod } from '@/types/domain';
 import { deriveLegacySplit } from '@/lib/utils/bill-split';
 import { normalizeCustomerKey, normalizePhone } from '@/lib/utils/customer-key';
 import { createId } from '@/lib/utils/id';
@@ -12,6 +12,10 @@ export class ShopkeeperDB extends Dexie {
   customerPayments!: Table<CustomerPayment, string>;
   customers!: Table<Customer, string>;
   shifts!: Table<Shift, string>;
+  suppliers!: Table<Supplier, string>;
+  purchases!: Table<Purchase, string>;
+  purchaseItems!: Table<PurchaseItem, string>;
+  supplierPayments!: Table<SupplierPayment, string>;
   settings!: Table<Settings, string>;
   authCache!: Table<AuthCacheEntry, string>;
   syncQueue!: Table<SyncQueueItem, string>;
@@ -198,6 +202,30 @@ export class ShopkeeperDB extends Dexie {
       customerPayments: 'id, customerKey, createdAt, syncStatus',
       customers: 'id, name, normalizedPhone, createdAt, updatedAt',
       shifts: 'id, status, openedAt, closedAt',
+      settings: 'id, updatedAt',
+      authCache: 'uid',
+      syncQueue: 'id, status, entity, entityId, createdAt, updatedAt',
+      syncConflicts: 'id, status, entity, entityId, conflictType, severity, createdAt',
+    });
+
+    // v9: supplier domain — the buy-side mirror of customers + bills.
+    //   suppliers      ↔ customers
+    //   purchases      ↔ bills            (with shiftId for drawer link)
+    //   purchaseItems  ↔ billItems
+    //   supplierPayments ↔ customerPayments
+    // No data migration needed; all four tables start empty for existing users.
+    this.version(9).stores({
+      products: 'id, &barcode, name, category, brand, supplierName, status, quantityInStock, minimumStockAlert, dateAdded, lastUpdated',
+      bills: 'id, &billNumber, createdAt, paymentMethod, status, cashierName, customerName, customerPhone, customerId, shiftId',
+      billItems: 'id, billId, originalProductId, barcodeAtSale, productNameAtSale, categoryAtSale, createdAt',
+      stockMovements: 'id, productId, movementType, referenceType, referenceId, createdAt',
+      customerPayments: 'id, customerKey, createdAt, syncStatus',
+      customers: 'id, name, normalizedPhone, createdAt, updatedAt',
+      shifts: 'id, status, openedAt, closedAt',
+      suppliers: 'id, name, normalizedPhone, createdAt, updatedAt',
+      purchases: 'id, &purchaseNumber, createdAt, paymentMethod, status, supplierName, supplierPhone, supplierId, shiftId',
+      purchaseItems: 'id, purchaseId, originalProductId, barcodeAtPurchase, productNameAtPurchase, categoryAtPurchase, createdAt',
+      supplierPayments: 'id, supplierKey, createdAt, syncStatus, shiftId',
       settings: 'id, updatedAt',
       authCache: 'uid',
       syncQueue: 'id, status, entity, entityId, createdAt, updatedAt',

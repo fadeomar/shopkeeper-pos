@@ -4,7 +4,7 @@ import { db } from '@/lib/db/schema';
 import { saveConflict } from '@/lib/services/sync-conflict-service';
 import { buildSyncQueueItem, getSyncQueueId } from '@/lib/services/sync-queue-service';
 import { normalizeBillSplit } from '@/lib/utils/bill-split';
-import type { Bill, BillItem, Customer, CustomerPayment, Product, Settings, Shift, StockMovement, SyncEntity, SyncQueueItem } from '@/types/domain';
+import type { Bill, BillItem, Customer, CustomerPayment, Product, Purchase, PurchaseItem, Settings, Shift, StockMovement, Supplier, SupplierPayment, SyncEntity, SyncQueueItem } from '@/types/domain';
 
 const PRODUCT_FIELDS: Array<keyof Product> = [
   'barcode', 'name', 'category', 'brand', 'unit', 'quantityInStock', 'buyPrice', 'sellPrice',
@@ -164,11 +164,14 @@ async function pullSettings(uid: string): Promise<void> {
 }
 
 async function pullAppendOnlyCollections(uid: string): Promise<void> {
-  const [bills, billItems, movements, payments] = await Promise.all([
+  const [bills, billItems, movements, payments, purchases, purchaseItems, supplierPayments] = await Promise.all([
     pullCollection<Bill>(uid, 'bills'),
     pullCollection<BillItem>(uid, 'billItems'),
     pullCollection<StockMovement>(uid, 'stockMovements'),
     pullCollection<CustomerPayment>(uid, 'customerPayments'),
+    pullCollection<Purchase>(uid, 'purchases'),
+    pullCollection<PurchaseItem>(uid, 'purchaseItems'),
+    pullCollection<SupplierPayment>(uid, 'supplierPayments'),
   ]);
 
   // Bills look append-only at create time, but voidBill() and returnBillItem()
@@ -181,7 +184,7 @@ async function pullAppendOnlyCollections(uid: string): Promise<void> {
   // db.syncQueue is read inside via getPendingLocalJob; Dexie requires it
   // in the transaction tables list or it throws a scope error in strict
   // transactional mode.
-  await db.transaction('rw', [db.bills, db.billItems, db.stockMovements, db.customerPayments, db.syncQueue], async () => {
+  await db.transaction('rw', [db.bills, db.billItems, db.stockMovements, db.customerPayments, db.purchases, db.purchaseItems, db.supplierPayments, db.syncQueue], async () => {
     for (const bill of bills) {
       // Bills authored by a pre-v6 device lack cashAmount/cardAmount/creditAmount.
       // Fill them in once on the way into local storage so every reader downstream
@@ -219,6 +222,41 @@ async function pullAppendOnlyCollections(uid: string): Promise<void> {
     // never mutate. Customer payments likewise have no update path today.
     for (const movement of movements) if (!(await db.stockMovements.get(movement.id))) await db.stockMovements.put({ ...movement, syncStatus: 'synced', lastSyncError: undefined });
     for (const payment of payments) if (!(await db.customerPayments.get(payment.id))) await db.customerPayments.put({ ...payment, syncStatus: 'synced', lastSyncError: undefined });
+
+    // Purchases mirror bills exactly: append-only at create time, mutable on
+    // void/return. Same pending-job guard, same isCloudNewer check.
+    // Purchases share the bill payment-split invariant, so normalizeBillSplit
+    // fills in any pre-v9 documents that lack cashAmount/cardAmount/creditAmount.
+    for (const purchase of purchases) {
+      const normalized = normalizeBillSplit(purchase as unknown as Bill) as unknown as Purchase;
+      const local = await db.purchases.get(normalized.id);
+      if (!local) {
+        await db.purchases.put({ ...normalized, syncStatus: 'synced', lastSyncError: undefined });
+        continue;
+      }
+      const purchaseJob = await getPendingLocalJob('purchase', normalized.id);
+      if (purchaseJob) continue;
+      if (!isCloudNewer(local.syncedAt, normalized.syncedAt)) continue;
+      await db.purchases.put({ ...normalized, syncStatus: 'synced', lastSyncError: undefined });
+    }
+
+    // Purchase items mirror bill items: immutable except for quantityReturned.
+    for (const item of purchaseItems) {
+      const local = await db.purchaseItems.get(item.id);
+      if (!local) {
+        await db.purchaseItems.put(item);
+        continue;
+      }
+      const parentJob = await getPendingLocalJob('purchase', item.purchaseId);
+      if (parentJob) continue;
+      const localReturned = local.quantityReturned ?? 0;
+      const cloudReturned = item.quantityReturned ?? 0;
+      if (cloudReturned === localReturned) continue;
+      await db.purchaseItems.update(item.id, { quantityReturned: cloudReturned });
+    }
+
+    // Supplier payments are append-only, mirror of customerPayments.
+    for (const payment of supplierPayments) if (!(await db.supplierPayments.get(payment.id))) await db.supplierPayments.put({ ...payment, syncStatus: 'synced', lastSyncError: undefined });
   });
 }
 
@@ -240,6 +278,25 @@ async function pullCustomers(uid: string): Promise<void> {
       if (pendingJob) continue;
       if (!isCloudNewer(local.syncedAt, cloud.syncedAt)) continue;
       await db.customers.put({ ...cloud, syncStatus: 'synced', lastSyncError: undefined });
+    }
+  });
+}
+
+async function pullSuppliers(uid: string): Promise<void> {
+  const cloudSuppliers = await pullCollection<Supplier>(uid, 'suppliers');
+  if (cloudSuppliers.length === 0) return;
+
+  await db.transaction('rw', [db.suppliers, db.syncQueue], async () => {
+    for (const cloud of cloudSuppliers) {
+      const local = await db.suppliers.get(cloud.id);
+      if (!local) {
+        await db.suppliers.put({ ...cloud, syncStatus: 'synced', lastSyncError: undefined });
+        continue;
+      }
+      const pendingJob = await getPendingLocalJob('supplier', local.id);
+      if (pendingJob) continue;
+      if (!isCloudNewer(local.syncedAt, cloud.syncedAt)) continue;
+      await db.suppliers.put({ ...cloud, syncStatus: 'synced', lastSyncError: undefined });
     }
   });
 }
@@ -268,6 +325,7 @@ async function pullShifts(uid: string): Promise<void> {
 export async function pullCloudChangesBeforePush(uid: string): Promise<void> {
   await pullAppendOnlyCollections(uid);
   await pullCustomers(uid);
+  await pullSuppliers(uid);
   await pullShifts(uid);
   await pullProducts(uid);
   await pullSettings(uid);

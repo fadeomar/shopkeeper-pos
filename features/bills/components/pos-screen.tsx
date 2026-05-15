@@ -216,6 +216,7 @@ export function PosScreen() {
     subtotal: number;
   } | null>(null);
   const [customerFieldFocused, setCustomerFieldFocused] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const barcodeInputRef = useRef<HTMLInputElement | null>(null);
   const lastAppliedCashierNameRef = useRef("Owner");
@@ -743,14 +744,40 @@ export function PosScreen() {
             <Button type="button" onClick={() => setScannerOpen(true)}>
               {t("common.scan")}
             </Button>
-            <button
-              type="button"
-              title={`${t("billing.shortcutsHelp")}\n• ${t("billing.shortcutFinalize")}\n• ${t("billing.shortcutClearBarcode")}`}
-              aria-label={t("billing.shortcutsHelp")}
-              className="inline-flex h-[42px] w-[42px] items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors"
-            >
-              ?
-            </button>
+            <div className="relative">
+              <button
+                type="button"
+                aria-label={t("billing.shortcutsHelp")}
+                aria-expanded={helpOpen}
+                onClick={() => setHelpOpen((open) => !open)}
+                className="inline-flex h-[42px] w-[42px] items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors"
+              >
+                ?
+              </button>
+              {helpOpen && (
+                <>
+                  {/* Backdrop captures outside clicks to dismiss the popover. */}
+                  <div
+                    className="fixed inset-0 z-10"
+                    onClick={() => setHelpOpen(false)}
+                    aria-hidden
+                  />
+                  <div
+                    role="dialog"
+                    aria-label={t("billing.shortcutsHelp")}
+                    className="absolute end-0 top-full mt-2 z-20 min-w-[260px] rounded-xl border border-slate-200 bg-white p-3 shadow-lg"
+                  >
+                    <p className="text-sm font-semibold text-slate-800 mb-1.5">
+                      {t("billing.shortcutsHelp")}
+                    </p>
+                    <ul className="space-y-1 text-xs text-slate-600">
+                      <li>{t("billing.shortcutFinalize")}</li>
+                      <li>{t("billing.shortcutClearBarcode")}</li>
+                    </ul>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
 
           {/* Product select row */}

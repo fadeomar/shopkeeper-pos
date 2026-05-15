@@ -9,10 +9,12 @@ const routes = [
   { href: '/',          key: 'nav.dashboard',   short: 'Home'      },
   { href: '/billing',   key: 'nav.newBill',     short: 'Sell'      },
   { href: '/bills',     key: 'nav.billHistory', short: 'Bills'     },
+  { href: '/purchases/new', key: 'nav.newPurchase', short: 'Buy'   },
   { href: '/products',  key: 'nav.products',    short: 'Products'  },
   { href: '/inventory', key: 'nav.inventory',   short: 'Stock'     },
   { href: '/reports',   key: 'nav.reports',     short: 'Reports'   },
   { href: '/customers', key: 'nav.customers',   short: 'Customers' },
+  { href: '/suppliers', key: 'nav.suppliers',   short: 'Suppliers' },
   { href: '/shift',     key: 'nav.shift',       short: 'Shift'     },
   { href: '/settings',  key: 'nav.settings',    short: 'Settings'  },
 ] as const;

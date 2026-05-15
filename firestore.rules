@@ -1,0 +1,112 @@
+rules_version = '2';
+
+// Shopkeeper POS Firestore rules.
+//
+// Threat model:
+//   - A signed-in cashier must not read or write any other shop's data.
+//   - A self-registered user must land in role='cashier', inactive, pending
+//     approval — they cannot promote themselves to admin or skip approval.
+//   - Only an existing active admin may approve users or change their role.
+//   - Inactive or pending users cannot write POS data.
+//   - POS data lives under /users/{uid}/{collection} and is per-user only.
+//
+// Deploy: `firebase deploy --only firestore:rules` from this repo.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─────────────────────────────────────────────────────────────────
+    // Helpers
+    // ─────────────────────────────────────────────────────────────────
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function userDoc(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)).data;
+    }
+
+    function isActiveAdmin() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && userDoc(request.auth.uid).role == 'admin'
+        && userDoc(request.auth.uid).isActive == true;
+    }
+
+    function ownerIsActive(uid) {
+      return exists(/databases/$(database)/documents/users/$(uid))
+        && userDoc(uid).isActive == true
+        && (!('pendingApproval' in userDoc(uid)) || userDoc(uid).pendingApproval == false);
+    }
+
+    function isActiveOwner(uid) {
+      return isOwner(uid) && ownerIsActive(uid);
+    }
+
+    function isSelfRegistrationShape(uid) {
+      // The registration flow (auth-service.registerUser) creates the auth
+      // user via a secondary Firebase app and then writes /users/{uid} BEFORE
+      // signing into the main auth — so the create lands as an unauthenticated
+      // request from Firestore's perspective. We accept that path only when
+      // the shape is exactly the pending-approval cashier signature.
+      return request.resource.data.uid == uid
+        && request.resource.data.role == 'cashier'
+        && request.resource.data.isActive == false
+        && request.resource.data.pendingApproval == true;
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // /users/{uid}  — the AppUser profile
+    // ─────────────────────────────────────────────────────────────────
+
+    match /users/{uid} {
+      // The owner sees their own profile. Active admins can read any profile
+      // (used by the admin support pages).
+      allow read: if isOwner(uid) || isActiveAdmin();
+
+      // Two creation paths:
+      //   - Self-registration: unauthenticated write, but the shape must
+      //     match isSelfRegistrationShape (cashier, inactive, pending).
+      //   - Admin-created: an active admin creates a profile for another user
+      //     (createAppUser uses a secondary auth app, so the setDoc happens
+      //     under the admin's session for a different target uid).
+      allow create: if isSelfRegistrationShape(uid) || isActiveAdmin();
+
+      // Update rules:
+      //   - Active admin can update any field.
+      //   - Owner can update their own non-privileged fields (e.g. name,
+      //     phone). They must not change role, isActive, pendingApproval,
+      //     uid, createdAt, or email — those are admin- or system-controlled.
+      allow update: if isActiveAdmin() || (
+        isOwner(uid)
+        && !request.resource.data.diff(resource.data).affectedKeys()
+              .hasAny(['role', 'isActive', 'pendingApproval', 'uid', 'createdAt', 'email'])
+      );
+
+      // Profile deletion is intentionally not exposed from the client.
+      // Admin uses Firebase Auth console to disable accounts.
+      allow delete: if false;
+
+      // ───────────────────────────────────────────────────────────────
+      // /users/{uid}/{collection}/{docId}  — POS data subcollections
+      //   products, bills, billItems, stockMovements, customerPayments,
+      //   customers, shifts, settings, meta
+      // ───────────────────────────────────────────────────────────────
+      match /{collection}/{docId} {
+        // Owner reads their own data; admins can read for support.
+        allow read: if isOwner(uid) || isActiveAdmin();
+
+        // Only the owner can write, and only while active + approved.
+        // Inactive / pending users are silently blocked at this layer.
+        // Admins do not get write permission here — admin support is
+        // read-only on POS data. (Admin user-profile changes go through
+        // the /users/{uid} update rule above.)
+        allow write: if isActiveOwner(uid);
+      }
+    }
+  }
+}

@@ -11,6 +11,7 @@ import {
   listShifts,
   openShift,
   summarizeShiftBills,
+  summarizeShiftCashOut,
 } from "@/lib/services/shift-service";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,7 +23,7 @@ import { useLocale } from "@/components/providers/locale-context";
 import { formatCurrency } from "@/lib/utils/money";
 import { formatDateTime } from "@/lib/utils/date";
 import { ShiftReport } from "./shift-report";
-import type { Bill, Shift } from "@/types/domain";
+import type { Bill, Purchase, Shift, SupplierPayment } from "@/types/domain";
 
 function dismissOnEnter(e: React.KeyboardEvent<HTMLInputElement>) {
   if (e.key === "Enter") {
@@ -74,6 +75,20 @@ export function ShiftWorkspace() {
         : Promise.resolve<Bill[]>([]),
     [activeShift?.id],
   );
+  const activeShiftPurchases = useLiveQuery<Purchase[]>(
+    () =>
+      activeShift?.id
+        ? db.purchases.where("shiftId").equals(activeShift.id).toArray()
+        : Promise.resolve<Purchase[]>([]),
+    [activeShift?.id],
+  );
+  const activeShiftSupplierPayments = useLiveQuery<SupplierPayment[]>(
+    () =>
+      activeShift?.id
+        ? db.supplierPayments.where("shiftId").equals(activeShift.id).toArray()
+        : Promise.resolve<SupplierPayment[]>([]),
+    [activeShift?.id],
+  );
   const currency = settings?.currency ?? "USD";
 
   const [openingCash, setOpeningCash] = useState("");
@@ -92,9 +107,19 @@ export function ShiftWorkspace() {
     () => summarizeShiftBills(activeShiftBills ?? []),
     [activeShiftBills],
   );
+  const cashOut = useMemo(
+    () =>
+      summarizeShiftCashOut(
+        activeShiftPurchases ?? [],
+        activeShiftSupplierPayments ?? [],
+      ),
+    [activeShiftPurchases, activeShiftSupplierPayments],
+  );
 
   const expectedCash = activeShift
-    ? (activeShift.openingCash ?? 0) + totals.cashCollected
+    ? (activeShift.openingCash ?? 0) +
+      totals.cashCollected -
+      cashOut.totalCashOut
     : 0;
 
   // Used inside the close dialog to show live counted vs expected diff while
@@ -263,14 +288,16 @@ export function ShiftWorkspace() {
               value={formatCurrency(totals.cashCollected, currency)}
             />
             <StatCard
+              label={t("shift.cashPaidOut")}
+              value={formatCurrency(cashOut.totalCashOut, currency)}
+              helper={t("shift.cashPaidOutHelper")}
+              tone={cashOut.totalCashOut > 0.005 ? "warning" : "neutral"}
+            />
+            <StatCard
               label={t("shift.expectedCash")}
               value={formatCurrency(expectedCash, currency)}
               helper={t("shift.expectedCashHelper")}
               tone="positive"
-            />
-            <StatCard
-              label={t("shift.creditAccrued")}
-              value={formatCurrency(totals.creditAccrued, currency)}
             />
           </div>
 
@@ -284,14 +311,33 @@ export function ShiftWorkspace() {
               value={String(totals.itemCount)}
             />
             <StatCard
-              label={t("shift.voidedCount")}
-              value={String(totals.voidedBillCount)}
+              label={t("shift.purchasesInShift")}
+              value={String(cashOut.purchaseCount)}
+              helper={formatCurrency(cashOut.purchaseCashOut, currency)}
             />
             <StatCard
-              label={t("shift.returnedCount")}
-              value={String(totals.returnedBillCount)}
+              label={t("shift.paymentsInShift")}
+              value={String(cashOut.supplierPaymentCount)}
+              helper={formatCurrency(cashOut.supplierPaymentCashOut, currency)}
             />
           </div>
+
+          {(totals.voidedBillCount > 0 || totals.returnedBillCount > 0) && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <StatCard
+                label={t("shift.creditAccrued")}
+                value={formatCurrency(totals.creditAccrued, currency)}
+              />
+              <StatCard
+                label={t("shift.voidedCount")}
+                value={String(totals.voidedBillCount)}
+              />
+              <StatCard
+                label={t("shift.returnedCount")}
+                value={String(totals.returnedBillCount)}
+              />
+            </div>
+          )}
 
           {activeShift.notes && (
             <p className="text-xs text-slate-500 italic">

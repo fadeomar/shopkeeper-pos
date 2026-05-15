@@ -189,3 +189,24 @@ That service should remain the only place that final sale writes happen.
 - Bill details must always render from bill snapshots, never from current product fields.
 - Every stock quantity change should have a stock movement entry.
 - Product quantity editing is intentionally separated from product detail editing.
+
+## Firestore security rules
+
+The committed [`firestore.rules`](./firestore.rules) enforces per-user data
+isolation, the self-registration shape constraint, and admin-only role/status
+changes. See the file header for the full threat model.
+
+Deploy after editing:
+
+```bash
+# One-time setup (interactive):
+firebase login
+firebase use --add   # pick your project, give it an alias
+
+# Every time rules change:
+firebase deploy --only firestore:rules
+```
+
+Without these rules deployed, any authenticated user can read or write any
+path their JWT permits — a cashier could read another shop's bills or
+self-promote to admin.

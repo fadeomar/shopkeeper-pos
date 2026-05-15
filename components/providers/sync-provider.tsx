@@ -8,10 +8,13 @@ import {
   syncBillToCloud,
   syncCustomersToCloud,
   syncProductsToCloud,
+  syncPurchaseToCloud,
   syncSettingsToCloud,
   syncShiftsToCloud,
   syncStockMovementsToCloud,
   syncCustomerPaymentsToCloud,
+  syncSupplierPaymentsToCloud,
+  syncSuppliersToCloud,
 } from '@/lib/firebase/sync-service';
 import {
   getPendingSyncJobs,
@@ -75,25 +78,31 @@ function productsMatchAfterBillDelta(local: Product, cloud: Product): boolean {
 
 function jobPriority(job: SyncQueueItem): number {
   switch (job.entity) {
-    // Customer and shift rows must land in the cloud before any bill that
-    // references them; same ordering as SYNC_ENTITY_PRIORITY in
-    // sync-queue-service.ts.
+    // Reference targets (customer / supplier / shift) push first so child
+    // documents never reach the cloud before their parent. Same ordering as
+    // SYNC_ENTITY_PRIORITY in sync-queue-service.ts.
     case 'customer':
       return 0;
-    case 'shift':
+    case 'supplier':
       return 1;
-    case 'bill':
+    case 'shift':
       return 2;
-    case 'customerPayment':
+    case 'bill':
       return 3;
-    case 'stockMovement':
+    case 'purchase':
       return 4;
+    case 'customerPayment':
+      return 5;
+    case 'supplierPayment':
+      return 6;
+    case 'stockMovement':
+      return 7;
     case 'settings':
-      return isBillSequenceJob(job) ? 5 : 7;
+      return isBillSequenceJob(job) ? 8 : 10;
     case 'product':
-      return 8;
+      return 11;
     default:
-      return 10;
+      return 12;
   }
 }
 
@@ -148,6 +157,8 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
       await markBlocked(job.id, message);
       if (job.entity === 'bill') {
         await db.bills.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
+      } else if (job.entity === 'purchase') {
+        await db.purchases.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
       } else if (job.entity === 'product') {
         await db.products.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
       } else if (job.entity === 'stockMovement') {
@@ -158,6 +169,10 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
         await db.customers.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
       } else if (job.entity === 'shift') {
         await db.shifts.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
+      } else if (job.entity === 'supplier') {
+        await db.suppliers.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
+      } else if (job.entity === 'supplierPayment') {
+        await db.supplierPayments.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
       } else if (job.entity === 'settings') {
         await db.settings.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
       }
@@ -183,6 +198,35 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
 
       await db.transaction('rw', db.bills, db.stockMovements, async () => {
         await db.bills.update(job.entityId, { syncStatus: 'synced', syncedAt, lastSyncError: undefined });
+        await Promise.all(
+          movements.map((movement) =>
+            db.stockMovements.update(movement.id, { syncStatus: 'synced', syncedAt, lastSyncError: undefined }),
+          ),
+        );
+      });
+
+      await Promise.all(
+        movements.map((movement) => markSynced(getSyncQueueId('stockMovement', movement.id))),
+      );
+    } else if (job.entity === 'purchase') {
+      const [purchase, items, movements] = await Promise.all([
+        db.purchases.get(job.entityId),
+        db.purchaseItems.where('purchaseId').equals(job.entityId).toArray(),
+        db.stockMovements.where('referenceId').equals(job.entityId).toArray(),
+      ]);
+      if (!purchase) {
+        await markSynced(job.id);
+        return;
+      }
+
+      const syncedAt = await syncPurchaseToCloud(uid, purchase, items, movements);
+      // Apply stock movement deltas to cloud products — same idempotent path
+      // bills use. Purchase movements increase stock; void/return movements
+      // decrease it. The helper handles direction via quantityChange sign.
+      await syncBillProductDeltas(uid, movements);
+
+      await db.transaction('rw', db.purchases, db.stockMovements, async () => {
+        await db.purchases.update(job.entityId, { syncStatus: 'synced', syncedAt, lastSyncError: undefined });
         await Promise.all(
           movements.map((movement) =>
             db.stockMovements.update(movement.id, { syncStatus: 'synced', syncedAt, lastSyncError: undefined }),
@@ -251,6 +295,26 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
       if (syncedAt) {
         await db.shifts.update(job.entityId, { syncStatus: 'synced', syncedAt, lastSyncError: undefined });
       }
+    } else if (job.entity === 'supplier') {
+      const supplier = await db.suppliers.get(job.entityId);
+      if (!supplier) {
+        await markSynced(job.id);
+        return;
+      }
+      const syncedAt = await syncSuppliersToCloud(uid, [supplier]);
+      if (syncedAt) {
+        await db.suppliers.update(job.entityId, { syncStatus: 'synced', syncedAt, lastSyncError: undefined });
+      }
+    } else if (job.entity === 'supplierPayment') {
+      const payment = await db.supplierPayments.get(job.entityId);
+      if (!payment) {
+        await markSynced(job.id);
+        return;
+      }
+      const syncedAt = await syncSupplierPaymentsToCloud(uid, [payment]);
+      if (syncedAt) {
+        await db.supplierPayments.update(job.entityId, { syncStatus: 'synced', syncedAt, lastSyncError: undefined });
+      }
     } else if (job.entity === 'settings') {
       const settings = await db.settings.get(job.entityId);
       if (!settings) {
@@ -285,6 +349,8 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
     await markFailed(job.id, msg);
     if (job.entity === 'bill') {
       await db.bills.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
+    } else if (job.entity === 'purchase') {
+      await db.purchases.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
     } else if (job.entity === 'product') {
       await db.products.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
     } else if (job.entity === 'stockMovement') {
@@ -295,6 +361,10 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
       await db.customers.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
     } else if (job.entity === 'shift') {
       await db.shifts.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
+    } else if (job.entity === 'supplier') {
+      await db.suppliers.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
+    } else if (job.entity === 'supplierPayment') {
+      await db.supplierPayments.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
     } else if (job.entity === 'settings') {
       await db.settings.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
     }
@@ -362,11 +432,39 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
 
     requestSync();
 
+    // The original triggers (app start, online event, local write event) only
+    // fire on this device's activity. They don't cover the cross-device case
+    // where another device pushes new bills to the cloud — without an explicit
+    // pull, this device keeps showing stale data until the user does something
+    // that fires a sync. Two extra triggers below cover that:
+    //
+    //   1. visibilitychange — when the tab/app becomes visible again (Alt-Tab
+    //      back, switching browser tabs, returning from background), pull.
+    //   2. periodic poll while visible + online — runs every 30 s. The
+    //      runningRef guard inside requestSync makes overlapping calls no-ops,
+    //      and pullCloudChangesBeforePush is a no-op when there is nothing
+    //      new to pull, so the bandwidth cost is bounded by the actual delta.
+    function handleVisibilityChange() {
+      if (typeof document === 'undefined') return;
+      if (document.visibilityState !== 'visible') return;
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      requestSync();
+    }
+
+    const pollInterval = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      requestSync();
+    }, 30_000);
+
     window.addEventListener('online', requestSync);
     window.addEventListener('shopkeeper:sync-requested', requestSync);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
       window.removeEventListener('online', requestSync);
       window.removeEventListener('shopkeeper:sync-requested', requestSync);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.clearInterval(pollInterval);
     };
   }, [user?.uid]);
 

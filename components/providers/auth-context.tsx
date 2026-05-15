@@ -3,7 +3,9 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { onAuthChange, fetchUserDoc, signOut } from '@/lib/firebase/auth-service';
 import { db } from '@/lib/db/schema';
-import { prepareRuntimeDbForUid, setActiveUid } from '@/lib/services/account-data-service';
+import { getActiveUid, getLocalDataSummary, prepareRuntimeDbForUid, setActiveUid } from '@/lib/services/account-data-service';
+import { useToast } from '@/components/ui/toast';
+import { useLocale } from '@/components/providers/locale-context';
 import type { AuthCacheEntry } from '@/types/domain';
 
 export type AuthStatus = 'loading' | 'unauthenticated' | 'pending' | 'inactive' | 'authenticated';
@@ -33,6 +35,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>('unauthenticated');
   const [user, setUser] = useState<AuthCacheEntry | null>(null);
   const [authError, setAuthError] = useState('');
+  const { push } = useToast();
+  const { t } = useLocale();
 
   const resolveUser = useCallback(async (uid: string) => {
     // Ensure Dexie is open (DbBootstrap may not have mounted yet)
@@ -40,10 +44,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try { await db.open(); } catch { /* non-fatal */ }
     }
 
+    // When switching to a different account, check whether the outgoing
+    // account had unsynced offline work. prepareRuntimeDbForUid below will
+    // safely snapshot it to the per-account vault, so no data is lost — but
+    // a new cashier landing on this browser deserves a heads-up that hidden
+    // state exists for another account. The check has to happen BEFORE
+    // prepareRuntimeDbForUid because that function swaps the runtime DB.
+    const previousUid = getActiveUid();
+    let unsyncedFromPriorAccount = 0;
+    if (previousUid && previousUid !== uid) {
+      try {
+        const priorSummary = await getLocalDataSummary();
+        if (priorSummary.hasUnsyncedWork) {
+          unsyncedFromPriorAccount =
+            priorSummary.pending +
+            priorSummary.failed +
+            priorSummary.syncing +
+            priorSummary.blocked +
+            priorSummary.conflicts;
+        }
+      } catch { /* non-fatal — silent skip if Dexie hiccups */ }
+    }
+
     // Preserve the current account's local browser database before switching users.
     // This protects offline work while preventing data from one account being visible
     // to the next account on the same browser.
     try { await prepareRuntimeDbForUid(uid); } catch (e) { console.warn('[auth] account data handoff failed:', e); }
+
+    if (unsyncedFromPriorAccount > 0) {
+      push(
+        t('auth.previousAccountUnsynced', { count: unsyncedFromPriorAccount }),
+      );
+    }
 
     try {
       const userDoc = await fetchUserDoc(uid);
@@ -77,7 +109,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     setStatus('unauthenticated');
     setAuthError('No profile found for this account. Ask your admin to create your profile through the app, then try again.');
-  }, []);
+  }, [push, t]);
 
   useEffect(() => {
     setStatus('loading');

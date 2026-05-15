@@ -11,6 +11,7 @@ import type {
   Product,
   Settings,
   StockMovement,
+  Supplier,
 } from "@/types/domain";
 
 export const SETTINGS_ID = "app-settings";
@@ -253,6 +254,92 @@ export const customerRepo = {
       await db.customers.put(next);
       await db.syncQueue.put(buildSyncQueueItem({
         entity: 'customer',
+        entityId: next.id,
+        operation: 'upsert',
+      }));
+    });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('shopkeeper:sync-requested'));
+    }
+  },
+};
+
+// Supplier repo mirrors customerRepo exactly. Direction of money flow is
+// inverted at higher layers (purchase-service, supplier ledger) — the table
+// itself just stores name/phone the same way.
+export const supplierRepo = {
+  async list(): Promise<Supplier[]> {
+    return db.suppliers.orderBy('name').toArray();
+  },
+
+  async findById(id: string): Promise<Supplier | undefined> {
+    return db.suppliers.get(id);
+  },
+
+  async findByNormalizedPhone(normalizedPhone: string): Promise<Supplier | undefined> {
+    if (!normalizedPhone) return undefined;
+    return db.suppliers.where('normalizedPhone').equals(normalizedPhone).first();
+  },
+
+  /**
+   * Mirrors customerRepo.findOrCreate. Caller is responsible for queuing the
+   * sync job — purchase-service decides whether the purchase creation should
+   * also trigger a supplier sync push (created or renamed).
+   */
+  async findOrCreate(input: {
+    name?: string;
+    phone?: string;
+  }): Promise<{ supplier: Supplier; created: boolean; changed: boolean } | null> {
+    const cleanName = input.name?.trim();
+    const cleanPhone = input.phone?.trim();
+    if (!cleanName && !cleanPhone) return null;
+
+    const normalizedPhone = normalizePhone(cleanPhone);
+    if (normalizedPhone) {
+      const existing = await db.suppliers.where('normalizedPhone').equals(normalizedPhone).first();
+      if (existing) {
+        if (cleanName && cleanName !== existing.name) {
+          const updated: Supplier = {
+            ...existing,
+            name: cleanName,
+            updatedAt: nowIso(),
+            syncStatus: 'pending',
+            lastSyncError: undefined,
+          };
+          await db.suppliers.put(updated);
+          return { supplier: updated, created: false, changed: true };
+        }
+        return { supplier: existing, created: false, changed: false };
+      }
+    }
+
+    const now = nowIso();
+    const supplier: Supplier = {
+      id: createId('supp'),
+      name: cleanName || 'Supplier',
+      phone: cleanPhone || undefined,
+      normalizedPhone: normalizedPhone || undefined,
+      createdAt: now,
+      updatedAt: now,
+      syncStatus: 'pending',
+    };
+    await db.suppliers.put(supplier);
+    return { supplier, created: true, changed: false };
+  },
+
+  async save(supplier: Supplier): Promise<void> {
+    await db.transaction('rw', [db.suppliers, db.syncQueue], async () => {
+      const now = nowIso();
+      const next: Supplier = {
+        ...supplier,
+        updatedAt: now,
+        normalizedPhone: supplier.phone ? normalizePhone(supplier.phone) : undefined,
+        syncStatus: 'pending',
+        lastSyncError: undefined,
+      };
+      await db.suppliers.put(next);
+      await db.syncQueue.put(buildSyncQueueItem({
+        entity: 'supplier',
         entityId: next.id,
         operation: 'upsert',
       }));

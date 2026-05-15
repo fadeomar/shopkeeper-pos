@@ -1,4 +1,4 @@
-import type { Bill, BillItem, PaymentMethod, Product } from '@/types/domain';
+import type { Bill, BillItem, PaymentMethod, Product, Purchase, SupplierPayment } from '@/types/domain';
 import { getBillNetProfit, getBillNetTotal } from '@/features/bills/utils/bill-summary';
 import { roundMoney } from '@/lib/utils/money';
 import { netSplitField, normalizeBillSplit } from '@/lib/utils/bill-split';
@@ -68,6 +68,24 @@ export function filterBillsForReport(bills: Bill[], filters: ReportFilters): Bil
   });
 }
 
+/**
+ * Date-range filter for any record that has a createdAt ISO string. Mirror of
+ * filterBillsForReport — extracted because purchases + supplier payments need
+ * the same logic and we'd rather not duplicate the off-by-one date math.
+ */
+export function filterByDateRange<T extends { createdAt: string }>(
+  rows: T[],
+  filters: ReportFilters,
+): T[] {
+  const { from, to } = getReportRange(filters);
+  return rows.filter((row) => {
+    const created = new Date(row.createdAt);
+    if (from && created < from) return false;
+    if (to && created >= to) return false;
+    return true;
+  });
+}
+
 export function summarizeReportBills(bills: Bill[]) {
   return bills.reduce(
     (summary, bill) => {
@@ -100,6 +118,72 @@ export function summarizeReportBills(bills: Bill[]) {
       byPayment: { cash: 0, card: 0, mixed: 0, credit: 0 } as Record<PaymentMethod, number>,
     },
   );
+}
+
+/**
+ * Buy-side report summary. Mirrors summarizeReportBills but inverts every
+ * direction-of-money field.
+ *
+ *   purchaseCost     — gross cost paid for purchases (net of returns to
+ *                      supplier). Equivalent of "sales" on the sell side.
+ *   cashPaidOut      — cash leg of purchases (net of returns), the negative
+ *                      pressure on the cash drawer.
+ *   cardPaidOut      — card leg of purchases (informational; doesn't touch
+ *                      the cash drawer).
+ *   debtAccrued      — credit leg of purchases — what we owe suppliers at
+ *                      the moment of each purchase.
+ *   supplierPayments — debt-settlement payments to suppliers during the
+ *                      range. Subtracts from the open balance.
+ *   netSupplierDebt  — debtAccrued − supplierPayments. Approximates the
+ *                      change in supplier payable over the date range.
+ */
+export function summarizeReportPurchases(
+  purchases: Purchase[],
+  supplierPayments: SupplierPayment[],
+) {
+  const summary = purchases.reduce(
+    (acc, raw) => {
+      const p = normalizeBillSplit(raw as unknown as Bill) as unknown as Purchase;
+      const netCost = Math.max(0, p.totalAmount - (p.returnedAmount ?? 0));
+      const netCash = netSplitField(p as unknown as Bill, p.cashAmount);
+      const netCard = netSplitField(p as unknown as Bill, p.cardAmount);
+      const netCredit = netSplitField(p as unknown as Bill, p.creditAmount);
+      acc.purchaseCount += 1;
+      acc.itemCount += p.status === 'voided' ? 0 : p.itemCount;
+      acc.purchaseCost = roundMoney(acc.purchaseCost + netCost);
+      acc.cashPaidOut = roundMoney(acc.cashPaidOut + netCash);
+      acc.cardPaidOut = roundMoney(acc.cardPaidOut + netCard);
+      acc.debtAccrued = roundMoney(acc.debtAccrued + netCredit);
+      acc.averagePurchase = acc.purchaseCount
+        ? acc.purchaseCost / acc.purchaseCount
+        : 0;
+      if (p.status === 'voided') acc.voidedPurchases += 1;
+      if (p.status === 'returned' || p.status === 'partially_returned') {
+        acc.returnedPurchases += 1;
+      }
+      return acc;
+    },
+    {
+      purchaseCost: 0,
+      cashPaidOut: 0,
+      cardPaidOut: 0,
+      debtAccrued: 0,
+      purchaseCount: 0,
+      itemCount: 0,
+      averagePurchase: 0,
+      voidedPurchases: 0,
+      returnedPurchases: 0,
+      supplierPayments: 0,
+      netSupplierDebt: 0,
+    },
+  );
+  summary.supplierPayments = roundMoney(
+    supplierPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0),
+  );
+  summary.netSupplierDebt = roundMoney(
+    summary.debtAccrued - summary.supplierPayments,
+  );
+  return summary;
 }
 
 export function summarizeProductSales(

@@ -1,10 +1,11 @@
 'use client';
 
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/lib/db/schema';
 import { settingsRepo } from '@/lib/db/repositories';
-import { countProductStock, receiveProductStock } from '@/lib/services/inventory-service';
+import { countProductStock } from '@/lib/services/inventory-service';
 import { formatCurrency } from '@/lib/utils/money';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -15,7 +16,7 @@ import { useToast } from '@/components/ui/toast';
 import { useLocale } from '@/components/providers/locale-context';
 import type { Product, StockMovement } from '@/types/domain';
 
-type InventoryModalMode = 'receive' | 'count' | null;
+type InventoryModalMode = 'count' | null;
 
 const EXPIRY_WINDOW_DAYS = 30;
 
@@ -51,10 +52,17 @@ export function InventoryWorkspace() {
   const [mode, setMode] = useState<InventoryModalMode>(null);
   const [selectedProductId, setSelectedProductId] = useState('');
   const [quantity, setQuantity] = useState('');
-  const [buyPrice, setBuyPrice] = useState('');
-  const [supplierName, setSupplierName] = useState('');
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // buyPrice + supplierName were used by the legacy "Receive stock" modal.
+  // Stock receiving is now done through /purchases/new where supplier and
+  // multi-line cost tracking are first-class. These two pieces of local
+  // state are kept as stubs only to avoid widening the diff on every other
+  // bit of state in this file.
+  const buyPrice = '';
+  const supplierName = '';
+  void buyPrice;
+  void supplierName;
 
   const activeProducts = useMemo(
     () => (products ?? []).filter((product) => product.status === 'active'),
@@ -93,8 +101,6 @@ export function InventoryWorkspace() {
     setMode(nextMode);
     setSelectedProductId(product?.id ?? activeProducts[0]?.id ?? '');
     setQuantity(nextMode === 'count' && product ? String(product.quantityInStock) : '');
-    setBuyPrice(product?.buyPrice != null ? String(product.buyPrice) : '');
-    setSupplierName(product?.supplierName ?? '');
     setNote('');
   }
 
@@ -106,7 +112,6 @@ export function InventoryWorkspace() {
   async function submitInventoryAction() {
     const product = activeProducts.find((item) => item.id === selectedProductId);
     const parsedQuantity = Number(quantity);
-    const parsedBuyPrice = buyPrice.trim() ? Number(buyPrice) : undefined;
 
     if (!product) {
       push(t('inventory.selectProductFirst'));
@@ -116,21 +121,10 @@ export function InventoryWorkspace() {
       push(t('inventory.invalidQuantity'));
       return;
     }
-    if (mode === 'receive' && parsedQuantity <= 0) {
-      push(t('inventory.invalidReceiveQuantity'));
-      return;
-    }
-    if (parsedBuyPrice !== undefined && (!Number.isFinite(parsedBuyPrice) || parsedBuyPrice < 0)) {
-      push(t('inventory.invalidBuyPrice'));
-      return;
-    }
 
     try {
       setSubmitting(true);
-      if (mode === 'receive') {
-        await receiveProductStock(product, parsedQuantity, note, parsedBuyPrice, supplierName);
-        push(t('inventory.stockReceived'));
-      } else if (mode === 'count') {
+      if (mode === 'count') {
         await countProductStock(product, parsedQuantity, note);
         push(t('inventory.stockCountSaved'));
       }
@@ -158,9 +152,12 @@ export function InventoryWorkspace() {
           <Button type="button" variant="secondary" onClick={() => openModal('count')}>
             {t('inventory.stockCount')}
           </Button>
-          <Button type="button" onClick={() => openModal('receive')}>
-            {t('inventory.receiveStock')}
-          </Button>
+          <Link
+            href={"/purchases/new" as never}
+            className="inline-flex h-[42px] items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-700 active:bg-blue-800"
+          >
+            {t('purchases.newPurchase')}
+          </Link>
         </div>
       </section>
 
@@ -176,15 +173,19 @@ export function InventoryWorkspace() {
           title={t('inventory.lowStock')}
           emptyText={t('inventory.noLowStock')}
           products={lowStockProducts}
-          actionLabel={t('inventory.receive')}
-          onAction={(product) => openModal('receive', product)}
+          actionLabel={t('purchases.newPurchase')}
+          onAction={() => {
+            window.location.href = '/purchases/new';
+          }}
         />
         <InventoryListCard
           title={t('inventory.outOfStock')}
           emptyText={t('inventory.noOutOfStock')}
           products={outOfStockProducts}
-          actionLabel={t('inventory.receive')}
-          onAction={(product) => openModal('receive', product)}
+          actionLabel={t('purchases.newPurchase')}
+          onAction={() => {
+            window.location.href = '/purchases/new';
+          }}
         />
         <InventoryListCard
           title={t('inventory.expiringSoon')}
@@ -237,8 +238,8 @@ export function InventoryWorkspace() {
 
       <Modal
         open={mode !== null}
-        title={mode === 'receive' ? t('inventory.receiveStock') : t('inventory.stockCount')}
-        description={mode === 'receive' ? t('inventory.receiveStockDesc') : t('inventory.stockCountDesc')}
+        title={t('inventory.stockCount')}
+        description={t('inventory.stockCountDesc')}
         onClose={closeModal}
         footer={(
           <>
@@ -264,7 +265,7 @@ export function InventoryWorkspace() {
           {selectedProduct && (
             <div className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600">
               {t('inventory.currentStock')}: <strong>{selectedProduct.quantityInStock}</strong>
-              {mode === 'count' && Number.isFinite(countedDifference) && quantity.trim() && (
+              {Number.isFinite(countedDifference) && quantity.trim() && (
                 <span className="ms-3">
                   {t('inventory.difference')}: <strong>{countedDifference > 0 ? '+' : ''}{countedDifference}</strong>
                 </span>
@@ -273,34 +274,15 @@ export function InventoryWorkspace() {
           )}
 
           <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-            {mode === 'receive' ? t('inventory.quantityReceived') : t('inventory.countedQuantity')}
+            {t('inventory.countedQuantity')}
             <Input
               type="number"
-              min={mode === 'receive' ? 1 : 0}
+              min={0}
               step={1}
               value={quantity}
               onChange={(event) => setQuantity(event.target.value)}
             />
           </label>
-
-          {mode === 'receive' && (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-                {t('inventory.newBuyPrice')}
-                <Input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={buyPrice}
-                  onChange={(event) => setBuyPrice(event.target.value)}
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-                {t('inventory.supplier')}
-                <Input value={supplierName} onChange={(event) => setSupplierName(event.target.value)} />
-              </label>
-            </div>
-          )}
 
           <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
             {t('inventory.note')}

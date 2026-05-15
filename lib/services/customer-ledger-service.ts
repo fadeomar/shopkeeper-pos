@@ -118,6 +118,23 @@ export async function getCustomerLedger(): Promise<CustomerLedgerRow[]> {
   const customersById = new Map(customers.map((c) => [c.id, c]));
   const rows = new Map<string, CustomerLedgerRow>();
 
+  // Seed a row for every known customer so cash-only customers (no credit
+  // activity, no payments) still appear in the directory. The credit + payment
+  // loops below populate financial fields on top of these empty rows.
+  for (const customer of customers) {
+    rows.set(customer.id, {
+      key: customer.id,
+      name: customer.name,
+      phone: customer.phone,
+      creditSales: 0,
+      paidOnBills: 0,
+      payments: 0,
+      balanceDue: 0,
+      billCount: 0,
+      lastActivityAt: customer.updatedAt || customer.createdAt || '',
+    });
+  }
+
   for (const bill of bills) {
     if (bill.status === 'voided') continue;
     const key = canonicalBillKey(bill, legacyToCustomerId);

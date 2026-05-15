@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - feature/firebase-auth
+      - '1-updates'
+  pull_request:
+
+# Cancel in-flight runs when a new push lands on the same branch — saves CI
+# minutes on rapid pushes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Strict typecheck (unused locals + parameters)
+        run: npx tsc --noEmit --noUnusedLocals --noUnusedParameters
+
+      - name: Production build
+        # Firebase config is read at module-init time. Real keys aren't needed
+        # for the build itself — it does no network calls — but the shape must
+        # be non-empty strings so initializeApp doesn't throw. These placeholders
+        # are intentionally not valid for any real Firebase project.
+        env:
+          NEXT_PUBLIC_FIREBASE_API_KEY: ci-placeholder-api-key
+          NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ci-placeholder.firebaseapp.com
+          NEXT_PUBLIC_FIREBASE_PROJECT_ID: ci-placeholder
+          NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ci-placeholder.appspot.com
+          NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: '0'
+          NEXT_PUBLIC_FIREBASE_APP_ID: '1:0:web:placeholder'
+        run: npm run build
