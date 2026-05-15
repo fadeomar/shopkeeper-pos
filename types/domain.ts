@@ -2,7 +2,7 @@ export type EntityStatus = 'active' | 'inactive';
 export type UserRole = 'admin' | 'cashier';
 
 export type SyncStatus = 'pending' | 'syncing' | 'synced' | 'failed' | 'conflict' | 'blocked';
-export type SyncEntity = 'bill' | 'product' | 'settings' | 'stockMovement' | 'customerPayment' | 'customer';
+export type SyncEntity = 'bill' | 'product' | 'settings' | 'stockMovement' | 'customerPayment' | 'customer' | 'shift';
 export type SyncOperation = 'create' | 'update' | 'delete' | 'upsert';
 
 export interface SyncQueueItem {
@@ -116,6 +116,11 @@ export interface Bill {
   totalProfit: number;
   itemCount: number;
   status: BillStatus;
+  // Set at finalize when a shift is open on this device; left undefined when
+  // no shift is open (the shop doesn't use drawer reconciliation, or the
+  // cashier forgot to open one). Reports/drawer math only count bills that
+  // carry the active shift's id.
+  shiftId?: string;
   notes?: string;
   voidedAt?: string;
   voidReason?: string;
@@ -142,6 +147,33 @@ export interface BillItem {
   lineProfit: number;
   quantityReturned?: number;
   createdAt: string;
+}
+
+export type ShiftStatus = 'open' | 'closed';
+
+/**
+ * A cashier session bracketing the cash drawer between opening and closing.
+ * Bills created while a shift is `open` carry that shift's id (Bill.shiftId);
+ * at close, expected cash equals openingCash + net cash collected for those
+ * bills (sales − proportional return refunds). cashDifference = counted −
+ * expected, allowing variance audit.
+ */
+export interface Shift {
+  id: string;
+  openedAt: string;
+  openedByCashierName: string;
+  openingCash: number;
+  notes?: string;
+  status: ShiftStatus;
+  // Populated when the shift is closed.
+  closedAt?: string;
+  expectedCash?: number;
+  countedCash?: number;
+  cashDifference?: number;
+  closingNotes?: string;
+  syncStatus?: SyncStatus;
+  syncedAt?: string;
+  lastSyncError?: string;
 }
 
 export interface Customer {

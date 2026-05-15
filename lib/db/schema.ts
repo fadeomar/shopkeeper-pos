@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie';
-import type { Bill, BillItem, Customer, Product, Settings, StockMovement, AuthCacheEntry, SyncQueueItem, CustomerPayment, SyncConflict, PaymentMethod } from '@/types/domain';
+import type { Bill, BillItem, Customer, Product, Settings, Shift, StockMovement, AuthCacheEntry, SyncQueueItem, CustomerPayment, SyncConflict, PaymentMethod } from '@/types/domain';
 import { deriveLegacySplit } from '@/lib/utils/bill-split';
 import { normalizeCustomerKey, normalizePhone } from '@/lib/utils/customer-key';
 import { createId } from '@/lib/utils/id';
@@ -11,6 +11,7 @@ export class ShopkeeperDB extends Dexie {
   stockMovements!: Table<StockMovement, string>;
   customerPayments!: Table<CustomerPayment, string>;
   customers!: Table<Customer, string>;
+  shifts!: Table<Shift, string>;
   settings!: Table<Settings, string>;
   authCache!: Table<AuthCacheEntry, string>;
   syncQueue!: Table<SyncQueueItem, string>;
@@ -183,6 +184,24 @@ export class ShopkeeperDB extends Dexie {
         const id = key ? customerByKey.get(key) : undefined;
         if (id) bill.customerId = id;
       });
+    });
+
+    // v8: cash-drawer shifts. Adds a shifts table and indexes shiftId on
+    // bills so per-shift cash reconciliation can be computed efficiently.
+    // No data migration is needed — existing bills simply carry no shiftId
+    // (they predate shift tracking and won't appear in any shift's totals).
+    this.version(8).stores({
+      products: 'id, &barcode, name, category, brand, supplierName, status, quantityInStock, minimumStockAlert, dateAdded, lastUpdated',
+      bills: 'id, &billNumber, createdAt, paymentMethod, status, cashierName, customerName, customerPhone, customerId, shiftId',
+      billItems: 'id, billId, originalProductId, barcodeAtSale, productNameAtSale, categoryAtSale, createdAt',
+      stockMovements: 'id, productId, movementType, referenceType, referenceId, createdAt',
+      customerPayments: 'id, customerKey, createdAt, syncStatus',
+      customers: 'id, name, normalizedPhone, createdAt, updatedAt',
+      shifts: 'id, status, openedAt, closedAt',
+      settings: 'id, updatedAt',
+      authCache: 'uid',
+      syncQueue: 'id, status, entity, entityId, createdAt, updatedAt',
+      syncConflicts: 'id, status, entity, entityId, conflictType, severity, createdAt',
     });
   }
 }

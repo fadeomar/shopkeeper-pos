@@ -52,17 +52,19 @@ export async function enqueueSyncJob(input: {
 }
 
 const SYNC_ENTITY_PRIORITY: Record<SyncEntity, number> = {
-  // Customers must push BEFORE bills that reference them, otherwise a fresh
-  // device pulling the bill would see customerId pointing at nothing.
+  // Customers and shifts both must push BEFORE bills that reference them,
+  // otherwise a fresh device pulling the bill would see customerId/shiftId
+  // pointing at nothing.
   customer: 0,
+  shift: 1,
   // Bills then sync their bill items, stock movements, and sale-driven
   // product stock. Keep them ahead of manual product writes so an offline
   // sale does not look like a manual product overwrite.
-  bill: 1,
-  customerPayment: 2,
-  stockMovement: 3,
-  product: 4,
-  settings: 5,
+  bill: 2,
+  customerPayment: 3,
+  stockMovement: 4,
+  product: 5,
+  settings: 6,
 };
 
 export async function getPendingSyncJobs(): Promise<SyncQueueItem[]> {
