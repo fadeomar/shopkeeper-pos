@@ -9,6 +9,7 @@ const routes = [
   { href: '/',          key: 'nav.dashboard',   short: 'Home'      },
   { href: '/billing',   key: 'nav.newBill',     short: 'Sell'      },
   { href: '/bills',     key: 'nav.billHistory', short: 'Bills'     },
+  { href: '/purchases/new', key: 'nav.newPurchase', short: 'Buy'   },
   { href: '/products',  key: 'nav.products',    short: 'Products'  },
   { href: '/inventory', key: 'nav.inventory',   short: 'Stock'     },
   { href: '/reports',   key: 'nav.reports',     short: 'Reports'   },
