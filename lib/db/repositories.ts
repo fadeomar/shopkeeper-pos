@@ -194,13 +194,14 @@ export const customerRepo = {
    * data shape and lets billing-service decide whether the bill creation
    * itself should also trigger a customer sync push.
    *
-   * Returns the resolved Customer plus whether it was newly created so the
-   * caller can decide whether to enqueue a 'customer' sync job.
+   * Returns the resolved Customer plus whether it was newly created and
+   * whether an existing row was changed in place, so the caller can decide
+   * whether (and how) to enqueue a 'customer' sync job.
    */
   async findOrCreate(input: {
     name?: string;
     phone?: string;
-  }): Promise<{ customer: Customer; created: boolean } | null> {
+  }): Promise<{ customer: Customer; created: boolean; changed: boolean } | null> {
     const cleanName = input.name?.trim();
     const cleanPhone = input.phone?.trim();
     if (!cleanName && !cleanPhone) return null;
@@ -219,9 +220,9 @@ export const customerRepo = {
             lastSyncError: undefined,
           };
           await db.customers.put(updated);
-          return { customer: updated, created: false };
+          return { customer: updated, created: false, changed: true };
         }
-        return { customer: existing, created: false };
+        return { customer: existing, created: false, changed: false };
       }
     }
 
@@ -236,7 +237,7 @@ export const customerRepo = {
       syncStatus: 'pending',
     };
     await db.customers.put(customer);
-    return { customer, created: true };
+    return { customer, created: true, changed: false };
   },
 
   async save(customer: Customer): Promise<void> {

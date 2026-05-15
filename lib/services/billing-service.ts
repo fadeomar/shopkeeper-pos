@@ -355,15 +355,16 @@ export async function createFinalizedBill(input: {
           }),
         ),
       ];
-      // Push the new customer ahead of the bill (sync-provider priority puts
-      // customer before bill anyway) so a fresh device pulling the bill never
-      // sees a dangling customerId.
-      if (customerResolution?.created) {
+      // Push the new (or renamed) customer ahead of the bill — sync-provider
+      // priority puts customer before bill anyway. `created` covers brand-new
+      // rows; `changed` covers the rename-existing-customer case where the
+      // local row was updated but would otherwise stay only on this device.
+      if (customerResolution?.created || customerResolution?.changed) {
         syncJobs.push(
           buildSyncQueueItem({
             entity: "customer",
             entityId: customerResolution.customer.id,
-            operation: "create",
+            operation: customerResolution.created ? "create" : "upsert",
           }),
         );
       }
