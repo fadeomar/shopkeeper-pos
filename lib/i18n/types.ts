@@ -38,6 +38,7 @@ export interface TranslationDict {
     inventory: string;
     reports: string;
     customers: string;
+    suppliers: string;
     newBill: string;
     billHistory: string;
     shift: string;
@@ -505,6 +506,35 @@ export interface TranslationDict {
     pendingBadge: string;
     safeLocal: string;
     waitingCloud: string;
+  };
+  suppliers: {
+    title: string;
+    subtitle: string;
+    totalPurchases: string;
+    totalPaid: string;
+    totalBalanceOwed: string;
+    suppliersWithDebt: string;
+    ledger: string;
+    ledgerDesc: string;
+    supplier: string;
+    phone: string;
+    creditPurchases: string;
+    paid: string;
+    balanceOwed: string;
+    purchaseCount: string;
+    lastActivity: string;
+    noSuppliers: string;
+    noSuppliersDesc: string;
+    view: string;
+    showAll: string;
+    searchPlaceholder: string;
+    supplierDetails: string;
+    supplierDetailsDesc: string;
+    purchases: string;
+    noPurchases: string;
+    payments: string;
+    noPayments: string;
+    creditBalanceNote: string;
   };
   shift: {
     title: string;
