@@ -1,5 +1,5 @@
-// Stub route. D5 replaces this with the real shift workspace
-// (open/active/history sections + close-shift dialog).
+import { ShiftWorkspace } from "@/features/shift/components/shift-workspace";
+
 export default function ShiftPage() {
-  return null;
+  return <ShiftWorkspace />;
 }
