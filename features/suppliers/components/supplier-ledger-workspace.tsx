@@ -5,10 +5,12 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   getSupplierLedger,
   getSupplierLedgerDetails,
+  recordSupplierPayment,
   type SupplierLedgerDetails,
   type SupplierLedgerRow,
 } from '@/lib/services/supplier-ledger-service';
 import { useLocale } from '@/components/providers/locale-context';
+import { useToast } from '@/components/ui/toast';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,11 +31,51 @@ function StatCard({ label, value, helper }: { label: string; value: string; help
 
 export function SupplierLedgerWorkspace() {
   const { t, dir } = useLocale();
+  const { push } = useToast();
   const settings = useLiveQuery(() => settingsRepo.get(), []);
   const ledger = useLiveQuery(() => getSupplierLedger(), []);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<SupplierLedgerDetails | null>(null);
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [amount, setAmount] = useState('');
+  const [note, setNote] = useState('');
   const currency = settings?.currency ?? 'USD';
+
+  const paymentAmountNumeric = Number(amount);
+  const safePaymentAmount = Number.isFinite(paymentAmountNumeric) ? paymentAmountNumeric : 0;
+  const balanceOwedAtModal = selected?.balanceOwed ?? 0;
+  // Mirror of customer overpayment math: only amounts above a positive
+  // outstanding balance count as overpayment. Paying a supplier we already
+  // owe nothing is automatically a deposit/credit.
+  const overpaymentExtra =
+    safePaymentAmount > Math.max(0, balanceOwedAtModal)
+      ? safePaymentAmount - Math.max(0, balanceOwedAtModal)
+      : 0;
+  const isOverpayment = overpaymentExtra > 0.005;
+
+  async function savePayment() {
+    if (!selected) return;
+    try {
+      await recordSupplierPayment({
+        supplierKey: selected.key,
+        supplierName: selected.name,
+        supplierPhone: selected.phone,
+        amount: Number(amount),
+        note,
+      });
+      const details = await getSupplierLedgerDetails(selected.key);
+      setSelected(details);
+      setPaymentOpen(false);
+      setAmount('');
+      setNote('');
+      push(t('suppliers.paymentSaved'));
+    } catch (error) {
+      push(
+        error instanceof Error ? error.message : t('suppliers.paymentFailed'),
+        'error',
+      );
+    }
+  }
 
   const rows = ledger ?? [];
   const filteredRows = useMemo(() => {
@@ -199,9 +241,16 @@ export function SupplierLedgerWorkspace() {
         description={selected?.phone ?? t('suppliers.supplierDetailsDesc')}
         onClose={() => setSelected(null)}
         footer={
-          <Button type="button" variant="ghost" onClick={() => setSelected(null)}>
-            {t('common.close')}
-          </Button>
+          <>
+            <Button type="button" variant="ghost" onClick={() => setSelected(null)}>
+              {t('common.close')}
+            </Button>
+            {selected && (
+              <Button type="button" onClick={() => setPaymentOpen(true)}>
+                {t('suppliers.recordPayment')}
+              </Button>
+            )}
+          </>
         }
       >
         {selected && (
@@ -286,6 +335,57 @@ export function SupplierLedgerWorkspace() {
             </div>
           </div>
         )}
+      </Modal>
+
+      <Modal
+        open={paymentOpen}
+        title={t('suppliers.recordPayment')}
+        description={selected ? t('suppliers.recordPaymentDesc', { name: selected.name }) : ''}
+        onClose={() => setPaymentOpen(false)}
+        footer={
+          <>
+            <Button type="button" variant="ghost" onClick={() => setPaymentOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button type="button" onClick={savePayment}>
+              {isOverpayment ? t('suppliers.savePaymentCredit') : t('suppliers.savePayment')}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-slate-600 uppercase tracking-wide">
+              {t('suppliers.paymentAmount')}
+            </span>
+            <Input
+              type="number"
+              inputMode="decimal"
+              enterKeyHint="done"
+              step="0.01"
+              min="0"
+              value={amount}
+              onChange={(event) => setAmount(event.target.value)}
+            />
+          </label>
+          {isOverpayment && (
+            <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              {t('suppliers.overpaymentWarning', {
+                extra: formatCurrency(overpaymentExtra, currency),
+              })}
+            </p>
+          )}
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-slate-600 uppercase tracking-wide">
+              {t('suppliers.note')}
+            </span>
+            <Input
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+              placeholder={t('suppliers.notePlaceholder')}
+            />
+          </label>
+        </div>
       </Modal>
     </div>
   );

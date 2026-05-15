@@ -13,6 +13,7 @@ import {
   syncShiftsToCloud,
   syncStockMovementsToCloud,
   syncCustomerPaymentsToCloud,
+  syncSupplierPaymentsToCloud,
   syncSuppliersToCloud,
 } from '@/lib/firebase/sync-service';
 import {
@@ -170,6 +171,8 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
         await db.shifts.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
       } else if (job.entity === 'supplier') {
         await db.suppliers.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
+      } else if (job.entity === 'supplierPayment') {
+        await db.supplierPayments.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
       } else if (job.entity === 'settings') {
         await db.settings.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
       }
@@ -302,6 +305,16 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
       if (syncedAt) {
         await db.suppliers.update(job.entityId, { syncStatus: 'synced', syncedAt, lastSyncError: undefined });
       }
+    } else if (job.entity === 'supplierPayment') {
+      const payment = await db.supplierPayments.get(job.entityId);
+      if (!payment) {
+        await markSynced(job.id);
+        return;
+      }
+      const syncedAt = await syncSupplierPaymentsToCloud(uid, [payment]);
+      if (syncedAt) {
+        await db.supplierPayments.update(job.entityId, { syncStatus: 'synced', syncedAt, lastSyncError: undefined });
+      }
     } else if (job.entity === 'settings') {
       const settings = await db.settings.get(job.entityId);
       if (!settings) {
@@ -350,6 +363,8 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
       await db.shifts.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
     } else if (job.entity === 'supplier') {
       await db.suppliers.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
+    } else if (job.entity === 'supplierPayment') {
+      await db.supplierPayments.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
     } else if (job.entity === 'settings') {
       await db.settings.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
     }

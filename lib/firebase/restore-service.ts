@@ -13,7 +13,7 @@ import { db } from '@/lib/db/schema';
 import { createBillNumber } from '@/lib/utils/id';
 import { normalizeBillSplit } from '@/lib/utils/bill-split';
 import { normalizePhone } from '@/lib/utils/customer-key';
-import type { Bill, BillItem, Customer, Product, Purchase, PurchaseItem, Settings, Shift, StockMovement, Supplier, CustomerPayment } from '@/types/domain';
+import type { Bill, BillItem, Customer, Product, Purchase, PurchaseItem, Settings, Shift, StockMovement, Supplier, SupplierPayment, CustomerPayment } from '@/types/domain';
 import type { SyncMeta } from './sync-service';
 
 const SETTINGS_ID = 'app-settings';
@@ -168,6 +168,18 @@ function normalizeProduct(snapshot: QueryDocumentSnapshot<DocumentData>, syncedA
 function normalizeStockMovement(snapshot: QueryDocumentSnapshot<DocumentData>, syncedAt: string): StockMovement {
   const movement = withDocId<StockMovement>(snapshot);
   return { ...movement, ...syncedMeta(syncedAt) };
+}
+
+function normalizeSupplierPayment(snapshot: QueryDocumentSnapshot<DocumentData>, syncedAt: string): SupplierPayment {
+  const payment = withDocId<SupplierPayment>(snapshot) as Partial<SupplierPayment> & { id: string };
+  return {
+    ...payment,
+    supplierKey: payment.supplierKey || '',
+    supplierName: payment.supplierName || 'Supplier',
+    amount: Math.max(0, finiteNumber(payment.amount)),
+    createdAt: payment.createdAt || syncedAt,
+    ...syncedMeta(syncedAt),
+  } as SupplierPayment;
 }
 
 function normalizeCustomerPayment(snapshot: QueryDocumentSnapshot<DocumentData>, syncedAt: string): CustomerPayment {
@@ -644,6 +656,9 @@ export async function restoreFromCloud(
   onProgress?.('Fetching purchase items…');
   const purchaseItems = await readUserCollection(uid, 'purchaseItems', (snapshot) => normalizePurchaseItem(snapshot));
 
+  onProgress?.('Fetching supplier payments…');
+  const supplierPayments = await readUserCollection(uid, 'supplierPayments', (snapshot) => normalizeSupplierPayment(snapshot, restoredAt));
+
   const productRepair = repairDuplicateProductBarcodes({
     products: cloudProducts,
     billItems: cloudBillItems,
@@ -675,6 +690,7 @@ export async function restoreFromCloud(
       suppliers: suppliers.length,
       purchases: purchases.length,
       purchaseItems: purchaseItems.length,
+      supplierPayments: supplierPayments.length,
     },
   };
 
@@ -682,7 +698,7 @@ export async function restoreFromCloud(
   try {
     await db.transaction(
       'rw',
-      [db.bills, db.billItems, db.products, db.stockMovements, db.customerPayments, db.customers, db.shifts, db.suppliers, db.purchases, db.purchaseItems, db.settings, db.syncQueue, db.syncConflicts],
+      [db.bills, db.billItems, db.products, db.stockMovements, db.customerPayments, db.customers, db.shifts, db.suppliers, db.purchases, db.purchaseItems, db.supplierPayments, db.settings, db.syncQueue, db.syncConflicts],
       async () => {
         // Clear first so stale local rows that no longer exist in the cloud are removed.
         // This is still safe because fetch/normalization already succeeded and Dexie
@@ -698,6 +714,7 @@ export async function restoreFromCloud(
           db.suppliers.clear(),
           db.purchases.clear(),
           db.purchaseItems.clear(),
+          db.supplierPayments.clear(),
           db.settings.clear(),
           db.syncQueue.clear(),
           db.syncConflicts.clear(),
@@ -712,6 +729,7 @@ export async function restoreFromCloud(
         if (suppliers.length) await db.suppliers.bulkPut(suppliers);
         if (purchases.length) await db.purchases.bulkPut(purchases);
         if (purchaseItems.length) await db.purchaseItems.bulkPut(purchaseItems);
+        if (supplierPayments.length) await db.supplierPayments.bulkPut(supplierPayments);
         if (settings.length) await db.settings.bulkPut(settings);
       },
     );

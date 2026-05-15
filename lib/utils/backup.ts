@@ -1,5 +1,5 @@
 import { db } from '@/lib/db/schema';
-import type { Bill, BillItem, Customer, CustomerPayment, Product, Purchase, PurchaseItem, Settings, Shift, StockMovement, Supplier, SyncConflict, SyncQueueItem } from '@/types/domain';
+import type { Bill, BillItem, Customer, CustomerPayment, Product, Purchase, PurchaseItem, Settings, Shift, StockMovement, Supplier, SupplierPayment, SyncConflict, SyncQueueItem } from '@/types/domain';
 
 /**
  * Portable local backup format.
@@ -24,6 +24,7 @@ export interface BackupSnapshotV1 {
     suppliers: number;
     purchases: number;
     purchaseItems: number;
+    supplierPayments: number;
     settings: number;
     syncQueue: number;
     syncConflicts: number;
@@ -39,6 +40,7 @@ export interface BackupSnapshotV1 {
     suppliers: Supplier[];
     purchases: Purchase[];
     purchaseItems: PurchaseItem[];
+    supplierPayments: SupplierPayment[];
     settings: Settings[];
     syncQueue: SyncQueueItem[];
     syncConflicts: SyncConflict[];
@@ -46,7 +48,7 @@ export interface BackupSnapshotV1 {
 }
 
 export async function createLocalBackupSnapshot(): Promise<BackupSnapshotV1> {
-  const [products, bills, billItems, stockMovements, customerPayments, customers, shifts, suppliers, purchases, purchaseItems, settings, syncQueue, syncConflicts] = await Promise.all([
+  const [products, bills, billItems, stockMovements, customerPayments, customers, shifts, suppliers, purchases, purchaseItems, supplierPayments, settings, syncQueue, syncConflicts] = await Promise.all([
     db.products.toArray(),
     db.bills.toArray(),
     db.billItems.toArray(),
@@ -57,6 +59,7 @@ export async function createLocalBackupSnapshot(): Promise<BackupSnapshotV1> {
     db.suppliers.toArray().catch(() => [] as Supplier[]),
     db.purchases.toArray().catch(() => [] as Purchase[]),
     db.purchaseItems.toArray().catch(() => [] as PurchaseItem[]),
+    db.supplierPayments.toArray().catch(() => [] as SupplierPayment[]),
     db.settings.toArray(),
     db.syncQueue.toArray(),
     db.syncConflicts.toArray().catch(() => [] as SyncConflict[]),
@@ -77,6 +80,7 @@ export async function createLocalBackupSnapshot(): Promise<BackupSnapshotV1> {
       suppliers: suppliers.length,
       purchases: purchases.length,
       purchaseItems: purchaseItems.length,
+      supplierPayments: supplierPayments.length,
       settings: settings.length,
       syncQueue: syncQueue.length,
       syncConflicts: syncConflicts.length,
@@ -92,6 +96,7 @@ export async function createLocalBackupSnapshot(): Promise<BackupSnapshotV1> {
       suppliers,
       purchases,
       purchaseItems,
+      supplierPayments,
       settings,
       syncQueue,
       syncConflicts,
@@ -127,6 +132,7 @@ export function createEmptyBackupPlan(): BackupSnapshotV1 {
       suppliers: 0,
       purchases: 0,
       purchaseItems: 0,
+      supplierPayments: 0,
       settings: 0,
       syncQueue: 0,
       syncConflicts: 0,
@@ -142,6 +148,7 @@ export function createEmptyBackupPlan(): BackupSnapshotV1 {
       suppliers: [],
       purchases: [],
       purchaseItems: [],
+      supplierPayments: [],
       settings: [],
       syncQueue: [],
       syncConflicts: [],

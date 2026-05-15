@@ -1,4 +1,7 @@
 import { db } from '@/lib/db/schema';
+import { nowIso } from '@/lib/utils/date';
+import { createId } from '@/lib/utils/id';
+import { buildSyncQueueItem } from '@/lib/services/sync-queue-service';
 import { normalizeSupplierKey } from '@/lib/utils/supplier-key';
 import { netSplitField, normalizeBillSplit } from '@/lib/utils/bill-split';
 import type { Purchase, Supplier, SupplierPayment, Bill } from '@/types/domain';
@@ -189,6 +192,57 @@ export async function getSupplierLedgerDetails(
   return { ...row, purchases: supplierPurchases, paymentRows: supplierPaymentRows };
 }
 
-// recordSupplierPayment is intentionally not exported from this file yet.
-// F10 adds it along with the full sync push/pull + provider branch so the
-// queued job can actually reach the cloud.
+/**
+ * Record a payment we made to a supplier against their debt — mirror of
+ * recordCustomerPayment with two important differences:
+ *
+ * 1. shiftId is set automatically when a shift is open on this device, so
+ *    the cash leaves the drawer for end-of-shift reconciliation.
+ * 2. Overpayment is allowed but the UI surface (supplier ledger workspace)
+ *    nudges the cashier with a confirmation banner.
+ */
+export async function recordSupplierPayment(input: {
+  supplierKey: string;
+  supplierName: string;
+  supplierPhone?: string;
+  amount: number;
+  note?: string;
+}): Promise<SupplierPayment> {
+  const amount = Number(input.amount);
+  if (!input.supplierKey) throw new Error('Supplier is required.');
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error('Payment amount must be greater than zero.');
+  }
+
+  const now = nowIso();
+  const activeShift = await db.shifts.where('status').equals('open').first();
+
+  const payment: SupplierPayment = {
+    id: createId('supp_pay'),
+    supplierKey: input.supplierKey,
+    supplierName: input.supplierName.trim() || 'Supplier',
+    supplierPhone: input.supplierPhone?.trim() || undefined,
+    amount,
+    note: input.note?.trim() || undefined,
+    createdAt: now,
+    shiftId: activeShift?.id,
+    syncStatus: 'pending',
+  };
+
+  await db.transaction('rw', [db.supplierPayments, db.syncQueue], async () => {
+    await db.supplierPayments.add(payment);
+    await db.syncQueue.put(
+      buildSyncQueueItem({
+        entity: 'supplierPayment',
+        entityId: payment.id,
+        operation: 'create',
+      }),
+    );
+  });
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('shopkeeper:sync-requested'));
+  }
+
+  return payment;
+}

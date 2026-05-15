@@ -4,7 +4,7 @@ import { db } from '@/lib/db/schema';
 import { saveConflict } from '@/lib/services/sync-conflict-service';
 import { buildSyncQueueItem, getSyncQueueId } from '@/lib/services/sync-queue-service';
 import { normalizeBillSplit } from '@/lib/utils/bill-split';
-import type { Bill, BillItem, Customer, CustomerPayment, Product, Purchase, PurchaseItem, Settings, Shift, StockMovement, Supplier, SyncEntity, SyncQueueItem } from '@/types/domain';
+import type { Bill, BillItem, Customer, CustomerPayment, Product, Purchase, PurchaseItem, Settings, Shift, StockMovement, Supplier, SupplierPayment, SyncEntity, SyncQueueItem } from '@/types/domain';
 
 const PRODUCT_FIELDS: Array<keyof Product> = [
   'barcode', 'name', 'category', 'brand', 'unit', 'quantityInStock', 'buyPrice', 'sellPrice',
@@ -164,13 +164,14 @@ async function pullSettings(uid: string): Promise<void> {
 }
 
 async function pullAppendOnlyCollections(uid: string): Promise<void> {
-  const [bills, billItems, movements, payments, purchases, purchaseItems] = await Promise.all([
+  const [bills, billItems, movements, payments, purchases, purchaseItems, supplierPayments] = await Promise.all([
     pullCollection<Bill>(uid, 'bills'),
     pullCollection<BillItem>(uid, 'billItems'),
     pullCollection<StockMovement>(uid, 'stockMovements'),
     pullCollection<CustomerPayment>(uid, 'customerPayments'),
     pullCollection<Purchase>(uid, 'purchases'),
     pullCollection<PurchaseItem>(uid, 'purchaseItems'),
+    pullCollection<SupplierPayment>(uid, 'supplierPayments'),
   ]);
 
   // Bills look append-only at create time, but voidBill() and returnBillItem()
@@ -183,7 +184,7 @@ async function pullAppendOnlyCollections(uid: string): Promise<void> {
   // db.syncQueue is read inside via getPendingLocalJob; Dexie requires it
   // in the transaction tables list or it throws a scope error in strict
   // transactional mode.
-  await db.transaction('rw', [db.bills, db.billItems, db.stockMovements, db.customerPayments, db.purchases, db.purchaseItems, db.syncQueue], async () => {
+  await db.transaction('rw', [db.bills, db.billItems, db.stockMovements, db.customerPayments, db.purchases, db.purchaseItems, db.supplierPayments, db.syncQueue], async () => {
     for (const bill of bills) {
       // Bills authored by a pre-v6 device lack cashAmount/cardAmount/creditAmount.
       // Fill them in once on the way into local storage so every reader downstream
@@ -253,6 +254,9 @@ async function pullAppendOnlyCollections(uid: string): Promise<void> {
       if (cloudReturned === localReturned) continue;
       await db.purchaseItems.update(item.id, { quantityReturned: cloudReturned });
     }
+
+    // Supplier payments are append-only, mirror of customerPayments.
+    for (const payment of supplierPayments) if (!(await db.supplierPayments.get(payment.id))) await db.supplierPayments.put({ ...payment, syncStatus: 'synced', lastSyncError: undefined });
   });
 }
 

@@ -586,6 +586,16 @@ export interface TranslationDict {
     payments: string;
     noPayments: string;
     creditBalanceNote: string;
+    recordPayment: string;
+    recordPaymentDesc: string;
+    paymentAmount: string;
+    note: string;
+    notePlaceholder: string;
+    savePayment: string;
+    savePaymentCredit: string;
+    overpaymentWarning: string;
+    paymentSaved: string;
+    paymentFailed: string;
   };
   shift: {
     title: string;
