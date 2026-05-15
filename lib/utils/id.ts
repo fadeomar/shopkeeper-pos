@@ -6,6 +6,10 @@ export function createBillNumber(sequence: number) {
   return `INV-${sequence.toString().padStart(6, '0')}`;
 }
 
+export function createPurchaseNumber(sequence: number) {
+  return `PO-${sequence.toString().padStart(6, '0')}`;
+}
+
 export function createUuid() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();

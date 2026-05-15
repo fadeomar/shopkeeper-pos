@@ -348,6 +348,34 @@ export interface ProductFormValues {
   status: EntityStatus;
 }
 
+export interface PurchaseDraftItem {
+  productId: string;
+  barcode: string;
+  name: string;
+  category: string;
+  // No availableStock check on the buy side — we're adding inventory.
+  // Existing stock is shown read-only in the UI just for context.
+  currentStock: number;
+  quantity: number;
+  unitCost: number;
+  // Pre-purchase sell price (informational; we don't mutate sellPrice during
+  // a purchase, but the cashier may want to see it for margin sanity check).
+  unitSellPriceBefore: number;
+}
+
+export interface PurchaseFormValues {
+  cashierName?: string;
+  supplierName?: string;
+  supplierPhone?: string;
+  paymentMethod: PaymentMethod;
+  discountAmount: number;
+  taxAmount: number;
+  paidAmount: number;
+  cashAmount?: number;
+  cardAmount?: number;
+  notes?: string;
+}
+
 export interface BillDraftItem {
   productId: string;
   barcode: string;
