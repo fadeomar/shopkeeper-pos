@@ -40,6 +40,7 @@ export interface TranslationDict {
     customers: string;
     newBill: string;
     billHistory: string;
+    shift: string;
     settings: string;
   };
   sidebar: { title: string; subtitle: string };
@@ -331,6 +332,8 @@ export interface TranslationDict {
     shortcutsHelp: string;
     shortcutFinalize: string;
     shortcutClearBarcode: string;
+    noShiftOpenWarning: string;
+    openShift: string;
     itemAdded: string;
     itemUpdated: string;
     productNotFoundAddNow: string;

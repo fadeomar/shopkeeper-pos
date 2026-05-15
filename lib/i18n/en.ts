@@ -39,6 +39,7 @@ export const en: TranslationDict = {
     customers: "Customers",
     newBill: "New Bill",
     billHistory: "Bill History",
+    shift: "Shift",
     settings: "Settings",
   },
   sidebar: {
@@ -345,6 +346,8 @@ export const en: TranslationDict = {
     shortcutsHelp: "Keyboard shortcuts",
     shortcutFinalize: "Ctrl/⌘ + Enter — finalize sale",
     shortcutClearBarcode: "Esc — clear barcode input",
+    noShiftOpenWarning: "No shift open — cash drawer reconciliation is disabled for this sale.",
+    openShift: "Open shift",
     itemAdded: "{{name}} added.",
     itemUpdated: "{{name}} ×{{qty}}",
     productNotFoundAddNow: "No product found for {{barcode}}. Add it now?",

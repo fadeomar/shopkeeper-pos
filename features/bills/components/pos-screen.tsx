@@ -8,6 +8,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db/schema";
 import { customerRepo, settingsRepo } from "@/lib/db/repositories";
 import { normalizePhone } from "@/lib/utils/customer-key";
+import { getActiveShift } from "@/lib/services/shift-service";
 import { billFormSchema, type BillFormSchema } from "@/features/bills/schema";
 import {
   calculateBillTotals,
@@ -178,6 +179,7 @@ export function PosScreen() {
     [],
   );
   const customers = useLiveQuery(() => customerRepo.list(), []);
+  const activeShift = useLiveQuery(() => getActiveShift(), []);
   const settings = useLiveQuery(() => settingsRepo.get(), []);
   const { push } = useToast();
   const currency = settings?.currency ?? "USD";
@@ -666,6 +668,25 @@ export function PosScreen() {
 
   return (
     <>
+      {/* If no shift is open the bill still finalizes, but it won't be counted
+          in any drawer reconciliation. Surface a soft warning + a link to the
+          shift workspace so the cashier sees the consequence before selling. */}
+      {activeShift === null && (
+        <Link
+          // The new /shift route page exists but Next's typedRoutes type
+          // generation runs at build time; cast matches the pattern used
+          // by sidebar-nav.tsx for dynamic hrefs.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          href={"/shift" as any}
+          className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 hover:bg-amber-100 transition-colors"
+        >
+          <span className="font-medium">{t("billing.noShiftOpenWarning")}</span>
+          <span className="text-xs font-semibold uppercase tracking-wide">
+            {t("billing.openShift")} →
+          </span>
+        </Link>
+      )}
+
       {/* Mobile-first layout, desktop keeps two columns */}
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_400px] gap-4 xl:gap-5 items-start">
         {/* ── Build bill panel ─────────────────────────────────────────── */}

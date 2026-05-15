@@ -39,6 +39,7 @@ export const ar: TranslationDict = {
     customers: "العملاء",
     newBill: "فاتورة جديدة",
     billHistory: "سجل الفواتير",
+    shift: "الدوام",
     settings: "الإعدادات",
   },
   sidebar: {
@@ -342,6 +343,8 @@ export const ar: TranslationDict = {
     shortcutsHelp: "اختصارات لوحة المفاتيح",
     shortcutFinalize: "Ctrl/⌘ + Enter — إنهاء البيع",
     shortcutClearBarcode: "Esc — مسح حقل الباركود",
+    noShiftOpenWarning: "لا يوجد دوام مفتوح — لن يتم احتساب هذه الفاتورة في تسوية الكاش.",
+    openShift: "فتح دوام",
     itemAdded: "تمت إضافة {{name}}.",
     itemUpdated: "{{name}} ×{{qty}}",
     productNotFoundAddNow: "لم يتم العثور على منتج للباركود {{barcode}}. هل تريد إضافته الآن؟",

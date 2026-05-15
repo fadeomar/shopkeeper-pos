@@ -165,6 +165,7 @@ export async function createFinalizedBill(input: {
       db.stockMovements,
       db.settings,
       db.customers,
+      db.shifts,
       db.syncQueue,
     ],
     async () => {
@@ -261,6 +262,14 @@ export async function createFinalizedBill(input: {
         resolvedCustomerId = customerResolution.customer.id;
       }
 
+      // Tag the bill with the active shift if one is open on this device.
+      // No shift = no shiftId; reports/drawer reconciliation simply won't
+      // count this bill. The shift document doesn't need a re-push here —
+      // its open-state fields are immutable and totals are derived from
+      // bills at read time.
+      const activeShift = await db.shifts.where('status').equals('open').first();
+      const resolvedShiftId = activeShift?.id;
+
       const bill: Bill = {
         id: billId,
         billNumber,
@@ -269,6 +278,7 @@ export async function createFinalizedBill(input: {
         customerId: resolvedCustomerId,
         customerName: input.form.customerName,
         customerPhone: input.form.customerPhone,
+        shiftId: resolvedShiftId,
         paymentMethod: input.form.paymentMethod,
         subtotal: totals.subtotal,
         discountAmount: input.form.discountAmount,
