@@ -6,15 +6,53 @@
 @source "../lib/**/*.{ts,tsx}";
 
 @layer base {
-  *, *::before, *::after { box-sizing: border-box; }
-
-  html, body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-      'Noto Sans Arabic', 'Arabic UI Text', sans-serif;
+  :root {
+    --pos-bg-app: #f8fafc;
+    --pos-bg-surface: #ffffff;
+    --pos-bg-surface-soft: #f1f5f9;
+    --pos-border: #e2e8f0;
+    --pos-text: #0f172a;
+    --pos-text-muted: #64748b;
+    --pos-primary: #2563eb;
+    --pos-primary-hover: #1d4ed8;
+    --pos-success: #15803d;
+    --pos-warning: #b45309;
+    --pos-danger: #dc2626;
+    --pos-radius: 1rem;
+    --pos-shadow-xs: 0 1px 2px 0 rgb(15 23 42 / 0.05);
+    --pos-shadow-md: 0 8px 24px -12px rgb(15 23 42 / 0.25);
   }
 
-  a { color: inherit; text-decoration: none; }
-  button, input, select, textarea { font: inherit; }
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    font-family:
+      -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans Arabic",
+      "Arabic UI Text", sans-serif;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: 2px solid var(--pos-primary);
+    outline-offset: 2px;
+  }
 
   html {
     -webkit-text-size-adjust: 100%;
@@ -22,16 +60,25 @@
   }
 
   body {
-    background: #f8fafc;
+    background: var(--pos-bg-app);
+    color: var(--pos-text);
     overscroll-behavior-y: none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
-  input, select, textarea {
+  input,
+  select,
+  textarea {
     font-size: 16px;
   }
 
   @media (min-width: 640px) {
-    input, select, textarea { font-size: 14px; }
+    input,
+    select,
+    textarea {
+      font-size: 14px;
+    }
   }
 
   /* Number / price inputs stay LTR regardless of page direction so digit
@@ -86,7 +133,9 @@
   background: rgba(15, 23, 42, 0.85);
 }
 
-.scanner-overlay-error { color: #fca5a5; }
+.scanner-overlay-error {
+  color: #fca5a5;
+}
 
 @media print {
   body * {
@@ -112,7 +161,6 @@
     display: none !important;
   }
 }
-
 
 @layer utilities {
   .no-scrollbar {

@@ -1,12 +1,17 @@
 "use client";
 
 import Link from "next/link";
+import clsx from "clsx";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db/schema";
-import { customerRepo, settingsRepo, supplierRepo } from "@/lib/db/repositories";
+import {
+  customerRepo,
+  settingsRepo,
+  supplierRepo,
+} from "@/lib/db/repositories";
 import { normalizePhone } from "@/lib/utils/customer-key";
 import {
   purchaseFormSchema,
@@ -17,7 +22,6 @@ import {
   calculateChange,
   calculateLineSubtotal,
 } from "@/lib/utils/calculations";
-import { formatCurrency } from "@/lib/utils/money";
 import { createFinalizedPurchase } from "@/lib/services/purchase-service";
 import { useAuth } from "@/components/providers/auth-context";
 import { Button } from "@/components/ui/button";
@@ -25,9 +29,28 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Modal } from "@/components/ui/modal";
+import { PageShell } from "@/components/ui/page-shell";
+import { PageHeader } from "@/components/ui/page-header";
+import { SectionCard } from "@/components/ui/section-card";
+import { FormField } from "@/components/ui/form-field";
+import { TableShell } from "@/components/ui/table-shell";
+import { Toolbar } from "@/components/ui/toolbar";
+import { Badge } from "@/components/ui/badge";
+import { StatusPill } from "@/components/ui/status-pill";
+import { LoadingState } from "@/components/ui/loading-state";
 import { useToast } from "@/components/ui/toast";
 import { useLocale } from "@/components/providers/locale-context";
-import { Card } from "@/components/ui/card";
+import { PriceDisplay } from "@/components/pos/price-display";
+import { CheckoutActionBar } from "@/components/pos/checkout-action-bar";
+import {
+  buttonSizes,
+  buttonVariants,
+  dividerClasses,
+  focusRing,
+  panelTones,
+  surfaceClasses,
+  typographyClasses,
+} from "@/lib/design/variants";
 import type {
   Purchase,
   PurchaseDraftItem,
@@ -42,48 +65,43 @@ void customerRepo;
 
 const PURCHASE_DRAFT_KEY_PREFIX = "shopkeeper-purchase-draft-v1";
 
-function FormField({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="flex flex-col gap-1.5">
-      <span className="text-xs font-medium text-slate-600 uppercase tracking-wide">
-        {label}
-      </span>
-      {children}
-    </label>
-  );
-}
-
 function SummaryRow({
   label,
   value,
   highlight,
 }: {
   label: string;
-  value: string;
+  value: React.ReactNode;
   highlight?: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between gap-2 py-2 border-b border-slate-100 last:border-0">
+    <div
+      className={clsx(
+        "flex items-center justify-between gap-3 border-b py-2 last:border-0",
+        dividerClasses.borderSubtle,
+      )}
+    >
       <span
-        className={`text-sm ${highlight ? "font-semibold text-slate-900" : "text-slate-500"}`}
+        className={clsx(
+          "text-sm",
+          highlight
+            ? "font-semibold text-slate-900"
+            : typographyClasses.bodyMuted,
+        )}
       >
         {label}
       </span>
       <span
-        className={`text-sm tabular-nums ${highlight ? "font-bold text-slate-900" : "font-medium text-slate-700"}`}
+        className={clsx(
+          "text-sm tabular-nums",
+          highlight ? "font-bold text-slate-900" : "font-medium text-slate-700",
+        )}
       >
         {value}
       </span>
     </div>
   );
 }
-
 function dismissKeyboardOnEnter(event: React.KeyboardEvent<HTMLInputElement>) {
   if (event.key === "Enter") {
     event.preventDefault();
@@ -117,55 +135,74 @@ function SuccessPanel({
   void settings;
 
   return (
-    <Card className="flex flex-col gap-4" padding="sm">
-      <div className="flex items-start gap-3">
-        <span
-          aria-hidden
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-lg font-bold"
-        >
-          ✓
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-emerald-700">
-            {t("purchases.purchaseCompleted")}
-          </p>
-          <p className="font-mono text-base font-bold text-slate-900">
+    <SectionCard
+      tone="success"
+      padding="md"
+      title={
+        <span className="flex items-center gap-2">
+          <StatusPill
+            status="completed"
+            tone="success"
+            label={t("purchases.purchaseCompleted")}
+          />
+          <span className="font-mono text-base font-bold text-slate-900">
             {purchase.purchaseNumber}
-          </p>
-        </div>
-      </div>
-
-      <div className="rounded-xl bg-emerald-50 border border-emerald-100 px-4 py-3">
+          </span>
+        </span>
+      }
+    >
+      <div
+        className={clsx(
+          "rounded-xl border px-4 py-3",
+          panelTones.success,
+          "bg-white/70 text-slate-700",
+        )}
+      >
         <SummaryRow
           label={t("purchases.total")}
-          value={formatCurrency(purchase.totalAmount, currency)}
+          value={
+            <PriceDisplay
+              value={purchase.totalAmount}
+              currency={currency}
+              emphasis
+            />
+          }
           highlight
         />
         <SummaryRow
           label={t("purchases.paid")}
-          value={formatCurrency(purchase.paidAmount, currency)}
+          value={
+            <PriceDisplay value={purchase.paidAmount} currency={currency} />
+          }
         />
         {amountDue > 0 && (
           <SummaryRow
             label={t("purchases.amountDue")}
-            value={formatCurrency(amountDue, currency)}
+            value={
+              <PriceDisplay value={amountDue} currency={currency} emphasis />
+            }
             highlight
           />
         )}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <Link
           href={"/purchases" as never}
-          className="inline-flex h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          className={clsx(
+            "h-11",
+            buttonSizes.md,
+            buttonVariants.outline,
+            focusRing,
+          )}
         >
           {t("purchases.historyTitle")}
         </Link>
-        <Button ref={newRef} type="button" onClick={onDismiss} className="w-full">
+        <Button ref={newRef} type="button" onClick={onDismiss} fullWidth>
           {t("purchases.newPurchaseAction")}
         </Button>
       </div>
-    </Card>
+    </SectionCard>
   );
 }
 
@@ -180,7 +217,9 @@ export function PurchaseEntryScreen() {
   const settings = useLiveQuery(() => settingsRepo.get(), []);
   const { push } = useToast();
   const currency = settings?.currency ?? "USD";
-  const draftKey = user?.uid ? `${PURCHASE_DRAFT_KEY_PREFIX}:${user.uid}` : null;
+  const draftKey = user?.uid
+    ? `${PURCHASE_DRAFT_KEY_PREFIX}:${user.uid}`
+    : null;
 
   const [draftItems, setDraftItems] = useState<PurchaseDraftItem[]>([]);
   const [productId, setProductId] = useState("");
@@ -189,9 +228,10 @@ export function PurchaseEntryScreen() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [isPaidAmountManuallyEdited, setIsPaidAmountManuallyEdited] =
     useState(false);
-  const [lastFinalized, setLastFinalized] = useState<
-    { purchase: Purchase; items: PurchaseItem[] } | null
-  >(null);
+  const [lastFinalized, setLastFinalized] = useState<{
+    purchase: Purchase;
+    items: PurchaseItem[];
+  } | null>(null);
   const [supplierFieldFocused, setSupplierFieldFocused] = useState(false);
 
   const form = useForm<PurchaseFormSchema>({
@@ -291,9 +331,7 @@ export function PurchaseEntryScreen() {
     () =>
       isMixedPurchase
         ? Math.abs(
-            watchedCashAmount +
-              watchedCardAmount -
-              purchaseSummary.totalAmount,
+            watchedCashAmount + watchedCardAmount - purchaseSummary.totalAmount,
           )
         : 0,
     [
@@ -367,7 +405,12 @@ export function PurchaseEntryScreen() {
       if (exact) return [];
     }
     return matches.slice(0, 5);
-  }, [suppliers, supplierFieldFocused, watchedSupplierName, watchedSupplierPhone]);
+  }, [
+    suppliers,
+    supplierFieldFocused,
+    watchedSupplierName,
+    watchedSupplierPhone,
+  ]);
 
   function selectSupplier(supplier: Supplier) {
     form.setValue("supplierName", supplier.name, { shouldDirty: true });
@@ -409,7 +452,10 @@ export function PurchaseEntryScreen() {
     if (lastFinalized) setLastFinalized(null);
   }
 
-  function updateLine(productIdToUpdate: string, patch: Partial<PurchaseDraftItem>) {
+  function updateLine(
+    productIdToUpdate: string,
+    patch: Partial<PurchaseDraftItem>,
+  ) {
     setDraftItems((cur) =>
       cur.map((i) => {
         if (i.productId !== productIdToUpdate) return i;
@@ -426,7 +472,9 @@ export function PurchaseEntryScreen() {
   }
 
   function removeLine(productIdToRemove: string) {
-    setDraftItems((cur) => cur.filter((i) => i.productId !== productIdToRemove));
+    setDraftItems((cur) =>
+      cur.filter((i) => i.productId !== productIdToRemove),
+    );
   }
 
   function clearDraft() {
@@ -475,37 +523,41 @@ export function PurchaseEntryScreen() {
 
   if (!products) {
     return (
-      <Card>
-        <p className="text-sm text-slate-500">Loading…</p>
-      </Card>
+      <PageShell size="wide">
+        <PageHeader
+          title={t("purchases.title")}
+          description={t("purchases.subtitle")}
+        />
+        <LoadingState />
+      </PageShell>
     );
   }
 
   return (
-    <>
-      <div className="mb-4">
-        <h1 className="text-2xl font-bold text-slate-900">{t("purchases.title")}</h1>
-        <p className="mt-1 text-sm text-slate-500 max-w-2xl">
-          {t("purchases.subtitle")}
-        </p>
-      </div>
+    <PageShell size="wide">
+      <PageHeader
+        title={t("purchases.title")}
+        description={t("purchases.subtitle")}
+      />
 
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_400px] gap-4 xl:gap-5 items-start">
+      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_400px] xl:gap-5">
         {/* Build purchase panel */}
-        <Card className="flex flex-col gap-4" padding="sm">
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="text-base font-semibold text-slate-800">
-              {t("purchases.title")}
-            </h3>
-            {draftItems.length > 0 && (
-              <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+        <SectionCard
+          title={t("purchases.title")}
+          actions={
+            draftItems.length > 0 ? (
+              <Badge tone="info">
                 {draftItems.length} {t("purchases.items")}
-              </span>
-            )}
-          </div>
-
+              </Badge>
+            ) : undefined
+          }
+          padding="md"
+        >
           {/* Product + qty + cost entry */}
-          <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto_auto] gap-2">
+          <Toolbar
+            align="between"
+            className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto_auto]"
+          >
             <Select
               value={productId}
               onChange={(e) => setProductId(e.target.value)}
@@ -548,7 +600,7 @@ export function PurchaseEntryScreen() {
             >
               {t("purchases.addItem")}
             </Button>
-          </div>
+          </Toolbar>
 
           {/* Items list */}
           {draftItems.length === 0 ? (
@@ -557,10 +609,10 @@ export function PurchaseEntryScreen() {
               description={t("purchases.subtitle")}
             />
           ) : (
-            <div className="overflow-x-auto rounded-xl border border-slate-100">
-              <table className="w-full text-sm min-w-[560px]">
+            <TableShell>
+              <table className="min-w-[560px] w-full text-sm">
                 <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200">
+                  <tr className="border-b border-slate-200 bg-slate-50">
                     {[
                       t("purchases.item"),
                       t("purchases.currentStock"),
@@ -569,10 +621,7 @@ export function PurchaseEntryScreen() {
                       t("purchases.subtotal"),
                       "",
                     ].map((h) => (
-                      <th
-                        key={h}
-                        className="px-3 py-2.5 text-start text-xs font-semibold text-slate-500 uppercase tracking-wide"
-                      >
+                      <th key={h} className={typographyClasses.tableHeader}>
                         {h}
                       </th>
                     ))}
@@ -581,10 +630,15 @@ export function PurchaseEntryScreen() {
                 <tbody className="divide-y divide-slate-100">
                   {draftItems.map((item) => (
                     <tr key={item.productId} className="hover:bg-slate-50/50">
-                      <td className="px-3 py-2.5 font-medium text-slate-800">
+                      <td className={typographyClasses.tableCellStrong}>
                         {item.name}
                       </td>
-                      <td className="px-3 py-2.5 text-slate-500 tabular-nums">
+                      <td
+                        className={clsx(
+                          typographyClasses.tableCellMuted,
+                          "tabular-nums",
+                        )}
+                      >
                         {item.currentStock}
                       </td>
                       <td className="px-3 py-2.5">
@@ -620,11 +674,19 @@ export function PurchaseEntryScreen() {
                           className="w-24 text-center"
                         />
                       </td>
-                      <td className="px-3 py-2.5 tabular-nums font-medium text-slate-800">
-                        {formatCurrency(
-                          calculateLineSubtotal(item.quantity, item.unitCost),
-                          currency,
+                      <td
+                        className={clsx(
+                          typographyClasses.tableCellStrong,
+                          "tabular-nums",
                         )}
+                      >
+                        <PriceDisplay
+                          value={calculateLineSubtotal(
+                            item.quantity,
+                            item.unitCost,
+                          )}
+                          currency={currency}
+                        />
                       </td>
                       <td className="px-3 py-2.5">
                         <Button
@@ -640,9 +702,9 @@ export function PurchaseEntryScreen() {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </TableShell>
           )}
-        </Card>
+        </SectionCard>
 
         {/* Summary panel */}
         <div className="xl:sticky xl:top-6">
@@ -655,11 +717,7 @@ export function PurchaseEntryScreen() {
               onDismiss={() => setLastFinalized(null)}
             />
           ) : (
-            <Card className="flex flex-col gap-4" padding="sm">
-              <h3 className="text-base font-semibold text-slate-800">
-                {t("purchases.finalizePurchase")}
-              </h3>
-
+            <SectionCard title={t("purchases.finalizePurchase")} padding="md">
               <form
                 className="flex flex-col gap-3"
                 onSubmit={form.handleSubmit(() => setConfirmOpen(true))}
@@ -670,7 +728,10 @@ export function PurchaseEntryScreen() {
                       {...form.register("supplierName")}
                       onFocus={() => setSupplierFieldFocused(true)}
                       onBlur={() => {
-                        window.setTimeout(() => setSupplierFieldFocused(false), 120);
+                        window.setTimeout(
+                          () => setSupplierFieldFocused(false),
+                          120,
+                        );
                       }}
                     />
                   </FormField>
@@ -679,12 +740,22 @@ export function PurchaseEntryScreen() {
                       {...form.register("supplierPhone")}
                       onFocus={() => setSupplierFieldFocused(true)}
                       onBlur={() => {
-                        window.setTimeout(() => setSupplierFieldFocused(false), 120);
+                        window.setTimeout(
+                          () => setSupplierFieldFocused(false),
+                          120,
+                        );
                       }}
                     />
                   </FormField>
                   {supplierSuggestions.length > 0 && (
-                    <ul className="absolute left-0 right-0 top-full z-20 mt-1 max-h-44 overflow-auto rounded-xl border border-slate-200 bg-white shadow-md divide-y divide-slate-100">
+                    <ul
+                      className={clsx(
+                        "absolute left-0 right-0 top-full z-20 mt-1 max-h-44 overflow-auto rounded-xl border shadow-md",
+                        dividerClasses.borderDefault,
+                        surfaceClasses.surface,
+                        dividerClasses.subtle,
+                      )}
+                    >
                       {supplierSuggestions.map((s) => (
                         <li key={s.id}>
                           <button
@@ -725,7 +796,9 @@ export function PurchaseEntryScreen() {
                       enterKeyHint="done"
                       step="0.01"
                       onKeyDown={dismissKeyboardOnEnter}
-                      {...form.register("discountAmount", { valueAsNumber: true })}
+                      {...form.register("discountAmount", {
+                        valueAsNumber: true,
+                      })}
                     />
                   </FormField>
                   <FormField label={t("purchases.tax")}>
@@ -744,7 +817,7 @@ export function PurchaseEntryScreen() {
                   <FormField label={t("purchases.mixedSplit")}>
                     <div className="grid grid-cols-2 gap-2">
                       <label className="flex flex-col gap-1">
-                        <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">
+                        <span className={typographyClasses.statLabel}>
                           {t("common.cash")}
                         </span>
                         <Input
@@ -755,8 +828,13 @@ export function PurchaseEntryScreen() {
                           value={watchedCashAmount}
                           onKeyDown={dismissKeyboardOnEnter}
                           onChange={(e) => {
-                            const v = e.target.value === "" ? 0 : Number(e.target.value);
-                            const safe = Number.isFinite(v) ? Math.max(0, v) : 0;
+                            const v =
+                              e.target.value === ""
+                                ? 0
+                                : Number(e.target.value);
+                            const safe = Number.isFinite(v)
+                              ? Math.max(0, v)
+                              : 0;
                             form.setValue("cashAmount", safe, {
                               shouldDirty: true,
                               shouldValidate: true,
@@ -770,7 +848,7 @@ export function PurchaseEntryScreen() {
                         />
                       </label>
                       <label className="flex flex-col gap-1">
-                        <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">
+                        <span className={typographyClasses.statLabel}>
                           {t("common.card")}
                         </span>
                         <Input
@@ -781,8 +859,13 @@ export function PurchaseEntryScreen() {
                           value={watchedCardAmount}
                           onKeyDown={dismissKeyboardOnEnter}
                           onChange={(e) => {
-                            const v = e.target.value === "" ? 0 : Number(e.target.value);
-                            const safe = Number.isFinite(v) ? Math.max(0, v) : 0;
+                            const v =
+                              e.target.value === ""
+                                ? 0
+                                : Number(e.target.value);
+                            const safe = Number.isFinite(v)
+                              ? Math.max(0, v)
+                              : 0;
                             form.setValue("cardAmount", safe, {
                               shouldDirty: true,
                               shouldValidate: true,
@@ -806,15 +889,22 @@ export function PurchaseEntryScreen() {
                         enterKeyHint="done"
                         step="0.01"
                         value={
-                          Number.isFinite(actualPaidAmount) ? actualPaidAmount : 0
+                          Number.isFinite(actualPaidAmount)
+                            ? actualPaidAmount
+                            : 0
                         }
                         onChange={(e) => {
                           setIsPaidAmountManuallyEdited(true);
-                          const v = e.target.value === "" ? 0 : Number(e.target.value);
-                          form.setValue("paidAmount", Number.isFinite(v) ? v : 0, {
-                            shouldDirty: true,
-                            shouldValidate: true,
-                          });
+                          const v =
+                            e.target.value === "" ? 0 : Number(e.target.value);
+                          form.setValue(
+                            "paidAmount",
+                            Number.isFinite(v) ? v : 0,
+                            {
+                              shouldDirty: true,
+                              shouldValidate: true,
+                            },
+                          );
                         }}
                         onKeyDown={dismissKeyboardOnEnter}
                         className="flex-1"
@@ -837,51 +927,88 @@ export function PurchaseEntryScreen() {
                   <Input {...form.register("notes")} />
                 </FormField>
 
-                <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3">
+                <div
+                  className={clsx(
+                    "rounded-xl border px-4 py-3",
+                    dividerClasses.borderDefault,
+                    surfaceClasses.surfaceSoft,
+                  )}
+                >
                   <SummaryRow
                     label={t("purchases.subtotal")}
-                    value={formatCurrency(purchaseSummary.subtotal, currency)}
+                    value={
+                      <PriceDisplay
+                        value={purchaseSummary.subtotal}
+                        currency={currency}
+                      />
+                    }
                   />
                   <SummaryRow
                     label={t("purchases.total")}
-                    value={formatCurrency(purchaseSummary.totalAmount, currency)}
+                    value={
+                      <PriceDisplay
+                        value={purchaseSummary.totalAmount}
+                        currency={currency}
+                        emphasis
+                      />
+                    }
                     highlight
                   />
                   <SummaryRow
                     label={t("purchases.change")}
-                    value={formatCurrency(Math.max(0, actualChangeAmount), currency)}
+                    value={
+                      <PriceDisplay
+                        value={Math.max(0, actualChangeAmount)}
+                        currency={currency}
+                      />
+                    }
                   />
                   {isCreditPurchase && amountDue > 0 && (
                     <SummaryRow
                       label={t("purchases.amountDue")}
-                      value={formatCurrency(amountDue, currency)}
+                      value={
+                        <PriceDisplay
+                          value={amountDue}
+                          currency={currency}
+                          emphasis
+                        />
+                      }
                       highlight
                     />
                   )}
                 </div>
 
-                {!hasValidTotal && draftItems.length > 0 && (
-                  <p className="text-xs text-red-600 font-medium">
-                    {t("purchases.invalidTotal")}
-                  </p>
-                )}
-                {isCreditPurchase && !hasCreditSupplier && draftItems.length > 0 && (
-                  <p className="text-xs text-red-600 font-medium">
-                    {t("purchases.creditSupplierRequired")}
-                  </p>
-                )}
-                {isMixedPurchase && !isMixedSplitValid && draftItems.length > 0 && (
-                  <p className="text-xs text-red-600 font-medium">
-                    {t("purchases.mixedSumMismatch")}
-                  </p>
-                )}
-                {hasValidTotal && !hasEnoughPayment && draftItems.length > 0 && (
-                  <p className="text-xs text-red-600 font-medium">
-                    {t("purchases.paidBelowTotal")}
-                  </p>
-                )}
+                <div className="flex flex-col items-start gap-2">
+                  {!hasValidTotal && draftItems.length > 0 && (
+                    <Badge tone="danger">{t("purchases.invalidTotal")}</Badge>
+                  )}
+                  {isCreditPurchase &&
+                    !hasCreditSupplier &&
+                    draftItems.length > 0 && (
+                      <Badge tone="danger">
+                        {t("purchases.creditSupplierRequired")}
+                      </Badge>
+                    )}
+                  {isMixedPurchase &&
+                    !isMixedSplitValid &&
+                    draftItems.length > 0 && (
+                      <Badge tone="danger">
+                        {t("purchases.mixedSumMismatch")}
+                      </Badge>
+                    )}
+                  {hasValidTotal &&
+                    !hasEnoughPayment &&
+                    draftItems.length > 0 && (
+                      <Badge tone="danger">
+                        {t("purchases.paidBelowTotal")}
+                      </Badge>
+                    )}
+                </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                <CheckoutActionBar
+                  sticky={false}
+                  className="grid grid-cols-1 border-t-0 bg-transparent p-0 shadow-none sm:grid-cols-2"
+                >
                   <Button
                     type="button"
                     variant="ghost"
@@ -897,9 +1024,9 @@ export function PurchaseEntryScreen() {
                   >
                     {t("purchases.reviewFinalize")}
                   </Button>
-                </div>
+                </CheckoutActionBar>
               </form>
-            </Card>
+            </SectionCard>
           )}
         </div>
       </div>
@@ -911,7 +1038,11 @@ export function PurchaseEntryScreen() {
         onClose={() => setConfirmOpen(false)}
         footer={
           <>
-            <Button type="button" variant="ghost" onClick={() => setConfirmOpen(false)}>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setConfirmOpen(false)}
+            >
               {t("common.cancel")}
             </Button>
             <Button type="button" onClick={form.handleSubmit(finalize)}>
@@ -920,29 +1051,45 @@ export function PurchaseEntryScreen() {
           </>
         }
       >
-        <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3">
+        <div
+          className={clsx(
+            "rounded-xl border px-4 py-3",
+            dividerClasses.borderDefault,
+            surfaceClasses.surfaceSoft,
+          )}
+        >
           <SummaryRow
             label={t("purchases.items")}
-            value={String(draftItems.length)}
+            value={<Badge tone="info">{draftItems.length}</Badge>}
           />
           <SummaryRow
             label={t("purchases.total")}
-            value={formatCurrency(purchaseSummary.totalAmount, currency)}
+            value={
+              <PriceDisplay
+                value={purchaseSummary.totalAmount}
+                currency={currency}
+                emphasis
+              />
+            }
             highlight
           />
           <SummaryRow
             label={t("purchases.paid")}
-            value={formatCurrency(actualPaidAmount, currency)}
+            value={
+              <PriceDisplay value={actualPaidAmount} currency={currency} />
+            }
           />
           {amountDue > 0 && (
             <SummaryRow
               label={t("purchases.amountDue")}
-              value={formatCurrency(amountDue, currency)}
+              value={
+                <PriceDisplay value={amountDue} currency={currency} emphasis />
+              }
               highlight
             />
           )}
         </div>
       </Modal>
-    </>
+    </PageShell>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useLiveQuery } from "dexie-react-hooks";
@@ -15,17 +15,31 @@ import {
   calculateChange,
   calculateLineSubtotal,
 } from "@/lib/utils/calculations";
-import { formatCurrency } from "@/lib/utils/money";
 import { createFinalizedBill } from "@/lib/services/billing-service";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Modal } from "@/components/ui/modal";
+import { LoadingState } from "@/components/ui/loading-state";
+import { Badge } from "@/components/ui/badge";
+import { FormField } from "@/components/ui/form-field";
+import { SectionCard } from "@/components/ui/section-card";
+import { StatusPill } from "@/components/ui/status-pill";
+import { TableShell } from "@/components/ui/table-shell";
+import { Toolbar } from "@/components/ui/toolbar";
 import { useToast } from "@/components/ui/toast";
 import { BarcodeScannerModal } from "@/components/barcode/barcode-scanner-modal";
 import { useLocale } from "@/components/providers/locale-context";
-import { Card } from "@/components/ui/card";
+import { PriceDisplay } from "@/components/pos/price-display";
+import { StockBadge } from "@/components/pos/stock-badge";
+import { CheckoutActionBar } from "@/components/pos/checkout-action-bar";
+import {
+  alertTones,
+  buttonVariants,
+  panelTones,
+  typographyClasses,
+} from "@/lib/design/variants";
 import { QuickProductModal } from "./quick-product-modal";
 import { ReceiptView } from "./receipt-view";
 import { normalizeBarcode } from "@/lib/utils/barcode";
@@ -48,41 +62,32 @@ const SUCCESS_AUTO_DISMISS_MS = 8000;
 // scratch state is dropped on the migration).
 const POS_DRAFT_KEY_PREFIX = "shopkeeper-pos-bill-draft-v1";
 
-function FormField({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="flex flex-col gap-1.5">
-      <span className="text-xs font-medium text-slate-600 uppercase tracking-wide">
-        {label}
-      </span>
-      {children}
-    </label>
-  );
-}
-
 function SummaryRow({
   label,
   value,
   highlight,
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   highlight?: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between gap-2 py-2 border-b border-slate-100 last:border-0">
+    <div className="flex items-center justify-between gap-2 border-b border-slate-100 py-2 last:border-0">
       <span
-        className={`text-sm ${highlight ? "font-semibold text-slate-900" : "text-slate-500"}`}
+        className={
+          highlight
+            ? "text-sm font-semibold text-slate-900"
+            : typographyClasses.bodyMuted
+        }
       >
         {label}
       </span>
       <span
-        className={`text-sm tabular-nums ${highlight ? "font-bold text-slate-900" : "font-medium text-slate-700"}`}
+        className={
+          highlight
+            ? "text-sm font-bold tabular-nums text-slate-900"
+            : "text-sm font-medium tabular-nums text-slate-700"
+        }
       >
         {value}
       </span>
@@ -112,38 +117,49 @@ function SuccessPanel({
   }, []);
 
   return (
-    <Card className="flex flex-col gap-4" padding="sm">
+    <SectionCard tone="success" padding="md">
       <div className="flex items-start gap-3">
         <span
           aria-hidden
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-lg font-bold"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-green-100 text-green-700 text-lg font-bold"
         >
           ✓
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-emerald-700">
-            {t("billing.saleCompleted")}
-          </p>
+          <StatusPill
+            status="completed"
+            tone="success"
+            label={t("billing.saleCompleted")}
+          />
+          <p className="sr-only">{t("billing.saleCompleted")}</p>
           <p className="font-mono text-base font-bold text-slate-900">
             {bill.billNumber}
           </p>
         </div>
       </div>
 
-      <div className="rounded-xl bg-emerald-50 border border-emerald-100 px-4 py-3">
+      <div className={panelTones.success + " rounded-xl border px-4 py-3"}>
         <SummaryRow
           label={t("billing.total")}
-          value={formatCurrency(bill.totalAmount, currency)}
+          value={
+            <PriceDisplay
+              value={bill.totalAmount}
+              currency={currency}
+              emphasis
+            />
+          }
           highlight
         />
         <SummaryRow
           label={t("billing.change")}
-          value={formatCurrency(bill.changeAmount, currency)}
+          value={<PriceDisplay value={bill.changeAmount} currency={currency} />}
         />
         {amountDue > 0 && (
           <SummaryRow
             label={t("billing.amountDue")}
-            value={formatCurrency(amountDue, currency)}
+            value={
+              <PriceDisplay value={amountDue} currency={currency} emphasis />
+            }
             highlight
           />
         )}
@@ -154,7 +170,10 @@ function SuccessPanel({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <Link
           href={`/bills/${bill.id}`}
-          className="inline-flex h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          className={
+            buttonVariants.outline +
+            " inline-flex h-11 items-center justify-center rounded-xl px-4 text-sm font-semibold"
+          }
         >
           {t("billing.openBillDetail")}
         </Link>
@@ -167,7 +186,7 @@ function SuccessPanel({
           {t("billing.newSale")}
         </Button>
       </div>
-    </Card>
+    </SectionCard>
   );
 }
 
@@ -190,7 +209,9 @@ export function PosScreen() {
   // finalize button on small screens. Hitting Enter (or "Done" on Android,
   // shown via enterKeyHint below) blurs the field, which collapses the
   // keyboard and exposes the rest of the page again.
-  function dismissKeyboardOnEnter(event: React.KeyboardEvent<HTMLInputElement>) {
+  function dismissKeyboardOnEnter(
+    event: React.KeyboardEvent<HTMLInputElement>,
+  ) {
     if (event.key === "Enter") {
       event.preventDefault();
       event.currentTarget.blur();
@@ -660,11 +681,7 @@ export function PosScreen() {
   }
 
   if (!products) {
-    return (
-      <Card>
-        <p className="text-sm text-slate-500">{t("billing.loadingPos")}</p>
-      </Card>
-    );
+    return <LoadingState title={t("billing.loadingPos")} />;
   }
 
   return (
@@ -679,7 +696,10 @@ export function PosScreen() {
           // by sidebar-nav.tsx for dynamic hrefs.
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           href={"/shift" as any}
-          className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 hover:bg-amber-100 transition-colors"
+          className={
+            alertTones.warning +
+            " mb-4 flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-sm transition-colors hover:bg-amber-100"
+          }
         >
           <span className="font-medium">{t("billing.noShiftOpenWarning")}</span>
           <span className="text-xs font-semibold uppercase tracking-wide">
@@ -691,94 +711,103 @@ export function PosScreen() {
       {/* Mobile-first layout, desktop keeps two columns */}
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_400px] gap-4 xl:gap-5 items-start">
         {/* ── Build bill panel ─────────────────────────────────────────── */}
-        <Card className="flex flex-col gap-4" padding="sm">
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="text-base font-semibold text-slate-800">
-              {t("billing.buildBill")}
-            </h3>
-            {draftItems.length > 0 && (
-              <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+        <SectionCard
+          title={t("billing.buildBill")}
+          padding="md"
+          actions={
+            draftItems.length > 0 ? (
+              <Badge tone="info">
                 {draftItems.length} {t("billing.items")}
-              </span>
-            )}
-          </div>
-
+              </Badge>
+            ) : undefined
+          }
+        >
           {lastAdded && (
             <div
               role="status"
               aria-live="polite"
-              className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
+              className={
+                alertTones.success +
+                " flex items-center gap-2 rounded-xl border px-3 py-2 text-sm"
+              }
             >
-              <span aria-hidden className="text-emerald-600">
+              <span aria-hidden className="text-green-600">
                 ✓
               </span>
               <span className="font-medium truncate">{lastAdded.name}</span>
-              <span className="ml-auto shrink-0 text-xs font-semibold tabular-nums text-emerald-700">
+              <span className="ml-auto shrink-0 text-xs font-semibold tabular-nums text-green-700">
                 ×{lastAdded.qty} ·{" "}
-                {formatCurrency(lastAdded.subtotal, currency)}
+                <PriceDisplay
+                  value={lastAdded.subtotal}
+                  currency={currency}
+                  size="sm"
+                />
               </span>
             </div>
           )}
 
           {/* Barcode input row */}
-          <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto_auto] gap-2">
-            <Input
-              ref={barcodeInputRef}
-              placeholder={t("billing.typeBarcode")}
-              value={barcodeQuery}
-              onChange={(e) => setBarcodeQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  addByBarcode();
-                } else if (e.key === "Escape" && barcodeQuery) {
-                  e.preventDefault();
-                  setBarcodeQuery("");
-                }
-              }}
-              className="flex-1"
-            />
-            <Button type="button" variant="secondary" onClick={addByBarcode}>
-              {t("common.add")}
-            </Button>
-            <Button type="button" onClick={() => setScannerOpen(true)}>
-              {t("common.scan")}
-            </Button>
-            <div className="relative">
-              <button
-                type="button"
-                aria-label={t("billing.shortcutsHelp")}
-                aria-expanded={helpOpen}
-                onClick={() => setHelpOpen((open) => !open)}
-                className="inline-flex h-[42px] w-[42px] items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors"
-              >
-                ?
-              </button>
-              {helpOpen && (
-                <>
-                  {/* Backdrop captures outside clicks to dismiss the popover. */}
-                  <div
-                    className="fixed inset-0 z-10"
-                    onClick={() => setHelpOpen(false)}
-                    aria-hidden
-                  />
-                  <div
-                    role="dialog"
-                    aria-label={t("billing.shortcutsHelp")}
-                    className="absolute end-0 top-full mt-2 z-20 min-w-[260px] rounded-xl border border-slate-200 bg-white p-3 shadow-lg"
-                  >
-                    <p className="text-sm font-semibold text-slate-800 mb-1.5">
-                      {t("billing.shortcutsHelp")}
-                    </p>
-                    <ul className="space-y-1 text-xs text-slate-600">
-                      <li>{t("billing.shortcutFinalize")}</li>
-                      <li>{t("billing.shortcutClearBarcode")}</li>
-                    </ul>
-                  </div>
-                </>
-              )}
+          <Toolbar align="between" wrap>
+            <div className="grid min-w-0 flex-1 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto]">
+              <Input
+                ref={barcodeInputRef}
+                placeholder={t("billing.typeBarcode")}
+                value={barcodeQuery}
+                onChange={(e) => setBarcodeQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addByBarcode();
+                  } else if (e.key === "Escape" && barcodeQuery) {
+                    e.preventDefault();
+                    setBarcodeQuery("");
+                  }
+                }}
+                className="flex-1"
+              />
+              <Button type="button" variant="secondary" onClick={addByBarcode}>
+                {t("common.add")}
+              </Button>
+              <Button type="button" onClick={() => setScannerOpen(true)}>
+                {t("common.scan")}
+              </Button>
+              <div className="relative">
+                <Button
+                  type="button"
+                  aria-label={t("billing.shortcutsHelp")}
+                  aria-expanded={helpOpen}
+                  onClick={() => setHelpOpen((open) => !open)}
+                  variant="outline"
+                  size="icon"
+                >
+                  ?
+                </Button>
+                {helpOpen && (
+                  <>
+                    {/* Backdrop captures outside clicks to dismiss the popover. */}
+                    <div
+                      className="fixed inset-0 z-10"
+                      onClick={() => setHelpOpen(false)}
+                      aria-hidden
+                    />
+                    <div
+                      role="dialog"
+                      aria-label={t("billing.shortcutsHelp")}
+                      className="absolute end-0 top-full mt-2 z-20 min-w-[260px] rounded-xl border border-slate-200 bg-white p-3 shadow-lg"
+                    >
+                      <p className="text-sm font-semibold text-slate-800 mb-1.5">
+                        {t("billing.shortcutsHelp")}
+                      </p>
+                      <ul className="space-y-1 text-xs text-slate-600">
+                        <li>{t("billing.shortcutFinalize")}</li>
+                        <li>{t("billing.shortcutClearBarcode")}</li>
+                      </ul>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
-          </div>
+          </Toolbar>
 
           {/* Product select row */}
           <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">
@@ -837,31 +866,45 @@ export function PosScreen() {
                       </Button>
                     </div>
                     <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
-                      <div className="rounded-xl bg-slate-50 p-2">
+                      <div
+                        className={
+                          panelTones.neutral + " rounded-xl border p-2"
+                        }
+                      >
                         <p className="text-slate-500">{t("billing.stock")}</p>
-                        <p className="font-bold text-slate-800 tabular-nums">
-                          {item.availableStock}
-                        </p>
+                        <StockBadge
+                          quantity={item.availableStock}
+                          minQuantity={null}
+                        />
                       </div>
-                      <div className="rounded-xl bg-slate-50 p-2">
+                      <div
+                        className={
+                          panelTones.neutral + " rounded-xl border p-2"
+                        }
+                      >
                         <p className="text-slate-500">{t("billing.sell")}</p>
-                        <p className="font-bold text-slate-800 tabular-nums">
-                          {formatCurrency(item.unitSellPrice, currency)}
-                        </p>
+                        <PriceDisplay
+                          value={item.unitSellPrice}
+                          currency={currency}
+                          emphasis
+                        />
                       </div>
-                      <div className="rounded-xl bg-slate-50 p-2">
+                      <div
+                        className={
+                          panelTones.neutral + " rounded-xl border p-2"
+                        }
+                      >
                         <p className="text-slate-500">
                           {t("billing.subtotalCol")}
                         </p>
-                        <p className="font-bold text-slate-800 tabular-nums">
-                          {formatCurrency(
-                            calculateLineSubtotal(
-                              item.quantity,
-                              item.unitSellPrice,
-                            ),
-                            currency,
+                        <PriceDisplay
+                          value={calculateLineSubtotal(
+                            item.quantity,
+                            item.unitSellPrice,
                           )}
-                        </p>
+                          currency={currency}
+                          emphasis
+                        />
                       </div>
                     </div>
                     <div className="mt-3 flex items-center justify-between gap-3">
@@ -886,7 +929,7 @@ export function PosScreen() {
                 ))}
               </div>
 
-              <div className="hidden md:block overflow-x-auto rounded-xl border border-slate-100">
+              <TableShell className="hidden md:block">
                 <table className="w-full text-sm min-w-[560px]">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200">
@@ -917,7 +960,10 @@ export function PosScreen() {
                           {item.name}
                         </td>
                         <td className="px-3 py-2.5 text-slate-500 tabular-nums">
-                          {item.availableStock}
+                          <StockBadge
+                            quantity={item.availableStock}
+                            minQuantity={null}
+                          />
                         </td>
                         <td className="px-3 py-2.5">
                           <Input
@@ -938,16 +984,20 @@ export function PosScreen() {
                           />
                         </td>
                         <td className="px-3 py-2.5 tabular-nums text-slate-700">
-                          {formatCurrency(item.unitSellPrice, currency)}
+                          <PriceDisplay
+                            value={item.unitSellPrice}
+                            currency={currency}
+                          />
                         </td>
                         <td className="px-3 py-2.5 tabular-nums font-medium text-slate-800">
-                          {formatCurrency(
-                            calculateLineSubtotal(
+                          <PriceDisplay
+                            value={calculateLineSubtotal(
                               item.quantity,
                               item.unitSellPrice,
-                            ),
-                            currency,
-                          )}
+                            )}
+                            currency={currency}
+                            emphasis
+                          />
                         </td>
                         <td className="px-3 py-2.5">
                           <Button
@@ -969,10 +1019,10 @@ export function PosScreen() {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </TableShell>
             </>
           )}
-        </Card>
+        </SectionCard>
 
         {/* ── Bill summary panel ───────────────────────────────────────── */}
         <div className="xl:sticky xl:top-6">
@@ -988,11 +1038,7 @@ export function PosScreen() {
               }}
             />
           ) : (
-            <Card className="flex flex-col gap-4" padding="sm">
-              <h3 className="text-base font-semibold text-slate-800">
-                {t("billing.billSummary")}
-              </h3>
-
+            <SectionCard title={t("billing.billSummary")} padding="md">
               <form
                 className="flex flex-col gap-3"
                 onSubmit={form.handleSubmit(() => setConfirmOpen(true))}
@@ -1198,17 +1244,20 @@ export function PosScreen() {
                       </div>
                       {watchedPaymentMethod === "cash" && (
                         <div className="flex flex-wrap gap-1.5">
-                          <button
+                          <Button
                             type="button"
+                            variant="outline"
+                            size="xs"
                             onClick={() => setIsPaidAmountManuallyEdited(false)}
-                            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-colors"
                           >
                             {t("billing.exact")}
-                          </button>
+                          </Button>
                           {[5, 10, 20, 50, 100].map((denomination) => (
-                            <button
+                            <Button
                               key={denomination}
                               type="button"
+                              variant="outline"
+                              size="xs"
                               onClick={() => {
                                 setIsPaidAmountManuallyEdited(true);
                                 form.setValue("paidAmount", denomination, {
@@ -1216,10 +1265,10 @@ export function PosScreen() {
                                   shouldValidate: true,
                                 });
                               }}
-                              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 tabular-nums hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                              className="tabular-nums"
                             >
                               {denomination}
-                            </button>
+                            </Button>
                           ))}
                         </div>
                       )}
@@ -1232,62 +1281,83 @@ export function PosScreen() {
                 </FormField>
 
                 {/* Totals card */}
-                <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3">
+                <div
+                  className={
+                    panelTones.neutral + " rounded-xl border px-4 py-3"
+                  }
+                >
                   <SummaryRow
                     label={t("billing.subtotal")}
-                    value={formatCurrency(billSummary.subtotal, currency)}
+                    value={
+                      <PriceDisplay
+                        value={billSummary.subtotal}
+                        currency={currency}
+                      />
+                    }
                   />
                   <SummaryRow
                     label={t("billing.total")}
-                    value={formatCurrency(billSummary.totalAmount, currency)}
+                    value={
+                      <PriceDisplay
+                        value={billSummary.totalAmount}
+                        currency={currency}
+                        emphasis
+                      />
+                    }
                     highlight
                   />
                   <SummaryRow
                     label={t("billing.change")}
-                    value={formatCurrency(
-                      Math.max(0, actualChangeAmount),
-                      currency,
-                    )}
+                    value={
+                      <PriceDisplay
+                        value={Math.max(0, actualChangeAmount)}
+                        currency={currency}
+                        emphasis
+                      />
+                    }
                     highlight
                   />
                   {isCreditSale && amountDue > 0 && (
                     <SummaryRow
                       label={t("billing.amountDue")}
-                      value={formatCurrency(amountDue, currency)}
+                      value={
+                        <PriceDisplay
+                          value={amountDue}
+                          currency={currency}
+                          emphasis
+                        />
+                      }
                       highlight
                     />
                   )}
                 </div>
 
                 {!hasValidTotal && draftItems.length > 0 && (
-                  <p className="text-xs text-red-600 font-medium">
-                    {t("billing.invalidTotal")}
-                  </p>
+                  <Badge tone="danger">{t("billing.invalidTotal")}</Badge>
                 )}
 
                 {isCreditSale &&
                   !hasCreditCustomer &&
                   draftItems.length > 0 && (
-                    <p className="text-xs text-red-600 font-medium">
+                    <Badge tone="danger">
                       {t("billing.creditCustomerRequired")}
-                    </p>
+                    </Badge>
                   )}
 
                 {isMixedSale && !isMixedSplitValid && draftItems.length > 0 && (
-                  <p className="text-xs text-red-600 font-medium">
-                    {t("billing.mixedSumMismatch")}
-                  </p>
+                  <Badge tone="danger">{t("billing.mixedSumMismatch")}</Badge>
                 )}
 
                 {hasValidTotal &&
                   !hasEnoughPayment &&
                   draftItems.length > 0 && (
-                    <p className="text-xs text-red-600 font-medium">
-                      {t("billing.paidBelowTotal")}
-                    </p>
+                    <Badge tone="danger">{t("billing.paidBelowTotal")}</Badge>
                   )}
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                <CheckoutActionBar
+                  sticky={false}
+                  className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1"
+                >
                   <Button
                     type="button"
                     variant="ghost"
@@ -1298,31 +1368,38 @@ export function PosScreen() {
                   </Button>
                   <Button
                     type="submit"
+                    variant="success"
+                    size="lg"
                     disabled={!canFinalize}
                     className="flex-1"
                   >
                     {t("billing.reviewFinalize")}
                   </Button>
-                </div>
+                </CheckoutActionBar>
               </form>
-            </Card>
+            </SectionCard>
           )}
         </div>
       </div>
 
       {draftItems.length > 0 && (
-        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 px-3 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.12)] backdrop-blur lg:hidden">
+        <CheckoutActionBar className="fixed inset-x-0 bottom-0 lg:hidden">
           <div className="mx-auto flex max-w-screen-sm items-center gap-3">
             <div className="min-w-0 flex-1">
               <p className="text-xs font-medium text-slate-500">
                 {draftItems.length} {t("billing.items")}
               </p>
-              <p className="truncate text-lg font-black text-slate-900 tabular-nums">
-                {formatCurrency(billSummary.totalAmount, currency)}
-              </p>
+              <PriceDisplay
+                value={billSummary.totalAmount}
+                currency={currency}
+                size="xl"
+                emphasis
+              />
             </div>
             <Button
               type="button"
+              variant="success"
+              size="lg"
               disabled={!canFinalize}
               onClick={form.handleSubmit(() => setConfirmOpen(true))}
               className="min-w-[132px]"
@@ -1330,7 +1407,7 @@ export function PosScreen() {
               {t("billing.reviewFinalize")}
             </Button>
           </div>
-        </div>
+        </CheckoutActionBar>
       )}
 
       {/* ── Confirm modal ────────────────────────────────────────────────── */}
@@ -1348,35 +1425,55 @@ export function PosScreen() {
             >
               {t("common.cancel")}
             </Button>
-            <Button type="button" onClick={form.handleSubmit(finalize)}>
+            <Button
+              type="button"
+              variant="success"
+              onClick={form.handleSubmit(finalize)}
+            >
               {t("billing.confirmSave")}
             </Button>
           </>
         }
       >
-        <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3">
+        <div className={panelTones.neutral + " rounded-xl border px-4 py-3"}>
           <SummaryRow
             label={t("billing.items")}
             value={String(draftItems.length)}
           />
           <SummaryRow
             label={t("billing.total")}
-            value={formatCurrency(billSummary.totalAmount, currency)}
+            value={
+              <PriceDisplay
+                value={billSummary.totalAmount}
+                currency={currency}
+                emphasis
+              />
+            }
             highlight
           />
           <SummaryRow
             label={t("billing.paid")}
-            value={formatCurrency(actualPaidAmount, currency)}
+            value={
+              <PriceDisplay value={actualPaidAmount} currency={currency} />
+            }
           />
           <SummaryRow
             label={t("billing.change")}
-            value={formatCurrency(Math.max(0, actualChangeAmount), currency)}
+            value={
+              <PriceDisplay
+                value={Math.max(0, actualChangeAmount)}
+                currency={currency}
+                emphasis
+              />
+            }
             highlight
           />
           {isCreditSale && amountDue > 0 && (
             <SummaryRow
               label={t("billing.amountDue")}
-              value={formatCurrency(amountDue, currency)}
+              value={
+                <PriceDisplay value={amountDue} currency={currency} emphasis />
+              }
               highlight
             />
           )}

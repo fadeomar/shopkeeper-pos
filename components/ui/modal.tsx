@@ -1,8 +1,13 @@
-'use client';
+"use client";
 
-import { useEffect, type PropsWithChildren, type ReactNode } from 'react';
-import { Button } from '@/components/ui/button';
-import { useLocale } from '@/components/providers/locale-context';
+import { useEffect, type PropsWithChildren, type ReactNode } from "react";
+import { Button } from "@/components/ui/button";
+import { useLocale } from "@/components/providers/locale-context";
+import {
+  dividerClasses,
+  surfaceClasses,
+  typographyClasses,
+} from "@/lib/design/variants";
 
 interface ModalProps {
   open: boolean;
@@ -25,13 +30,13 @@ export function Modal({
   useEffect(() => {
     if (!open) return;
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
+      if (e.key === "Escape") onClose();
     }
-    document.body.style.overflow = 'hidden';
-    window.addEventListener('keydown', onKeyDown);
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKeyDown);
     return () => {
-      document.body.style.overflow = '';
-      window.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = "";
+      window.removeEventListener("keydown", onKeyDown);
     };
   }, [open, onClose]);
 
@@ -40,7 +45,7 @@ export function Modal({
   return (
     /* Backdrop */
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs"
+      className={`fixed inset-0 z-50 flex items-center justify-center p-4 ${surfaceClasses.modalBackdrop}`}
       role="dialog"
       aria-modal="true"
       aria-labelledby="modal-title"
@@ -48,17 +53,21 @@ export function Modal({
     >
       {/* Panel — stop propagation so clicking inside doesn't close */}
       <div
-        className="w-full max-w-lg bg-white rounded-2xl border border-slate-200 shadow-2xl"
+        className={`w-full max-w-lg rounded-2xl border shadow-2xl ${surfaceClasses.surface} ${dividerClasses.borderDefault}`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-start justify-between gap-4 px-5 py-4 border-b border-slate-100">
+        <div
+          className={`flex items-start justify-between gap-4 border-b px-5 py-4 ${dividerClasses.borderSubtle}`}
+        >
           <div className="min-w-0">
-            <h3 id="modal-title" className="text-base font-semibold text-slate-900">
+            <h3 id="modal-title" className={typographyClasses.sectionTitle}>
               {title}
             </h3>
             {description && (
-              <p className="mt-0.5 text-sm text-slate-500">{description}</p>
+              <p className={typographyClasses.sectionDescription}>
+                {description}
+              </p>
             )}
           </div>
           <Button
@@ -66,9 +75,9 @@ export function Modal({
             variant="ghost"
             size="sm"
             onClick={onClose}
-            aria-label={t('common.close')}
+            aria-label={t("common.close")}
           >
-            {t('common.close')}
+            {t("common.close")}
           </Button>
         </div>
 
@@ -77,7 +86,9 @@ export function Modal({
 
         {/* Footer */}
         {footer && (
-          <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-slate-100">
+          <div
+            className={`flex items-center justify-end gap-2 border-t px-5 py-4 ${dividerClasses.borderSubtle}`}
+          >
             {footer}
           </div>
         )}

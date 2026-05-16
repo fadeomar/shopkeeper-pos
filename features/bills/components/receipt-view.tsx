@@ -2,7 +2,9 @@
 
 import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { SectionCard } from "@/components/ui/section-card";
+import { StatusPill } from "@/components/ui/status-pill";
 import { useLocale } from "@/components/providers/locale-context";
 import { useToast } from "@/components/ui/toast";
 import { formatCurrency } from "@/lib/utils/money";
@@ -10,7 +12,14 @@ import { formatDateTime } from "@/lib/utils/date";
 import { getBillNetTotal } from "@/features/bills/utils/bill-summary";
 import { buildReceiptText } from "@/features/bills/utils/receipt-format";
 import { normalizeBillSplit } from "@/lib/utils/bill-split";
+import { dividerClasses } from "@/lib/design/variants";
 import type { Bill, BillItem, Settings } from "@/types/domain";
+
+function billTone(status: string) {
+  if (status === "finalized") return "success" as const;
+  if (status === "voided") return "danger" as const;
+  return "warning" as const;
+}
 
 export function ReceiptView({
   bill,
@@ -89,20 +98,14 @@ export function ReceiptView({
   }
 
   return (
-    <Card>
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4 no-print">
-        <div>
-          <h3 className="text-base font-bold text-slate-900">
-            {t("bills.receipt")}
-          </h3>
-          <p className="text-xs text-slate-500 mt-0.5">
-            {t("bills.receiptDesc")}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
+    <SectionCard
+      title={t("bills.receipt")}
+      description={t("bills.receiptDesc")}
+      actions={
+        <>
           <Button
             type="button"
-            variant="secondary"
+            variant="outline"
             size="sm"
             onClick={() => window.print()}
           >
@@ -111,28 +114,29 @@ export function ReceiptView({
           <Button type="button" size="sm" onClick={handleShare}>
             {t("bills.shareReceipt")}
           </Button>
-        </div>
-      </div>
-
+        </>
+      }
+      className="no-print"
+    >
       <div
         id="receipt-print-area"
         className="mx-auto max-w-sm rounded-2xl border border-slate-200 bg-white p-5 text-slate-900 shadow-sm print:shadow-none print:border-0"
       >
-        <div className="text-center border-b border-dashed border-slate-300 pb-3 mb-3">
+        <div className="mb-3 border-b border-dashed border-slate-300 pb-3 text-center">
           <p className="text-lg font-black tracking-tight">{storeName}</p>
           <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
             {t("bills.receipt")}
           </p>
         </div>
 
-        <div className="space-y-1 text-xs text-slate-600 border-b border-dashed border-slate-300 pb-3 mb-3">
+        <div className="mb-3 space-y-1 border-b border-dashed border-slate-300 pb-3 text-xs text-slate-600">
           <div className="flex justify-between gap-3">
             <span>{t("bills.billNumber")}</span>
             <strong className="text-slate-900">{bill.billNumber}</strong>
           </div>
           <div className="flex justify-between gap-3">
             <span>{t("bills.dateTime")}</span>
-            <strong className="text-slate-900 text-end">
+            <strong className="text-end text-slate-900">
               {formatDateTime(bill.createdAt)}
             </strong>
           </div>
@@ -148,19 +152,21 @@ export function ReceiptView({
               {bill.customerName || t("common.walkin")}
             </strong>
           </div>
-          <div className="flex justify-between gap-3">
+          <div className="flex items-center justify-between gap-3">
             <span>{t("bills.payment")}</span>
-            <strong className="text-slate-900">{paymentLabel}</strong>
+            <Badge tone="neutral">{paymentLabel}</Badge>
           </div>
-          <div className="flex justify-between gap-3">
+          <div className="flex items-center justify-between gap-3">
             <span>{t("bills.status")}</span>
-            <strong className="text-slate-900">
-              {t(`common.${bill.status}` as Parameters<typeof t>[0])}
-            </strong>
+            <StatusPill
+              status={bill.status}
+              tone={billTone(bill.status)}
+              label={t(`common.${bill.status}` as Parameters<typeof t>[0])}
+            />
           </div>
         </div>
 
-        <div className="space-y-2 border-b border-dashed border-slate-300 pb-3 mb-3">
+        <div className="mb-3 space-y-2 border-b border-dashed border-slate-300 pb-3">
           {items.map((item) => (
             <div key={item.id} className="text-xs">
               <div className="flex justify-between gap-3 font-semibold text-slate-900">
@@ -191,7 +197,9 @@ export function ReceiptView({
             <span>{t("bills.tax")}</span>
             <span>{formatCurrency(bill.taxAmount, currency)}</span>
           </div>
-          <div className="flex justify-between border-t border-slate-200 pt-2 mt-2 text-base font-black">
+          <div
+            className={`mt-2 flex justify-between border-t pt-2 text-base font-black ${dividerClasses.borderDefault}`}
+          >
             <span>{t("bills.total")}</span>
             <span>{formatCurrency(bill.totalAmount, currency)}</span>
           </div>
@@ -208,23 +216,29 @@ export function ReceiptView({
             </div>
           )}
           {showSplitSection && (
-            <div className="mt-2 rounded-lg border border-dashed border-slate-300 px-2 py-1.5 text-xs text-slate-600 space-y-0.5">
+            <div className="mt-2 space-y-0.5 rounded-lg border border-dashed border-slate-300 px-2 py-1.5 text-xs text-slate-600">
               {billWithSplit.cashAmount > 0 && (
                 <div className="flex justify-between">
                   <span>{t("common.cash")}</span>
-                  <span className="tabular-nums">{formatCurrency(billWithSplit.cashAmount, currency)}</span>
+                  <span className="tabular-nums">
+                    {formatCurrency(billWithSplit.cashAmount, currency)}
+                  </span>
                 </div>
               )}
               {billWithSplit.cardAmount > 0 && (
                 <div className="flex justify-between">
                   <span>{t("common.card")}</span>
-                  <span className="tabular-nums">{formatCurrency(billWithSplit.cardAmount, currency)}</span>
+                  <span className="tabular-nums">
+                    {formatCurrency(billWithSplit.cardAmount, currency)}
+                  </span>
                 </div>
               )}
               {billWithSplit.creditAmount > 0 && (
                 <div className="flex justify-between font-semibold text-red-600">
                   <span>{t("common.credit")}</span>
-                  <span className="tabular-nums">{formatCurrency(billWithSplit.creditAmount, currency)}</span>
+                  <span className="tabular-nums">
+                    {formatCurrency(billWithSplit.creditAmount, currency)}
+                  </span>
                 </div>
               )}
             </div>
@@ -243,6 +257,6 @@ export function ReceiptView({
           {t("bills.thankYou")}
         </p>
       </div>
-    </Card>
+    </SectionCard>
   );
 }

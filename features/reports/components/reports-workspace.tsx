@@ -1,16 +1,28 @@
-'use client';
+"use client";
 
-import { useMemo, useState } from 'react';
-import Link from 'next/link';
-import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '@/lib/db/schema';
-import { settingsRepo } from '@/lib/db/repositories';
-import { formatCurrency } from '@/lib/utils/money';
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Select } from '@/components/ui/select';
-import { useLocale } from '@/components/providers/locale-context';
+import { useMemo, useState, type ReactNode } from "react";
+import Link from "next/link";
+import clsx from "clsx";
+import { useLiveQuery } from "dexie-react-hooks";
+import { db } from "@/lib/db/schema";
+import { settingsRepo } from "@/lib/db/repositories";
+import { formatCurrency } from "@/lib/utils/money";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { FormField } from "@/components/ui/form-field";
+import { Input } from "@/components/ui/input";
+import { LoadingState } from "@/components/ui/loading-state";
+import { SectionCard } from "@/components/ui/section-card";
+import { Select } from "@/components/ui/select";
+import { Toolbar } from "@/components/ui/toolbar";
+import { useLocale } from "@/components/providers/locale-context";
+import { PriceDisplay } from "@/components/pos/price-display";
+import {
+  buttonSizes,
+  buttonVariants,
+  dividerClasses,
+  typographyClasses,
+} from "@/lib/design/variants";
 import {
   buildDailyTrend,
   filterBillsForReport,
@@ -22,36 +34,68 @@ import {
   type ProductSalesRow,
   type ReportRange,
   type TrendRow,
-} from '@/features/reports/utils/report-summary';
+} from "@/features/reports/utils/report-summary";
 
-function StatCard({ label, value, helper }: { label: string; value: string; helper?: string }) {
+function ReportStatCard({
+  label,
+  value,
+  helper,
+  tone = "neutral",
+}: {
+  label: string;
+  value: ReactNode;
+  helper?: ReactNode;
+  tone?: "neutral" | "success" | "warning" | "danger";
+}) {
   return (
-    <Card className="min-h-[112px]">
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-2 text-2xl font-black text-slate-900 tabular-nums">{value}</p>
-      {helper && <p className="mt-1 text-xs text-slate-500">{helper}</p>}
-    </Card>
+    <SectionCard
+      tone={tone}
+      padding="sm"
+      className="min-h-[112px] justify-between"
+    >
+      <div>
+        <p className={typographyClasses.statLabel}>{label}</p>
+        <div className={clsx("mt-2", typographyClasses.statValue)}>{value}</div>
+      </div>
+      {helper && (
+        <p className={clsx("mt-1", typographyClasses.statHelper)}>{helper}</p>
+      )}
+    </SectionCard>
   );
 }
 
-function ProductRows({ rows, currency, emptyText }: { rows: ProductSalesRow[]; currency: string; emptyText: string }) {
+function ProductRows({
+  rows,
+  currency,
+  emptyText,
+}: {
+  rows: ProductSalesRow[];
+  currency: string;
+  emptyText: string;
+}) {
   const { t } = useLocale();
   if (rows.length === 0) {
-    return <p className="py-8 text-center text-sm text-slate-400">{emptyText}</p>;
+    return <EmptyState title={emptyText} compact />;
   }
 
   return (
-    <div className="divide-y divide-slate-100">
+    <div className={dividerClasses.subtle}>
       {rows.map((row) => (
-        <div key={row.key} className="grid grid-cols-[1fr_auto] gap-3 py-3 text-sm">
+        <div
+          key={row.key}
+          className="grid grid-cols-[1fr_auto] gap-3 py-3 text-sm"
+        >
           <div className="min-w-0">
             <p className="truncate font-semibold text-slate-800">{row.name}</p>
-            <p className="truncate text-xs text-slate-500">{row.barcode} · {row.category || '—'}</p>
+            <p className={clsx("truncate", typographyClasses.hint)}>
+              {row.barcode} · {row.category || "—"}
+            </p>
           </div>
           <div className="text-end">
-            <p className="font-bold text-slate-900 tabular-nums">{formatCurrency(row.revenue, currency)}</p>
-            <p className="text-xs text-slate-500">
-              {t('reports.qty')}: {row.quantity} · {formatCurrency(row.profit, currency)}
+            <PriceDisplay value={row.revenue} currency={currency} emphasis />
+            <p className={typographyClasses.hint}>
+              {t("reports.qty")}: {row.quantity} ·{" "}
+              {formatCurrency(row.profit, currency)}
             </p>
           </div>
         </div>
@@ -68,12 +112,20 @@ function TrendBars({ rows, currency }: { rows: TrendRow[]; currency: string }) {
       {rows.map((row) => {
         const width = Math.max(4, Math.round((row.sales / max) * 100));
         return (
-          <div key={row.label} className="grid grid-cols-[74px_1fr_auto] items-center gap-3 text-sm">
-            <span className="text-xs font-medium text-slate-500">{row.label}</span>
+          <div
+            key={row.label}
+            className="grid grid-cols-[74px_1fr_auto] items-center gap-3 text-sm"
+          >
+            <span className="text-xs font-medium text-slate-500">
+              {row.label}
+            </span>
             <div className="h-3 overflow-hidden rounded-full bg-slate-100">
-              <div className="h-full rounded-full bg-blue-600" style={{ width: `${width}%` }} />
+              <div
+                className="h-full rounded-full bg-blue-600"
+                style={{ width: `${width}%` }}
+              />
             </div>
-            <span className="text-xs font-semibold tabular-nums text-slate-700">{formatCurrency(row.sales, currency)}</span>
+            <PriceDisplay value={row.sales} currency={currency} size="sm" />
           </div>
         );
       })}
@@ -83,17 +135,26 @@ function TrendBars({ rows, currency }: { rows: TrendRow[]; currency: string }) {
 
 export function ReportsWorkspace() {
   const { t } = useLocale();
-  const bills = useLiveQuery(() => db.bills.orderBy('createdAt').reverse().toArray(), []);
+  const bills = useLiveQuery(
+    () => db.bills.orderBy("createdAt").reverse().toArray(),
+    [],
+  );
   const billItems = useLiveQuery(() => db.billItems.toArray(), []);
   const products = useLiveQuery(() => db.products.toArray(), []);
-  const purchases = useLiveQuery(() => db.purchases.orderBy('createdAt').reverse().toArray(), []);
-  const supplierPayments = useLiveQuery(() => db.supplierPayments.toArray(), []);
+  const purchases = useLiveQuery(
+    () => db.purchases.orderBy("createdAt").reverse().toArray(),
+    [],
+  );
+  const supplierPayments = useLiveQuery(
+    () => db.supplierPayments.toArray(),
+    [],
+  );
   const settings = useLiveQuery(() => settingsRepo.get(), []);
-  const [range, setRange] = useState<ReportRange>('today');
-  const [customFrom, setCustomFrom] = useState('');
-  const [customTo, setCustomTo] = useState('');
+  const [range, setRange] = useState<ReportRange>("today");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
 
-  const currency = settings?.currency ?? 'USD';
+  const currency = settings?.currency ?? "USD";
   const loading = !bills || !billItems || !products;
 
   const filteredBills = useMemo(
@@ -105,10 +166,18 @@ export function ReportsWorkspace() {
     [purchases, range, customFrom, customTo],
   );
   const filteredSupplierPayments = useMemo(
-    () => filterByDateRange(supplierPayments ?? [], { range, customFrom, customTo }),
+    () =>
+      filterByDateRange(supplierPayments ?? [], {
+        range,
+        customFrom,
+        customTo,
+      }),
     [supplierPayments, range, customFrom, customTo],
   );
-  const summary = useMemo(() => summarizeReportBills(filteredBills), [filteredBills]);
+  const summary = useMemo(
+    () => summarizeReportBills(filteredBills),
+    [filteredBills],
+  );
   const purchaseSummary = useMemo(
     () => summarizeReportPurchases(filteredPurchases, filteredSupplierPayments),
     [filteredPurchases, filteredSupplierPayments],
@@ -118,136 +187,288 @@ export function ReportsWorkspace() {
     [filteredBills, billItems, products],
   );
   const topProducts = productSales.slice(0, 8);
-  const highestProfitProducts = [...productSales].sort((a, b) => b.profit - a.profit).slice(0, 8);
-  const lowStockSoldProducts = getLowStockSoldProducts(productSales).slice(0, 8);
-  const trendRows = useMemo(() => buildDailyTrend(filteredBills, 7), [filteredBills]);
+  const highestProfitProducts = [...productSales]
+    .sort((a, b) => b.profit - a.profit)
+    .slice(0, 8);
+  const lowStockSoldProducts = getLowStockSoldProducts(productSales).slice(
+    0,
+    8,
+  );
+  const trendRows = useMemo(
+    () => buildDailyTrend(filteredBills, 7),
+    [filteredBills],
+  );
 
   if (loading) {
-    return (
-      <Card>
-        <p className="text-sm text-slate-500">{t('common.loading')}</p>
-      </Card>
-    );
+    return <LoadingState title={t("common.loading")} />;
   }
 
   return (
     <div className="flex flex-col gap-6">
-      <section className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-slate-900">{t('reports.title')}</h2>
-          <p className="mt-1 max-w-2xl text-sm text-slate-500">{t('reports.subtitle')}</p>
-        </div>
+      <Toolbar align="between" className="items-start">
+        <div />
         <div className="flex flex-wrap gap-2">
-          <Link href="/bills" className="inline-flex min-h-[42px] items-center justify-center rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-200">
-            {t('reports.openBills')}
+          <Link
+            href="/bills"
+            className={clsx(
+              "inline-flex items-center justify-center font-semibold transition-colors",
+              buttonSizes.md,
+              buttonVariants.secondary,
+            )}
+          >
+            {t("reports.openBills")}
           </Link>
-          <Link href="/inventory" className="inline-flex min-h-[42px] items-center justify-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700">
-            {t('reports.openInventory')}
+          <Link
+            href="/inventory"
+            className={clsx(
+              "inline-flex items-center justify-center font-semibold transition-colors",
+              buttonSizes.md,
+              buttonVariants.primary,
+            )}
+          >
+            {t("reports.openInventory")}
           </Link>
         </div>
-      </section>
+      </Toolbar>
 
-      <Card>
+      <SectionCard>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto] md:items-end">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-              {t('reports.period')}
-              <Select value={range} onChange={(event) => setRange(event.target.value as ReportRange)}>
-                <option value="today">{t('reports.today')}</option>
-                <option value="week">{t('reports.last7Days')}</option>
-                <option value="month">{t('reports.thisMonth')}</option>
-                <option value="all">{t('reports.allTime')}</option>
-                <option value="custom">{t('reports.customRange')}</option>
+            <FormField label={t("reports.period")}>
+              <Select
+                value={range}
+                onChange={(event) =>
+                  setRange(event.target.value as ReportRange)
+                }
+              >
+                <option value="today">{t("reports.today")}</option>
+                <option value="week">{t("reports.last7Days")}</option>
+                <option value="month">{t("reports.thisMonth")}</option>
+                <option value="all">{t("reports.allTime")}</option>
+                <option value="custom">{t("reports.customRange")}</option>
               </Select>
-            </label>
-            {range === 'custom' && (
+            </FormField>
+            {range === "custom" && (
               <>
-                <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-                  {t('reports.fromDate')}
-                  <Input type="date" value={customFrom} onChange={(event) => setCustomFrom(event.target.value)} />
-                </label>
-                <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-                  {t('reports.toDate')}
-                  <Input type="date" value={customTo} onChange={(event) => setCustomTo(event.target.value)} />
-                </label>
+                <FormField label={t("reports.fromDate")}>
+                  <Input
+                    type="date"
+                    value={customFrom}
+                    onChange={(event) => setCustomFrom(event.target.value)}
+                  />
+                </FormField>
+                <FormField label={t("reports.toDate")}>
+                  <Input
+                    type="date"
+                    value={customTo}
+                    onChange={(event) => setCustomTo(event.target.value)}
+                  />
+                </FormField>
               </>
             )}
           </div>
-          <Button type="button" variant="secondary" onClick={() => { setRange('today'); setCustomFrom(''); setCustomTo(''); }}>
-            {t('common.reset')}
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => {
+              setRange("today");
+              setCustomFrom("");
+              setCustomTo("");
+            }}
+          >
+            {t("common.reset")}
           </Button>
         </div>
-      </Card>
+      </SectionCard>
 
       <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label={t('reports.totalSales')} value={formatCurrency(summary.sales, currency)} />
-        <StatCard label={t('reports.totalProfit')} value={formatCurrency(summary.profit, currency)} />
-        <StatCard label={t('reports.billCount')} value={String(summary.billCount)} helper={`${t('reports.averageBill')}: ${formatCurrency(summary.averageBill, currency)}`} />
-        <StatCard label={t('reports.cashExpected')} value={formatCurrency(summary.cashExpected, currency)} />
+        <ReportStatCard
+          label={t("reports.totalSales")}
+          value={
+            <PriceDisplay
+              value={summary.sales}
+              currency={currency}
+              size="xl"
+              emphasis
+            />
+          }
+        />
+        <ReportStatCard
+          label={t("reports.totalProfit")}
+          value={
+            <PriceDisplay
+              value={summary.profit}
+              currency={currency}
+              size="xl"
+              emphasis
+            />
+          }
+          tone="success"
+        />
+        <ReportStatCard
+          label={t("reports.billCount")}
+          value={String(summary.billCount)}
+          helper={`${t("reports.averageBill")}: ${formatCurrency(summary.averageBill, currency)}`}
+        />
+        <ReportStatCard
+          label={t("reports.cashExpected")}
+          value={
+            <PriceDisplay
+              value={summary.cashExpected}
+              currency={currency}
+              size="xl"
+              emphasis
+            />
+          }
+        />
       </section>
 
       <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard
-          label={t('reports.purchaseCost')}
-          value={formatCurrency(purchaseSummary.purchaseCost, currency)}
-          helper={`${t('reports.purchaseCount')}: ${purchaseSummary.purchaseCount}`}
+        <ReportStatCard
+          label={t("reports.purchaseCost")}
+          value={
+            <PriceDisplay
+              value={purchaseSummary.purchaseCost}
+              currency={currency}
+              size="xl"
+              emphasis
+            />
+          }
+          helper={`${t("reports.purchaseCount")}: ${purchaseSummary.purchaseCount}`}
         />
-        <StatCard
-          label={t('reports.cashPaidOut')}
-          value={formatCurrency(purchaseSummary.cashPaidOut, currency)}
-          helper={t('reports.cashPaidOutHelper')}
+        <ReportStatCard
+          label={t("reports.cashPaidOut")}
+          value={
+            <PriceDisplay
+              value={purchaseSummary.cashPaidOut}
+              currency={currency}
+              size="xl"
+              emphasis
+            />
+          }
+          helper={t("reports.cashPaidOutHelper")}
+          tone={purchaseSummary.cashPaidOut > 0 ? "warning" : "neutral"}
         />
-        <StatCard
-          label={t('reports.supplierPayments')}
-          value={formatCurrency(purchaseSummary.supplierPayments, currency)}
-          helper={`${filteredSupplierPayments.length} ${t('reports.entries')}`}
+        <ReportStatCard
+          label={t("reports.supplierPayments")}
+          value={
+            <PriceDisplay
+              value={purchaseSummary.supplierPayments}
+              currency={currency}
+              size="xl"
+              emphasis
+            />
+          }
+          helper={`${filteredSupplierPayments.length} ${t("reports.entries")}`}
         />
-        <StatCard
-          label={t('reports.netSupplierDebt')}
-          value={formatCurrency(purchaseSummary.netSupplierDebt, currency)}
-          helper={t('reports.netSupplierDebtHelper')}
+        <ReportStatCard
+          label={t("reports.netSupplierDebt")}
+          value={
+            <PriceDisplay
+              value={purchaseSummary.netSupplierDebt}
+              currency={currency}
+              size="xl"
+              emphasis
+            />
+          }
+          helper={t("reports.netSupplierDebtHelper")}
         />
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <h3 className="text-base font-semibold text-slate-900">{t('reports.paymentBreakdown')}</h3>
-          <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-            <StatCard label={t('common.cash')} value={formatCurrency(summary.byPayment.cash, currency)} />
-            <StatCard label={t('common.card')} value={formatCurrency(summary.byPayment.card, currency)} />
-            <StatCard label={t('common.mixed')} value={formatCurrency(summary.byPayment.mixed, currency)} />
-            <StatCard label={t('common.credit')} value={formatCurrency(summary.byPayment.credit, currency)} />
+        <SectionCard title={t("reports.paymentBreakdown")}>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <ReportStatCard
+              label={t("common.cash")}
+              value={
+                <PriceDisplay
+                  value={summary.byPayment.cash}
+                  currency={currency}
+                  size="lg"
+                  emphasis
+                />
+              }
+            />
+            <ReportStatCard
+              label={t("common.card")}
+              value={
+                <PriceDisplay
+                  value={summary.byPayment.card}
+                  currency={currency}
+                  size="lg"
+                  emphasis
+                />
+              }
+            />
+            <ReportStatCard
+              label={t("common.mixed")}
+              value={
+                <PriceDisplay
+                  value={summary.byPayment.mixed}
+                  currency={currency}
+                  size="lg"
+                  emphasis
+                />
+              }
+            />
+            <ReportStatCard
+              label={t("common.credit")}
+              value={
+                <PriceDisplay
+                  value={summary.byPayment.credit}
+                  currency={currency}
+                  size="lg"
+                  emphasis
+                />
+              }
+            />
           </div>
-          <p className="mt-3 text-xs text-slate-500">
-            {t('reports.adjustmentsNote')}: {t('common.voided')} {summary.voidedBills} · {t('common.returned')} {summary.returnedBills}
+          <p className={typographyClasses.hint}>
+            {t("reports.adjustmentsNote")}: {t("common.voided")}{" "}
+            {summary.voidedBills} · {t("common.returned")}{" "}
+            {summary.returnedBills}
           </p>
-        </Card>
+        </SectionCard>
 
-        <Card>
-          <h3 className="text-base font-semibold text-slate-900">{t('reports.salesTrend')}</h3>
-          <p className="mt-1 text-sm text-slate-500">{t('reports.salesTrendDesc')}</p>
-          <div className="mt-4">
-            <TrendBars rows={trendRows} currency={currency} />
-          </div>
-        </Card>
+        <SectionCard
+          title={t("reports.salesTrend")}
+          description={t("reports.salesTrendDesc")}
+        >
+          <TrendBars rows={trendRows} currency={currency} />
+        </SectionCard>
       </section>
 
       <section className="grid gap-4 xl:grid-cols-3">
-        <Card>
-          <h3 className="text-base font-semibold text-slate-900">{t('reports.topSellingProducts')}</h3>
-          <p className="mt-1 text-sm text-slate-500">{t('reports.topSellingProductsDesc')}</p>
-          <ProductRows rows={topProducts} currency={currency} emptyText={t('reports.noProductSales')} />
-        </Card>
-        <Card>
-          <h3 className="text-base font-semibold text-slate-900">{t('reports.highestProfitProducts')}</h3>
-          <p className="mt-1 text-sm text-slate-500">{t('reports.highestProfitProductsDesc')}</p>
-          <ProductRows rows={highestProfitProducts} currency={currency} emptyText={t('reports.noProductSales')} />
-        </Card>
-        <Card>
-          <h3 className="text-base font-semibold text-slate-900">{t('reports.lowStockSoldProducts')}</h3>
-          <p className="mt-1 text-sm text-slate-500">{t('reports.lowStockSoldProductsDesc')}</p>
-          <ProductRows rows={lowStockSoldProducts} currency={currency} emptyText={t('reports.noLowStockSold')} />
-        </Card>
+        <SectionCard
+          title={t("reports.topSellingProducts")}
+          description={t("reports.topSellingProductsDesc")}
+        >
+          <ProductRows
+            rows={topProducts}
+            currency={currency}
+            emptyText={t("reports.noProductSales")}
+          />
+        </SectionCard>
+        <SectionCard
+          title={t("reports.highestProfitProducts")}
+          description={t("reports.highestProfitProductsDesc")}
+        >
+          <ProductRows
+            rows={highestProfitProducts}
+            currency={currency}
+            emptyText={t("reports.noProductSales")}
+          />
+        </SectionCard>
+        <SectionCard
+          title={t("reports.lowStockSoldProducts")}
+          description={t("reports.lowStockSoldProductsDesc")}
+        >
+          <ProductRows
+            rows={lowStockSoldProducts}
+            currency={currency}
+            emptyText={t("reports.noLowStockSold")}
+          />
+        </SectionCard>
       </section>
     </div>
   );

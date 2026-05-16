@@ -1,7 +1,22 @@
-import { ReportsWorkspace } from '@/features/reports/components/reports-workspace';
+"use client";
 
-export const dynamic = 'force-dynamic';
+import { ReportsWorkspace } from "@/features/reports/components/reports-workspace";
+import { useLocale } from "@/components/providers/locale-context";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageShell } from "@/components/ui/page-shell";
+
+export const dynamic = "force-dynamic";
 
 export default function ReportsPage() {
-  return <ReportsWorkspace />;
+  const { t } = useLocale();
+
+  return (
+    <PageShell>
+      <PageHeader
+        title={t("reports.title")}
+        description={t("reports.subtitle")}
+      />
+      <ReportsWorkspace />
+    </PageShell>
+  );
 }

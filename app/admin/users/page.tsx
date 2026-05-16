@@ -7,14 +7,23 @@ import { useAuth } from '@/components/providers/auth-context';
 import { fetchAllUsers, updateUserStatus, rejectUser, createAppUser } from '@/lib/firebase/auth-service';
 import { fetchUserSummary, type SupportHealth, type UserSummary } from '@/lib/firebase/admin-service';
 import type { AppUser } from '@/types/domain';
+import { PageShell } from '@/components/ui/page-shell';
+import { PageHeader } from '@/components/ui/page-header';
+import { SectionCard } from '@/components/ui/section-card';
+import { TableShell } from '@/components/ui/table-shell';
+import { Toolbar } from '@/components/ui/toolbar';
+import { FormField } from '@/components/ui/form-field';
+import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { StatusPill } from '@/components/ui/status-pill';
+import { EmptyState } from '@/components/ui/empty-state';
+import { LoadingState } from '@/components/ui/loading-state';
+import { alertTones, panelTones, typographyClasses } from '@/lib/design/variants';
+import clsx from 'clsx';
 
 type SummaryMap = Record<string, UserSummary>;
-
-const HEALTH_STYLES: Record<SupportHealth, string> = {
-  healthy: 'bg-green-100 text-green-700',
-  needs_attention: 'bg-amber-100 text-amber-700',
-  no_backup: 'bg-red-100 text-red-600',
-};
 
 export default function AdminUsersPage() {
   const { isAdmin, user: currentUser } = useAuth();
@@ -100,10 +109,11 @@ export default function AdminUsersPage() {
 
   if (!isAdmin) {
     return (
-      <div className="max-w-md mx-auto mt-12 p-6 bg-white border border-red-100 rounded-2xl text-center">
-        <p className="font-semibold text-red-600 mb-1">Access Denied</p>
-        <p className="text-sm text-slate-500">Only admins can manage users.</p>
-      </div>
+      <PageShell>
+        <SectionCard tone="danger" title="Access Denied" description="Only admins can manage users.">
+          <p className={typographyClasses.bodyMuted}>Sign in with an admin account to continue.</p>
+        </SectionCard>
+      </PageShell>
     );
   }
 
@@ -112,49 +122,40 @@ export default function AdminUsersPage() {
   const inactive = users.filter((u) => !u.pendingApproval && !u.isActive);
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-xl font-bold text-slate-800">Admin Support Dashboard</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Approve users, check backup health, and support seller data.</p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => void loadSupportHealth()}
-            disabled={loadingHealth || users.length === 0}
-            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 disabled:opacity-60 text-slate-700 text-sm font-medium rounded-xl transition-colors"
-          >
-            {loadingHealth ? 'Refreshing…' : 'Refresh health'}
-          </button>
-          <button
-            onClick={() => setShowCreate(true)}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-xl transition-colors"
-          >
-            Add User
-          </button>
-        </div>
-      </div>
+    <PageShell>
+      <PageHeader
+        title="Admin Support Dashboard"
+        description="Approve users, check backup health, and support seller data."
+        actions={(
+          <Toolbar align="end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void loadSupportHealth()}
+              disabled={loadingHealth || users.length === 0}
+              loading={loadingHealth}
+            >
+              {loadingHealth ? 'Refreshing…' : 'Refresh health'}
+            </Button>
+            <Button type="button" onClick={() => setShowCreate(true)}>
+              Add User
+            </Button>
+          </Toolbar>
+        )}
+      />
 
-      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
         <SupportCard label="Users" value={dashboard.totalUsers} />
-        <SupportCard label="Pending" value={dashboard.pendingCount} tone={dashboard.pendingCount > 0 ? 'amber' : undefined} />
+        <SupportCard label="Pending" value={dashboard.pendingCount} tone={dashboard.pendingCount > 0 ? 'warning' : undefined} />
         <SupportCard label="Active" value={dashboard.activeCount} />
-        <SupportCard label="Needs help" value={dashboard.needsAttention} tone={dashboard.needsAttention > 0 ? 'red' : undefined} />
+        <SupportCard label="Needs help" value={dashboard.needsAttention} tone={dashboard.needsAttention > 0 ? 'danger' : undefined} />
         <SupportCard label="Cloud sales" value={dashboard.totalRevenue.toFixed(2)} />
-        <SupportCard label="Customer debt" value={dashboard.totalDebt.toFixed(2)} tone={dashboard.totalDebt > 0 ? 'amber' : undefined} />
+        <SupportCard label="Customer debt" value={dashboard.totalDebt.toFixed(2)} tone={dashboard.totalDebt > 0 ? 'warning' : undefined} />
       </div>
 
-      {error && (
-        <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl px-4 py-3">
-          {error}
-        </p>
-      )}
+      {error && <p className={clsx('rounded-xl border px-4 py-3 text-sm', alertTones.danger)}>{error}</p>}
 
-      {loading && (
-        <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center text-sm text-slate-400">
-          Loading users…
-        </div>
-      )}
+      {loading && <LoadingState title="Loading users…" />}
 
       {showCreate && (
         <CreateUserForm
@@ -164,153 +165,114 @@ export default function AdminUsersPage() {
       )}
 
       {pending.length > 0 && (
-        <section>
-          <h2 className="text-sm font-semibold text-amber-700 mb-2 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />
-            Pending Approval ({pending.length})
-          </h2>
-          <div className="bg-white border border-amber-200 rounded-2xl overflow-hidden divide-y divide-amber-50">
+        <SectionCard
+          tone="warning"
+          title={`Pending Approval (${pending.length})`}
+          description="Review new account requests before they can access the POS."
+        >
+          <div className="divide-y divide-amber-100 overflow-hidden rounded-2xl border border-amber-100 bg-white">
             {pending.map((u) => (
-              <div key={u.uid} className="flex items-center gap-3 px-5 py-4">
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-slate-800 text-sm truncate">{u.name}</p>
-                  <p className="text-xs text-slate-500 truncate">{u.email}</p>
-                  {u.phone && (
-                    <a href={`tel:${u.phone}`} className="text-xs text-blue-500 hover:underline">{u.phone}</a>
-                  )}
+              <div key={u.uid} className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-slate-800">{u.name}</p>
+                  <p className="truncate text-xs text-slate-500">{u.email}</p>
+                  {u.phone && <a href={`tel:${u.phone}`} className="text-xs text-blue-600 hover:underline">{u.phone}</a>}
                 </div>
-                <span className="hidden sm:inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
-                  {u.role}
-                </span>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => void approve(u.uid)}
-                    className="text-xs font-medium px-3 py-1.5 rounded-lg bg-green-50 text-green-700 hover:bg-green-100 transition-colors"
-                  >
+                <Badge tone="neutral">{u.role}</Badge>
+                <div className="flex gap-2 sm:justify-end">
+                  <Button type="button" size="sm" variant="success" onClick={() => void approve(u.uid)}>
                     Approve
-                  </button>
-                  <button
-                    onClick={() => void reject(u.uid)}
-                    className="text-xs font-medium px-3 py-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
-                  >
+                  </Button>
+                  <Button type="button" size="sm" variant="danger" onClick={() => void reject(u.uid)}>
                     Reject
-                  </button>
+                  </Button>
                 </div>
               </div>
             ))}
           </div>
-        </section>
+        </SectionCard>
       )}
 
       {(active.length > 0 || inactive.length > 0) && (
-        <section>
-          {pending.length > 0 && (
-            <h2 className="text-sm font-semibold text-slate-500 mb-2">All Users</h2>
-          )}
-          <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-100">
-                    <th className="text-left px-5 py-3 font-medium text-slate-500">Name</th>
-                    <th className="text-left px-5 py-3 font-medium text-slate-500 hidden md:table-cell">Health</th>
-                    <th className="text-left px-5 py-3 font-medium text-slate-500 hidden lg:table-cell">Backup</th>
-                    <th className="text-left px-5 py-3 font-medium text-slate-500 hidden sm:table-cell">Data</th>
-                    <th className="text-left px-5 py-3 font-medium text-slate-500">Status</th>
-                    <th className="px-5 py-3" />
+        <TableShell
+          title="All Users"
+          description="Monitor account status, support health, and recent cloud backup state."
+        >
+          <table className="w-full min-w-[860px] text-sm">
+            <thead>
+              <tr className="border-b border-slate-100">
+                <th className={typographyClasses.tableHeader}>Name</th>
+                <th className={typographyClasses.tableHeader}>Health</th>
+                <th className={typographyClasses.tableHeader}>Backup</th>
+                <th className={typographyClasses.tableHeader}>Data</th>
+                <th className={typographyClasses.tableHeader}>Status</th>
+                <th className={typographyClasses.tableHeader} />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {[...active, ...inactive].map((u) => {
+                const summary = summaries[u.uid];
+                return (
+                  <tr key={u.uid} className="transition-colors hover:bg-slate-50">
+                    <td className={typographyClasses.tableCell}>
+                      <Link href={`/admin/users/${u.uid}` as Route} className="font-medium text-slate-800 hover:text-blue-600">
+                        {u.name}
+                      </Link>
+                      {u.uid === currentUser?.uid && <span className="ms-2 text-xs text-slate-400">(you)</span>}
+                      <div className="max-w-[220px] truncate text-xs text-slate-400">{u.email}</div>
+                      {u.phone && <a href={`tel:${u.phone}`} className="text-xs text-slate-400 hover:text-blue-500">{u.phone}</a>}
+                    </td>
+                    <td className={typographyClasses.tableCell}>
+                      {summary ? <HealthBadge health={summary.syncHealth} /> : <span className="text-xs text-slate-300">Loading…</span>}
+                    </td>
+                    <td className={clsx(typographyClasses.tableCell, 'whitespace-nowrap')}>
+                      {summary?.lastSyncAt ? relativeTime(summary.lastSyncAt) : <span className="text-slate-300">No backup</span>}
+                    </td>
+                    <td className={clsx(typographyClasses.tableCell, 'whitespace-nowrap text-xs')}>
+                      {summary ? `${summary.billCount} bills / ${summary.productCount} products` : '—'}
+                      {summary && summary.creditDebt > 0 && <div className="text-amber-600">Debt {summary.creditDebt.toFixed(2)}</div>}
+                    </td>
+                    <td className={clsx(typographyClasses.tableCell, 'space-x-1 rtl:space-x-reverse')}>
+                      <StatusPill status={u.isActive ? 'online' : 'error'} label={u.isActive ? 'Active' : 'Inactive'} />
+                      <Badge tone={u.role === 'admin' ? 'info' : 'neutral'}>{u.role}</Badge>
+                    </td>
+                    <td className={clsx(typographyClasses.tableCell, 'text-end')}>
+                      {u.uid !== currentUser?.uid && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={u.isActive ? 'danger' : 'success'}
+                          onClick={() => void toggleActive(u.uid, u.isActive)}
+                        >
+                          {u.isActive ? 'Deactivate' : 'Reactivate'}
+                        </Button>
+                      )}
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50">
-                  {[...active, ...inactive].map((u) => {
-                    const summary = summaries[u.uid];
-                    return (
-                      <tr key={u.uid} className="hover:bg-slate-50 transition-colors">
-                        <td className="px-5 py-3.5">
-                          <Link
-                            href={`/admin/users/${u.uid}` as Route}
-                            className="font-medium text-slate-800 hover:text-blue-600 transition-colors"
-                          >
-                            {u.name}
-                          </Link>
-                          {u.uid === currentUser?.uid && (
-                            <span className="ml-2 text-xs text-slate-400">(you)</span>
-                          )}
-                          <div className="text-xs text-slate-400 truncate max-w-[220px]">{u.email}</div>
-                          {u.phone && (
-                            <div>
-                              <a href={`tel:${u.phone}`} className="text-xs text-slate-400 hover:text-blue-500">{u.phone}</a>
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-5 py-3.5 hidden md:table-cell">
-                          {summary ? <HealthBadge health={summary.syncHealth} /> : <span className="text-xs text-slate-300">Loading…</span>}
-                        </td>
-                        <td className="px-5 py-3.5 text-slate-500 hidden lg:table-cell whitespace-nowrap">
-                          {summary?.lastSyncAt ? relativeTime(summary.lastSyncAt) : <span className="text-slate-300">No backup</span>}
-                        </td>
-                        <td className="px-5 py-3.5 text-xs text-slate-500 hidden sm:table-cell whitespace-nowrap">
-                          {summary ? `${summary.billCount} bills / ${summary.productCount} products` : '—'}
-                          {summary && summary.creditDebt > 0 && (
-                            <div className="text-amber-600">Debt {summary.creditDebt.toFixed(2)}</div>
-                          )}
-                        </td>
-                        <td className="px-5 py-3.5">
-                          <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
-                            u.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'
-                          }`}>
-                            {u.isActive ? 'Active' : 'Inactive'}
-                          </span>
-                          <span className={`ml-1 hidden sm:inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
-                            u.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-600'
-                          }`}>
-                            {u.role}
-                          </span>
-                        </td>
-                        <td className="px-5 py-3.5 text-right">
-                          {u.uid !== currentUser?.uid && (
-                            <button
-                              onClick={() => void toggleActive(u.uid, u.isActive)}
-                              className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${
-                                u.isActive
-                                  ? 'bg-red-50 text-red-600 hover:bg-red-100'
-                                  : 'bg-green-50 text-green-700 hover:bg-green-100'
-                              }`}
-                            >
-                              {u.isActive ? 'Deactivate' : 'Reactivate'}
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </section>
+                );
+              })}
+            </tbody>
+          </table>
+        </TableShell>
       )}
 
-      {!loading && users.length === 0 && (
-        <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center text-sm text-slate-400">
-          No users yet.
-        </div>
-      )}
-    </div>
+      {!loading && users.length === 0 && <EmptyState title="No users yet." description="Create the first app user to start managing access." />}
+    </PageShell>
   );
 }
 
 function HealthBadge({ health }: { health: SupportHealth }) {
   const label = health === 'healthy' ? 'Healthy' : health === 'needs_attention' ? 'Needs attention' : 'No backup';
-  return <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${HEALTH_STYLES[health]}`}>{label}</span>;
+  const tone = health === 'healthy' ? 'success' : health === 'needs_attention' ? 'warning' : 'danger';
+  return <Badge tone={tone}>{label}</Badge>;
 }
 
-function SupportCard({ label, value, tone }: { label: string; value: string | number; tone?: 'amber' | 'red' }) {
-  const toneClass = tone === 'red' ? 'text-red-600' : tone === 'amber' ? 'text-amber-600' : 'text-slate-800';
+function SupportCard({ label, value, tone }: { label: string; value: string | number; tone?: 'warning' | 'danger' }) {
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl px-4 py-3">
-      <p className="text-xs text-slate-500 mb-1">{label}</p>
-      <p className={`text-lg font-bold tabular-nums ${toneClass}`}>{value}</p>
-    </div>
+    <SectionCard padding="sm" className="gap-1">
+      <p className={typographyClasses.statLabel}>{label}</p>
+      <p className={clsx('tabular-nums', typographyClasses.statValue, tone === 'danger' && 'text-red-600', tone === 'warning' && 'text-amber-600')}>{value}</p>
+    </SectionCard>
   );
 }
 
@@ -354,57 +316,32 @@ function CreateUserForm({ onCreated, onCancel }: { onCreated: () => void; onCanc
   }
 
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl p-5">
-      <h2 className="font-semibold text-slate-800 mb-4">New User</h2>
-      <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">Full Name</label>
-          <input required value={name} onChange={(e) => setName(e.target.value)}
-            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="Jane Smith" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">Email</label>
-          <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
-            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="jane@example.com" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">Phone <span className="text-slate-400">(optional)</span></label>
-          <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
-            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="+1 555 0123" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">Password</label>
-          <input type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)}
-            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="Min 6 characters" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">Role</label>
-          <select value={role} onChange={(e) => setRole(e.target.value as 'admin' | 'cashier')}
-            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+    <SectionCard title="New User" description="Create an admin or cashier account.">
+      <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <FormField label="Full Name" required>
+          <Input required value={name} onChange={(e) => setName(e.target.value)} placeholder="Jane Smith" />
+        </FormField>
+        <FormField label="Email" required>
+          <Input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="jane@example.com" />
+        </FormField>
+        <FormField label="Phone" hint="Optional">
+          <Input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+1 555 0123" />
+        </FormField>
+        <FormField label="Password" required>
+          <Input type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Min 6 characters" />
+        </FormField>
+        <FormField label="Role">
+          <Select value={role} onChange={(e) => setRole(e.target.value as 'admin' | 'cashier')}>
             <option value="cashier">Cashier</option>
             <option value="admin">Admin</option>
-          </select>
-        </div>
-        {error && (
-          <p className="sm:col-span-2 text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
-            {error}
-          </p>
-        )}
-        <div className="sm:col-span-2 flex gap-2 justify-end">
-          <button type="button" onClick={onCancel}
-            className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">
-            Cancel
-          </button>
-          <button type="submit" disabled={loading}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm font-medium rounded-xl transition-colors">
-            {loading ? 'Creating…' : 'Create User'}
-          </button>
+          </Select>
+        </FormField>
+        {error && <p className={clsx('rounded-xl border px-3 py-2 text-sm sm:col-span-2', alertTones.danger)}>{error}</p>}
+        <div className="flex justify-end gap-2 sm:col-span-2">
+          <Button type="button" variant="secondary" onClick={onCancel}>Cancel</Button>
+          <Button type="submit" disabled={loading} loading={loading}>{loading ? 'Creating…' : 'Create User'}</Button>
         </div>
       </form>
-    </div>
+    </SectionCard>
   );
 }

@@ -1,18 +1,32 @@
-import type { SelectHTMLAttributes } from 'react';
-import clsx from 'clsx';
+import type { SelectHTMLAttributes } from "react";
+import clsx from "clsx";
+import { inputSizes, inputVariants } from "@/lib/design/variants";
 
-export function Select({ className, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
+interface Props extends SelectHTMLAttributes<HTMLSelectElement> {
+  error?: boolean;
+  selectSize?: "sm" | "md" | "lg";
+  fullWidth?: boolean;
+}
+
+export function Select({
+  className,
+  error,
+  selectSize = "md",
+  fullWidth = true,
+  ...props
+}: Props) {
   return (
     <select
       className={clsx(
-        'w-full px-3 py-2.5 text-sm rounded-xl border border-slate-200 bg-white',
-        'text-slate-900',
-        'transition-colors duration-150',
-        'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500',
-        'disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-50',
-        'cursor-pointer',
+        "min-w-0 border bg-white transition-colors duration-150 outline-none cursor-pointer",
+        "focus:ring-2 focus:ring-offset-0",
+        "disabled:opacity-60 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500",
+        inputSizes[selectSize],
+        fullWidth && "w-full",
+        error ? inputVariants.error : inputVariants.default,
         className,
       )}
+      aria-invalid={error || undefined}
       {...props}
     />
   );
