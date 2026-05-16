@@ -6,15 +6,22 @@ import Link from 'next/link';
 import type { Route } from 'next';
 import { useAuth } from '@/components/providers/auth-context';
 import { fetchUserDoc, updateUserStatus } from '@/lib/firebase/auth-service';
+import { auth } from '@/lib/firebase/config';
 import {
   fetchUserBills,
   fetchUserBillItems,
   fetchUserCustomerPayments,
   fetchUserCustomers,
   fetchUserProducts,
+  fetchUserPurchaseItems,
+  fetchUserPurchases,
   fetchUserSettings,
+  fetchUserShifts,
   fetchUserStockMovements,
+  fetchUserSupplierPayments,
+  fetchUserSuppliers,
   fetchUserSupportSnapshot,
+  fetchUserSyncConflicts,
   fetchUserSyncMeta,
   netBillTotal,
   updateUserSettingsInCloud,
@@ -22,7 +29,7 @@ import {
   type UserSupportSnapshot,
 } from '@/lib/firebase/admin-service';
 import { downloadCSV } from '@/lib/utils/export-csv';
-import type { AppUser, Bill, BillItem, Customer, CustomerPayment, Product, Settings, StockMovement } from '@/types/domain';
+import type { AppUser, Bill, BillItem, Customer, CustomerPayment, Product, Purchase, PurchaseItem, Settings, Shift, StockMovement, Supplier, SupplierPayment, SyncConflict } from '@/types/domain';
 
 const STATUS_COLORS = {
   active:   'bg-green-100 text-green-700',
@@ -55,6 +62,9 @@ export default function UserDetailPage() {
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState('');
   const [toggling, setToggling]   = useState(false);
+  const [resetLink, setResetLink] = useState('');
+  const [resetLinkLoading, setResetLinkLoading] = useState(false);
+  const [resetLinkError, setResetLinkError] = useState('');
 
   useEffect(() => {
     if (!uid) return;
@@ -102,6 +112,29 @@ export default function UserDetailPage() {
     }
   }
 
+  async function generateResetLink() {
+    if (!profile) return;
+    setResetLinkLoading(true);
+    setResetLink('');
+    setResetLinkError('');
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error('Not signed in.');
+      const res = await fetch('/api/admin/reset-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ uid: profile.uid }),
+      });
+      const data = await res.json() as { link?: string; error?: string };
+      if (!res.ok || !data.link) throw new Error(data.error ?? 'Failed to generate link.');
+      setResetLink(data.link);
+    } catch (err) {
+      setResetLinkError(err instanceof Error ? err.message : 'Unknown error.');
+    } finally {
+      setResetLinkLoading(false);
+    }
+  }
+
   const salesByMethod = useMemo(() => {
     if (!support) return [];
     return [
@@ -113,10 +146,6 @@ export default function UserDetailPage() {
 
   async function exportBackupJSON() {
     if (!profile) return;
-    // Bills without bill items aren't enough to reconstruct receipts or
-    // product-level sales; customers without their table aren't enough to
-    // resolve customerId references on bills. Fetch both alongside the
-    // existing collections so the support backup is actually portable.
     const [
       allBills,
       allBillItems,
@@ -124,6 +153,12 @@ export default function UserDetailPage() {
       allMovements,
       allPayments,
       allCustomers,
+      allSuppliers,
+      allPurchases,
+      allPurchaseItems,
+      allSupplierPayments,
+      allShifts,
+      allConflicts,
       currentSettings,
       syncMeta,
     ] = await Promise.all([
@@ -133,6 +168,12 @@ export default function UserDetailPage() {
       fetchUserStockMovements(profile.uid, 5000).catch(() => [] as StockMovement[]),
       fetchUserCustomerPayments(profile.uid).catch(() => [] as CustomerPayment[]),
       fetchUserCustomers(profile.uid).catch(() => [] as Customer[]),
+      fetchUserSuppliers(profile.uid).catch(() => [] as Supplier[]),
+      fetchUserPurchases(profile.uid).catch(() => [] as Purchase[]),
+      fetchUserPurchaseItems(profile.uid).catch(() => [] as PurchaseItem[]),
+      fetchUserSupplierPayments(profile.uid).catch(() => [] as SupplierPayment[]),
+      fetchUserShifts(profile.uid).catch(() => [] as Shift[]),
+      fetchUserSyncConflicts(profile.uid).catch(() => [] as SyncConflict[]),
       fetchUserSettings(profile.uid),
       fetchUserSyncMeta(profile.uid),
     ]);
@@ -150,6 +191,12 @@ export default function UserDetailPage() {
         stockMovements: allMovements.length,
         customerPayments: allPayments.length,
         customers: allCustomers.length,
+        suppliers: allSuppliers.length,
+        purchases: allPurchases.length,
+        purchaseItems: allPurchaseItems.length,
+        supplierPayments: allSupplierPayments.length,
+        shifts: allShifts.length,
+        syncConflicts: allConflicts.length,
       },
       bills: allBills,
       billItems: allBillItems,
@@ -157,6 +204,12 @@ export default function UserDetailPage() {
       stockMovements: allMovements,
       customerPayments: allPayments,
       customers: allCustomers,
+      suppliers: allSuppliers,
+      purchases: allPurchases,
+      purchaseItems: allPurchaseItems,
+      supplierPayments: allSupplierPayments,
+      shifts: allShifts,
+      syncConflicts: allConflicts,
     };
     downloadJSON(payload, `support_backup_${profile.name || profile.uid}_${today()}.json`);
   }
@@ -274,6 +327,13 @@ export default function UserDetailPage() {
             >
               Export backup JSON
             </button>
+            <button
+              onClick={() => void generateResetLink()}
+              disabled={resetLinkLoading}
+              className="px-4 py-2 text-sm font-medium bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-xl transition-colors disabled:opacity-60"
+            >
+              {resetLinkLoading ? '…' : 'Generate password reset link'}
+            </button>
             {displayStatus === 'pending' && (
               <button
                 onClick={toggleStatus}
@@ -298,6 +358,30 @@ export default function UserDetailPage() {
             )}
           </div>
         </div>
+
+        {(resetLink || resetLinkError) && (
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            {resetLinkError && (
+              <p className="text-sm text-red-600">{resetLinkError}</p>
+            )}
+            {resetLink && (
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Password reset link (share with user via WhatsApp or SMS):</p>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 break-all select-all">{resetLink}</code>
+                  <button
+                    type="button"
+                    onClick={() => void navigator.clipboard.writeText(resetLink)}
+                    className="shrink-0 px-3 py-2 text-xs font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg transition-colors"
+                  >
+                    Copy
+                  </button>
+                </div>
+                <p className="text-xs text-amber-600">Link expires after first use or 1 hour. Generate a new one if needed.</p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {support && (

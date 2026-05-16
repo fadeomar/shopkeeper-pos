@@ -231,6 +231,12 @@ export class ShopkeeperDB extends Dexie {
       syncQueue: 'id, status, entity, entityId, createdAt, updatedAt',
       syncConflicts: 'id, status, entity, entityId, conflictType, severity, createdAt',
     });
+
+    // v10: add shiftId index to customerPayments so cash customer debt
+    // payments can be queried by shift for cash drawer reconciliation.
+    this.version(10).stores({
+      customerPayments: 'id, customerKey, createdAt, syncStatus, shiftId',
+    });
   }
 }
 

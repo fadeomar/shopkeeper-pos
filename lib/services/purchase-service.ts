@@ -291,7 +291,7 @@ export async function createFinalizedPurchase(input: {
         productId: item.productId,
         movementType: "purchase",
         quantityChange: item.quantity,
-        referenceType: "adjustment",
+        referenceType: "purchase",
         referenceId: purchaseId,
         note: `Purchase ${purchaseNumber}${input.form.supplierName ? ` from ${input.form.supplierName}` : ""}`,
         createdAt,
@@ -421,18 +421,27 @@ export async function voidPurchase(input: {
         (product): product is Product => Boolean(product),
       );
 
+      // Block void if any product has fewer units in stock than were purchased.
+      // Partial reversal would silently misrepresent inventory and financial history.
+      for (const product of products) {
+        const removeQuantity = items
+          .filter((item) => item.originalProductId === product.id)
+          .reduce((sum, item) => sum + getRemainingPurchaseItemQuantity(item), 0);
+        if (removeQuantity > 0 && product.quantityInStock < removeQuantity) {
+          throw new Error(
+            `Cannot void: only ${product.quantityInStock} unit(s) of "${product.name}" remain in stock, but ${removeQuantity} need to be reversed. Sell or adjust the remaining stock first.`,
+          );
+        }
+      }
+
       const updatedProducts: Product[] = products.map((product) => {
         const removeQuantity = items
           .filter((item) => item.originalProductId === product.id)
           .reduce((sum, item) => sum + getRemainingPurchaseItemQuantity(item), 0);
         if (removeQuantity <= 0) return product;
-        // Edge case: stock may already be lower than what we'd remove if
-        // some of the purchased units were sold or adjusted out. Clamp to 0
-        // so we never produce negative inventory.
-        const nextQty = Math.max(0, product.quantityInStock - removeQuantity);
         return {
           ...product,
-          quantityInStock: nextQty,
+          quantityInStock: product.quantityInStock - removeQuantity,
           lastUpdated: now,
           syncStatus: "pending",
           lastSyncError: undefined,
@@ -448,7 +457,7 @@ export async function voidPurchase(input: {
             productId: item.originalProductId,
             movementType: "adjustment",
             quantityChange: -qty,
-            referenceType: "adjustment",
+            referenceType: "purchase",
             referenceId: purchase.id,
             note: `Void purchase ${purchase.purchaseNumber}: ${reason}`,
             createdAt: now,
@@ -580,7 +589,7 @@ export async function returnPurchaseItem(input: {
         productId: item.originalProductId,
         movementType: "adjustment",
         quantityChange: -quantity,
-        referenceType: "adjustment",
+        referenceType: "purchase",
         referenceId: purchase.id,
         note: `Return to supplier ${purchase.purchaseNumber} / ${item.productNameAtPurchase}: ${reason}`,
         createdAt: now,

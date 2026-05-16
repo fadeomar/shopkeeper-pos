@@ -18,6 +18,8 @@ export interface TranslationDict {
     inactive: string;
     cash: string;
     card: string;
+    bank: string;
+    other: string;
     mixed: string;
     credit: string;
     finalized: string;
@@ -75,6 +77,7 @@ export interface TranslationDict {
     inventoryCost: string;
     owedToSuppliers: string;
     recentMovements: string;
+    noMovements: string;
     demoInserted: string;
     demoExists: string;
   };
@@ -229,6 +232,7 @@ export interface TranslationDict {
     savePayment: string;
     savePaymentCredit: string;
     paymentAmount: string;
+    paymentMethod: string;
     overpaymentWarning: string;
     creditBalanceNote: string;
     note: string;
@@ -598,6 +602,7 @@ export interface TranslationDict {
     recordPayment: string;
     recordPaymentDesc: string;
     paymentAmount: string;
+    paymentMethod: string;
     note: string;
     notePlaceholder: string;
     savePayment: string;

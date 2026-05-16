@@ -198,6 +198,8 @@ export async function recordCustomerPayment(input: {
   customerPhone?: string;
   amount: number;
   note?: string;
+  paymentMethod?: CustomerPayment['paymentMethod'];
+  shiftId?: string;
 }): Promise<CustomerPayment> {
   const amount = Number(input.amount);
   if (!input.customerKey) throw new Error('Customer is required.');
@@ -211,6 +213,8 @@ export async function recordCustomerPayment(input: {
     customerPhone: input.customerPhone?.trim() || undefined,
     amount,
     note: input.note?.trim() || undefined,
+    paymentMethod: input.paymentMethod ?? 'cash',
+    shiftId: input.shiftId,
     createdAt: now,
     syncStatus: 'pending',
   };

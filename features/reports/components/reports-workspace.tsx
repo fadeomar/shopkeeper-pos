@@ -120,7 +120,7 @@ export function ReportsWorkspace() {
   const topProducts = productSales.slice(0, 8);
   const highestProfitProducts = [...productSales].sort((a, b) => b.profit - a.profit).slice(0, 8);
   const lowStockSoldProducts = getLowStockSoldProducts(productSales).slice(0, 8);
-  const trendRows = useMemo(() => buildDailyTrend(bills ?? [], 7), [bills]);
+  const trendRows = useMemo(() => buildDailyTrend(filteredBills, 7), [filteredBills]);
 
   if (loading) {
     return (

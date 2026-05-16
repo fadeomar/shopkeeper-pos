@@ -39,6 +39,7 @@ export function SupplierLedgerWorkspace() {
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'bank' | 'other'>('cash');
   const currency = settings?.currency ?? 'USD';
 
   const paymentAmountNumeric = Number(amount);
@@ -62,12 +63,14 @@ export function SupplierLedgerWorkspace() {
         supplierPhone: selected.phone,
         amount: Number(amount),
         note,
+        paymentMethod,
       });
       const details = await getSupplierLedgerDetails(selected.key);
       setSelected(details);
       setPaymentOpen(false);
       setAmount('');
       setNote('');
+      setPaymentMethod('cash');
       push(t('suppliers.paymentSaved'));
     } catch (error) {
       push(
@@ -375,6 +378,27 @@ export function SupplierLedgerWorkspace() {
               })}
             </p>
           )}
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-slate-600 uppercase tracking-wide">
+              {t('suppliers.paymentMethod')}
+            </span>
+            <div className="flex gap-2 flex-wrap">
+              {(['cash', 'card', 'bank', 'other'] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setPaymentMethod(m)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                    paymentMethod === m
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  {t(`common.${m}`)}
+                </button>
+              ))}
+            </div>
+          </div>
           <label className="flex flex-col gap-1.5">
             <span className="text-xs font-medium text-slate-600 uppercase tracking-wide">
               {t('suppliers.note')}

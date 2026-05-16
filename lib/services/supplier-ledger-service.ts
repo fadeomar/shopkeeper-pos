@@ -207,6 +207,7 @@ export async function recordSupplierPayment(input: {
   supplierPhone?: string;
   amount: number;
   note?: string;
+  paymentMethod?: SupplierPayment['paymentMethod'];
 }): Promise<SupplierPayment> {
   const amount = Number(input.amount);
   if (!input.supplierKey) throw new Error('Supplier is required.');
@@ -224,6 +225,7 @@ export async function recordSupplierPayment(input: {
     supplierPhone: input.supplierPhone?.trim() || undefined,
     amount,
     note: input.note?.trim() || undefined,
+    paymentMethod: input.paymentMethod ?? 'cash',
     createdAt: now,
     shiftId: activeShift?.id,
     syncStatus: 'pending',

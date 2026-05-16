@@ -93,7 +93,7 @@ export default function DashboardPage() {
         </h3>
         <div className="flex flex-col divide-y divide-slate-100">
           {(stockMovements ?? []).length === 0 && (
-            <p className="text-sm text-slate-400 py-2">{t('db.loading')}</p>
+            <p className="text-sm text-slate-400 py-2">{t('dashboard.noMovements')}</p>
           )}
           {(stockMovements ?? []).map((mv) => (
             <div key={mv.id} className="flex items-center justify-between gap-3 py-3">

@@ -23,7 +23,7 @@ import { useLocale } from "@/components/providers/locale-context";
 import { formatCurrency } from "@/lib/utils/money";
 import { formatDateTime } from "@/lib/utils/date";
 import { ShiftReport } from "./shift-report";
-import type { Bill, Purchase, Shift, SupplierPayment } from "@/types/domain";
+import type { Bill, CustomerPayment, Purchase, Shift, SupplierPayment } from "@/types/domain";
 
 function dismissOnEnter(e: React.KeyboardEvent<HTMLInputElement>) {
   if (e.key === "Enter") {
@@ -89,6 +89,13 @@ export function ShiftWorkspace() {
         : Promise.resolve<SupplierPayment[]>([]),
     [activeShift?.id],
   );
+  const activeShiftCustomerPayments = useLiveQuery<CustomerPayment[]>(
+    () =>
+      activeShift?.id
+        ? db.customerPayments.where("shiftId").equals(activeShift.id).toArray()
+        : Promise.resolve<CustomerPayment[]>([]),
+    [activeShift?.id],
+  );
   const currency = settings?.currency ?? "USD";
 
   const [openingCash, setOpeningCash] = useState("");
@@ -116,9 +123,16 @@ export function ShiftWorkspace() {
     [activeShiftPurchases, activeShiftSupplierPayments],
   );
 
+  const customerPaymentCashIn = useMemo(() => {
+    return (activeShiftCustomerPayments ?? [])
+      .filter((p) => !p.paymentMethod || p.paymentMethod === "cash")
+      .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+  }, [activeShiftCustomerPayments]);
+
   const expectedCash = activeShift
     ? (activeShift.openingCash ?? 0) +
-      totals.cashCollected -
+      totals.cashCollected +
+      customerPaymentCashIn -
       cashOut.totalCashOut
     : 0;
 
