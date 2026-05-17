@@ -13,7 +13,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
-import { DataTable } from "@/components/ui/data-table";
+import { DataTable, useDataTableLabels } from "@/components/ui/data-table";
 import { useToast } from "@/components/ui/toast";
 import { useLocale } from "@/components/providers/locale-context";
 import { returnBillItem, voidBill } from "@/lib/services/billing-service";
@@ -24,13 +24,13 @@ import {
 import { ReceiptView } from "@/features/bills/components/receipt-view";
 import type { BillItem } from "@/types/domain";
 
-function DetailField({ label, value }: { label: string; value: string }) {
+function DetailField({ label, value, dir }: { label: string; value: string; dir?: string }) {
   return (
     <div className="flex flex-col gap-1">
       <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">
         {label}
       </span>
-      <span className="text-sm font-semibold text-slate-800">{value}</span>
+      <span className="text-sm font-semibold text-slate-800" dir={dir}>{value}</span>
     </div>
   );
 }
@@ -53,6 +53,7 @@ function SummaryRow({
       </span>
       <span
         className={`text-sm tabular-nums ${highlight ? "font-bold text-slate-900" : "font-medium text-slate-700"}`}
+        dir="ltr"
       >
         {value}
       </span>
@@ -66,6 +67,7 @@ function remainingQuantity(item: BillItem) {
 
 export function BillDetails({ billId }: { billId: string }) {
   const { t } = useLocale();
+  const tableLabels = useDataTableLabels();
   const toast = useToast();
   const bill = useLiveQuery(() => db.bills.get(billId), [billId]);
   const items = useLiveQuery(
@@ -146,7 +148,7 @@ export function BillDetails({ billId }: { billId: string }) {
       accessorKey: "unitBuyPriceAtSale",
       header: t("bills.buy"),
       cell: ({ row }) => (
-        <span className="tabular-nums text-slate-600">
+        <span className="tabular-nums text-slate-600" dir="ltr">
           {formatCurrency(row.original.unitBuyPriceAtSale, currency)}
         </span>
       ),
@@ -155,7 +157,7 @@ export function BillDetails({ billId }: { billId: string }) {
       accessorKey: "unitSellPriceAtSale",
       header: t("bills.sell"),
       cell: ({ row }) => (
-        <span className="tabular-nums text-slate-700">
+        <span className="tabular-nums text-slate-700" dir="ltr">
           {formatCurrency(row.original.unitSellPriceAtSale, currency)}
         </span>
       ),
@@ -164,7 +166,7 @@ export function BillDetails({ billId }: { billId: string }) {
       accessorKey: "lineSubtotal",
       header: t("bills.lineTotal"),
       cell: ({ row }) => (
-        <span className="font-semibold tabular-nums text-slate-800">
+        <span className="font-semibold tabular-nums text-slate-800" dir="ltr">
           {formatCurrency(row.original.lineSubtotal, currency)}
         </span>
       ),
@@ -173,7 +175,7 @@ export function BillDetails({ billId }: { billId: string }) {
       accessorKey: "lineProfit",
       header: t("bills.lineProfit"),
       cell: ({ row }) => (
-        <span className="font-medium tabular-nums text-green-600">
+        <span className="font-medium tabular-nums text-green-600" dir="ltr">
           {formatCurrency(row.original.lineProfit, currency)}
         </span>
       ),
@@ -299,6 +301,7 @@ export function BillDetails({ billId }: { billId: string }) {
           <DetailField
             label={t("bills.netTotal")}
             value={formatCurrency(netTotal, currency)}
+            dir="ltr"
           />
         </div>
       </Card>
@@ -336,6 +339,7 @@ export function BillDetails({ billId }: { billId: string }) {
         emptyTitle={t("common.noResults")}
         enableGlobalSearch={false}
         pageSize={10}
+        labels={tableLabels}
       />
 
       <Card>

@@ -28,10 +28,12 @@ import { useAuth } from "@/components/providers/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { DataTable } from "@/components/ui/data-table";
+import { DataTable, useDataTableLabels } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
+import { BarcodeScannerModal } from "@/components/barcode/barcode-scanner-modal";
+import { normalizeBarcode } from "@/lib/utils/barcode";
 import { useLocale } from "@/components/providers/locale-context";
 import { Card } from "@/components/ui/card";
 import type {
@@ -182,6 +184,7 @@ function SuccessPanel({
 
 export function PurchaseEntryScreen() {
   const { t } = useLocale();
+  const tableLabels = useDataTableLabels();
   const { user } = useAuth();
   const products = useLiveQuery(
     () => db.products.where("status").equals("active").sortBy("name"),
@@ -200,6 +203,7 @@ export function PurchaseEntryScreen() {
   const [newLineCost, setNewLineCost] = useState("");
   const [newLineQty, setNewLineQty] = useState("1");
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [scannerOpen, setScannerOpen] = useState(false);
   const [isPaidAmountManuallyEdited, setIsPaidAmountManuallyEdited] =
     useState(false);
   const [lastFinalized, setLastFinalized] = useState<{
@@ -444,6 +448,39 @@ export function PurchaseEntryScreen() {
     if (lastFinalized) setLastFinalized(null);
   }
 
+  function handleScanForPurchase(barcode: string) {
+    const bc = normalizeBarcode(barcode);
+    const product = products?.find((p) => normalizeBarcode(p.barcode) === bc);
+    if (!product) {
+      push(t("billing.productNotFound", { barcode: bc }), "error");
+      return;
+    }
+    setDraftItems((cur) => {
+      const existing = cur.find((i) => i.productId === product.id);
+      if (existing) {
+        return cur.map((i) =>
+          i.productId === product.id
+            ? { ...i, quantity: i.quantity + 1 }
+            : i,
+        );
+      }
+      return [
+        ...cur,
+        {
+          productId: product.id,
+          barcode: product.barcode,
+          name: product.name,
+          category: product.category,
+          currentStock: product.quantityInStock,
+          quantity: 1,
+          unitCost: product.buyPrice,
+          unitSellPriceBefore: product.sellPrice,
+        },
+      ];
+    });
+    if (lastFinalized) setLastFinalized(null);
+  }
+
   function updateLine(
     productIdToUpdate: string,
     patch: Partial<PurchaseDraftItem>,
@@ -637,7 +674,7 @@ export function PurchaseEntryScreen() {
           </div>
 
           {/* Product + qty + cost entry */}
-          <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto_auto] gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto_auto_auto] gap-2">
             <SearchableSelect
               value={productId}
               onValueChange={(value) => setProductId(value ?? "")}
@@ -678,6 +715,13 @@ export function PurchaseEntryScreen() {
             >
               {t("purchases.addItem")}
             </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setScannerOpen(true)}
+            >
+              {t("billing.scan")}
+            </Button>
           </div>
 
           {/* Items list */}
@@ -687,13 +731,57 @@ export function PurchaseEntryScreen() {
               description={t("purchases.subtitle")}
             />
           ) : (
-            <DataTable
-              columns={draftItemColumns}
-              data={draftItems}
-              enableGlobalSearch={false}
-              emptyTitle={t("purchases.addOneProduct")}
-              pageSize={10}
-            />
+            <>
+              {/* Mobile touch-card layout */}
+              <div className="flex flex-col gap-2 md:hidden">
+                {draftItems.map((item) => (
+                  <div
+                    key={item.productId}
+                    className="flex items-center gap-3 rounded-xl border border-slate-200 px-3 py-2.5"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-slate-800 truncate">
+                        {item.name}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        <span dir="ltr">
+                          {formatCurrency(item.unitCost, currency)}
+                        </span>
+                        {" × "}
+                        {item.quantity}
+                      </p>
+                    </div>
+                    <span
+                      className="text-sm font-bold tabular-nums text-slate-900"
+                      dir="ltr"
+                    >
+                      {formatCurrency(
+                        calculateLineSubtotal(item.quantity, item.unitCost),
+                        currency,
+                      )}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => removeLine(item.productId)}
+                      className="text-slate-400 hover:text-red-500 transition-colors p-1 text-lg leading-none"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+              {/* Desktop table */}
+              <div className="hidden md:block">
+                <DataTable
+                  columns={draftItemColumns}
+                  data={draftItems}
+                  enableGlobalSearch={false}
+                  emptyTitle={t("purchases.addOneProduct")}
+                  pageSize={10}
+                  labels={tableLabels}
+                />
+              </div>
+            </>
           )}
         </Card>
 
@@ -1005,6 +1093,13 @@ export function PurchaseEntryScreen() {
           )}
         </div>
       </div>
+
+      <BarcodeScannerModal
+        open={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        onDetected={handleScanForPurchase}
+        continuous
+      />
 
       <Modal
         open={confirmOpen}

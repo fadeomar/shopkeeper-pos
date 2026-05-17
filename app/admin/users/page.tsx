@@ -155,7 +155,7 @@ export default function AdminUsersPage() {
 
   const userColumns: ColumnDef<AppUser>[] = [
     {
-      header: "Name",
+      header: t("products.name"),
       accessorKey: "name",
       cell: ({ row }) => {
         const u = row.original;
@@ -168,7 +168,7 @@ export default function AdminUsersPage() {
               {u.name}
             </Link>
             {u.uid === currentUser?.uid && (
-              <span className="ms-2 text-xs text-slate-400">(you)</span>
+              <span className="ms-2 text-xs text-slate-400">({t("common.self")})</span>
             )}
             <div className="truncate text-xs text-slate-400">{u.email}</div>
             {u.phone && (
@@ -181,54 +181,54 @@ export default function AdminUsersPage() {
       },
     },
     {
-      header: "Health",
+      header: t("admin.backupHealth"),
       id: "health",
       cell: ({ row }) => {
         const summary = summaries[row.original.uid];
-        return summary ? <HealthBadge health={summary.syncHealth} /> : <span className="text-xs text-slate-300">Loading…</span>;
+        return summary ? <HealthBadge health={summary.syncHealth} /> : <span className="text-xs text-slate-300">{t("common.loading")}</span>;
       },
     },
     {
-      header: "Backup",
+      header: t("settings.cloudBackup"),
       id: "backup",
       cell: ({ row }) => {
         const summary = summaries[row.original.uid];
-        return summary?.lastSyncAt ? relativeTime(summary.lastSyncAt) : <span className="text-slate-300">No backup</span>;
+        return summary?.lastSyncAt ? relativeTime(summary.lastSyncAt) : <span className="text-slate-300">{t("admin.noBackup")}</span>;
       },
     },
     {
-      header: "Data",
+      header: t("admin.cloudStats"),
       id: "data",
       cell: ({ row }) => {
         const summary = summaries[row.original.uid];
         if (!summary) return "—";
         return (
           <div className="whitespace-nowrap text-xs text-slate-500">
-            {summary.billCount} bills / {summary.productCount} products
-            {summary.creditDebt > 0 && <div className="text-amber-600">Debt {summary.creditDebt.toFixed(2)}</div>}
+            {summary.billCount} {t("bills.title")} / {summary.productCount} {t("products.title")}
+            {summary.creditDebt > 0 && <div className="text-amber-600">{t("admin.customerDebt")} {summary.creditDebt.toFixed(2)}</div>}
           </div>
         );
       },
     },
     {
-      header: "Status",
+      header: t("bills.status"),
       accessorKey: "isActive",
       cell: ({ row }) => (
         <div className="flex flex-wrap gap-1">
           <Badge tone={row.original.isActive ? "success" : "danger"}>
-            {row.original.isActive ? "Active" : "Inactive"}
+            {row.original.isActive ? t("common.active") : t("common.inactive")}
           </Badge>
           <Badge>{row.original.role}</Badge>
         </div>
       ),
     },
     {
-      header: "Actions",
+      header: t("bills.actions"),
       id: "actions",
       enableSorting: false,
       cell: ({ row }) => {
         const u = row.original;
-        if (u.uid === currentUser?.uid) return <span className="text-xs text-slate-400">Current user</span>;
+        if (u.uid === currentUser?.uid) return <span className="text-xs text-slate-400">{t("common.self")}</span>;
         return (
           <Button
             type="button"
@@ -236,7 +236,7 @@ export default function AdminUsersPage() {
             variant={u.isActive ? "danger" : "success"}
             onClick={() => void toggleActive(u.uid, u.isActive)}
           >
-            {u.isActive ? "Deactivate" : "Reactivate"}
+            {u.isActive ? t("admin.deactivate") : t("admin.reactivate")}
           </Button>
         );
       },
@@ -246,8 +246,8 @@ export default function AdminUsersPage() {
   return (
     <PageShell size="wide">
       <PageHeader
-        title="Admin Support Dashboard"
-        description="Approve users, check backup health, and support seller data."
+        title={t("admin.usersTitle")}
+        description={t("admin.usersSubtitle")}
         actions={
           <>
             <Button
@@ -256,34 +256,34 @@ export default function AdminUsersPage() {
               onClick={() => void loadSupportHealth()}
               disabled={loadingHealth || users.length === 0}
             >
-              {loadingHealth ? "Refreshing…" : "Refresh health"}
+              {loadingHealth ? t("common.loading") : t("admin.refreshHealth")}
             </Button>
             <Button type="button" onClick={() => setShowCreate(true)}>
-              Add User
+              {t("admin.newUser")}
             </Button>
           </>
         }
       />
 
       <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
-        <SupportCard label="Users" value={dashboard.totalUsers} />
+        <SupportCard label={t("admin.totalUsers")} value={dashboard.totalUsers} />
         <SupportCard
-          label="Pending"
+          label={t("admin.pendingCount")}
           value={dashboard.pendingCount}
           tone={dashboard.pendingCount > 0 ? "amber" : undefined}
         />
-        <SupportCard label="Active" value={dashboard.activeCount} />
+        <SupportCard label={t("admin.activeCount")} value={dashboard.activeCount} />
         <SupportCard
-          label="Needs help"
+          label={t("admin.needsHelp")}
           value={dashboard.needsAttention}
           tone={dashboard.needsAttention > 0 ? "red" : undefined}
         />
         <SupportCard
-          label="Cloud sales"
+          label={t("admin.netSales")}
           value={dashboard.totalRevenue.toFixed(2)}
         />
         <SupportCard
-          label="Customer debt"
+          label={t("admin.customerDebt")}
           value={dashboard.totalDebt.toFixed(2)}
           tone={dashboard.totalDebt > 0 ? "amber" : undefined}
         />

@@ -21,7 +21,7 @@ import { createFinalizedBill } from "@/lib/services/billing-service";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { DataTable } from "@/components/ui/data-table";
+import { DataTable, useDataTableLabels } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
@@ -85,6 +85,7 @@ function SummaryRow({
       </span>
       <span
         className={`text-sm tabular-nums ${highlight ? "font-bold text-slate-900" : "font-medium text-slate-700"}`}
+        dir="ltr"
       >
         {value}
       </span>
@@ -174,7 +175,8 @@ function SuccessPanel({
 }
 
 export function PosScreen() {
-  const { t } = useLocale();
+  const { t, dir } = useLocale();
+  const tableLabels = useDataTableLabels();
   const { user } = useAuth();
   const products = useLiveQuery(
     () => db.products.where("status").equals("active").sortBy("name"),
@@ -724,7 +726,7 @@ export function PosScreen() {
       accessorKey: "unitSellPrice",
       header: t("billing.sell"),
       cell: ({ row }) => (
-        <span className="tabular-nums text-slate-700">
+        <span className="tabular-nums text-slate-700" dir="ltr">
           {formatCurrency(row.original.unitSellPrice, currency)}
         </span>
       ),
@@ -735,7 +737,7 @@ export function PosScreen() {
       accessorFn: (row) =>
         calculateLineSubtotal(row.quantity, row.unitSellPrice),
       cell: ({ row }) => (
-        <span className="font-medium tabular-nums text-slate-800">
+        <span className="font-medium tabular-nums text-slate-800" dir="ltr">
           {formatCurrency(
             calculateLineSubtotal(
               row.original.quantity,
@@ -791,7 +793,7 @@ export function PosScreen() {
         >
           <span className="font-medium">{t("billing.noShiftOpenWarning")}</span>
           <span className="text-xs font-semibold uppercase tracking-wide">
-            {t("billing.openShift")} →
+            {t("billing.openShift")} {dir === 'rtl' ? '←' : '→'}
           </span>
         </Link>
       )}
@@ -950,7 +952,7 @@ export function PosScreen() {
                       </div>
                       <div className="rounded-xl bg-slate-50 p-2">
                         <p className="text-slate-500">{t("billing.sell")}</p>
-                        <p className="font-bold text-slate-800 tabular-nums">
+                        <p className="font-bold text-slate-800 tabular-nums" dir="ltr">
                           {formatCurrency(item.unitSellPrice, currency)}
                         </p>
                       </div>
@@ -958,7 +960,7 @@ export function PosScreen() {
                         <p className="text-slate-500">
                           {t("billing.subtotalCol")}
                         </p>
-                        <p className="font-bold text-slate-800 tabular-nums">
+                        <p className="font-bold text-slate-800 tabular-nums" dir="ltr">
                           {formatCurrency(
                             calculateLineSubtotal(
                               item.quantity,
@@ -998,6 +1000,7 @@ export function PosScreen() {
                   enableGlobalSearch={false}
                   emptyTitle={t("billing.addOneProduct")}
                   pageSize={10}
+                  labels={tableLabels}
                 />
               </div>
             </>
@@ -1358,7 +1361,7 @@ export function PosScreen() {
               <p className="text-xs font-medium text-slate-500">
                 {draftItems.length} {t("billing.items")}
               </p>
-              <p className="truncate text-lg font-black text-slate-900 tabular-nums">
+              <p className="truncate text-lg font-black text-slate-900 tabular-nums" dir="ltr">
                 {formatCurrency(billSummary.totalAmount, currency)}
               </p>
             </div>

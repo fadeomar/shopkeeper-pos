@@ -6,6 +6,7 @@ import Link from "next/link";
 import type { Route } from "next";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useAuth } from "@/components/providers/auth-context";
+import { useLocale } from "@/components/providers/locale-context";
 import { fetchUserDoc, updateUserStatus } from "@/lib/firebase/auth-service";
 import { auth } from "@/lib/firebase/config";
 import {
@@ -30,7 +31,12 @@ import {
   type UserSupportSnapshot,
 } from "@/lib/firebase/admin-service";
 import { downloadCSV } from "@/lib/utils/export-csv";
-import { DataTable } from "@/components/ui/data-table";
+import { Button } from "@/components/ui/button";
+import { DataTable, useDataTableLabels } from "@/components/ui/data-table";
+import { SectionCard } from "@/components/ui/section-card";
+import { StatCard } from "@/components/ui/stat-card";
+import { PageShell } from "@/components/ui/page-shell";
+import { PageHeader } from "@/components/ui/page-header";
 import type {
   AppUser,
   Bill,
@@ -68,6 +74,8 @@ function userDisplayStatus(u: AppUser): "active" | "inactive" | "pending" {
 export default function UserDetailPage() {
   const { uid } = useParams<{ uid: string }>();
   const { isAdmin } = useAuth();
+  const { t } = useLocale();
+  const tableLabels = useDataTableLabels();
 
   const [profile, setProfile] = useState<AppUser | null>(null);
   const [support, setSupport] = useState<UserSupportSnapshot | null>(null);
@@ -291,32 +299,32 @@ export default function UserDetailPage() {
 
   if (!isAdmin) {
     return (
-      <div className="max-w-md mx-auto mt-12 p-6 bg-white border border-red-100 rounded-2xl text-center">
-        <p className="font-semibold text-red-600">Access Denied</p>
-      </div>
+      <PageShell>
+        <div className="max-w-md mx-auto mt-12 p-6 bg-white border border-red-100 rounded-2xl text-center">
+          <p className="font-semibold text-red-600">{t("admin.accessDenied")}</p>
+        </div>
+      </PageShell>
     );
   }
 
   if (loading) {
     return (
-      <div className="max-w-5xl mx-auto space-y-4">
-        <BackLink />
+      <PageShell>
         <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center text-sm text-slate-400">
-          Loading user support data…
+          {t("common.loading")}
         </div>
-      </div>
+      </PageShell>
     );
   }
 
   if (!profile) {
     return (
-      <div className="max-w-5xl mx-auto space-y-4">
-        <BackLink />
+      <PageShell>
         <div className="bg-white border border-red-100 rounded-2xl p-6 text-center">
-          <p className="text-red-600 font-medium">User not found</p>
+          <p className="text-red-600 font-medium">{t("admin.userNotFound")}</p>
           {error && <p className="text-sm text-slate-500 mt-1">{error}</p>}
         </div>
-      </div>
+      </PageShell>
     );
   }
 
@@ -408,17 +416,17 @@ export default function UserDetailPage() {
   const productColumns: ColumnDef<Product, unknown>[] = [
       {
         accessorKey: "name",
-        header: "Name",
+        header: t("products.name"),
         cell: ({ row }) => (
           <span className="font-medium text-slate-800">
             {row.original.name}
           </span>
         ),
       },
-      { accessorKey: "category", header: "Category" },
+      { accessorKey: "category", header: t("products.category") },
       {
         accessorKey: "barcode",
-        header: "Barcode",
+        header: t("products.barcode"),
         cell: ({ row }) => (
           <span className="font-mono text-xs text-slate-400">
             {row.original.barcode}
@@ -427,7 +435,7 @@ export default function UserDetailPage() {
       },
       {
         accessorKey: "quantityInStock",
-        header: "Stock",
+        header: t("products.qty"),
         cell: ({ row }) => (
           <span
             className={`block text-right tabular-nums ${row.original.quantityInStock <= 0 ? "font-semibold text-red-600" : "text-slate-700"}`}
@@ -438,7 +446,7 @@ export default function UserDetailPage() {
       },
       {
         accessorKey: "sellPrice",
-        header: "Sell Price",
+        header: t("products.sell"),
         cell: ({ row }) => (
           <span className="block text-right font-medium tabular-nums text-slate-800">
             {row.original.sellPrice.toFixed(2)}
@@ -447,7 +455,7 @@ export default function UserDetailPage() {
       },
       {
         accessorKey: "status",
-        header: "Status",
+        header: t("products.status"),
         cell: ({ row }) => (
           <span className="block text-right">
             <span
@@ -500,10 +508,29 @@ export default function UserDetailPage() {
   const displayStatus = userDisplayStatus(profile);
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
-      <div className="flex items-start gap-3">
-        <BackLink />
-      </div>
+    <PageShell size="wide">
+      <PageHeader
+        title={profile.name}
+        description={t("admin.userDetailsDesc")}
+        actions={
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void loadAll(profile.uid)}
+              disabled={loading}
+            >
+              {loading ? t("common.loading") : t("admin.refreshHealth")}
+            </Button>
+            <Link
+              href={"/admin/users" as Route}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-xs hover:bg-slate-50"
+            >
+              {t("common.back")}
+            </Link>
+          </div>
+        }
+      />
 
       {error && (
         <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl px-4 py-3">
@@ -640,50 +667,46 @@ export default function UserDetailPage() {
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <StatCard
-              label="Backup Health"
+              label={t("admin.backupHealth")}
               value={healthLabel(support.syncHealth)}
-              tone={support.syncHealth === "healthy" ? "green" : "red"}
+              tone={support.syncHealth === "healthy" ? "positive" : "danger"}
             />
             <StatCard
-              label="Last Cloud Sync"
+              label={t("admin.lastCloudSync")}
               value={
                 support.lastSyncAt
                   ? relativeTime(support.lastSyncAt)
-                  : "No backup"
+                  : t("admin.noBackup")
               }
-              tone={support.lastSyncAt ? undefined : "red"}
+              tone={support.lastSyncAt ? undefined : "danger"}
             />
-            <StatCard label="Cloud Bills" value={support.billCount} />
-            <StatCard label="Cloud Products" value={support.productCount} />
+            <StatCard label={t("admin.cloudBills")} value={support.billCount} />
+            <StatCard label={t("admin.cloudProducts")} value={support.productCount} />
             <StatCard
-              label="Net Sales"
+              label={t("admin.netSales")}
               value={support.totalRevenue.toFixed(2)}
             />
             <StatCard
-              label="Customer Debt"
+              label={t("admin.customerDebt")}
               value={support.creditDebt.toFixed(2)}
-              tone={support.creditDebt > 0 ? "amber" : undefined}
+              tone={support.creditDebt > 0 ? "warning" : undefined}
             />
             <StatCard
-              label="Low Stock"
+              label={t("admin.lowStock")}
               value={support.lowStockCount}
-              tone={support.lowStockCount > 0 ? "amber" : undefined}
+              tone={support.lowStockCount > 0 ? "warning" : undefined}
             />
             <StatCard
-              label="Out of Stock"
+              label={t("admin.outOfStock")}
               value={support.outOfStockCount}
-              tone={support.outOfStockCount > 0 ? "red" : undefined}
+              tone={support.outOfStockCount > 0 ? "danger" : undefined}
             />
           </div>
-
-          <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="bg-white border border-slate-200 rounded-2xl p-5">
-              <h2 className="text-sm font-semibold text-slate-700 mb-3">
-                Support Checklist
-              </h2>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <SectionCard title={t("admin.supportChecklist")}>
               {support.warnings.length === 0 ? (
                 <p className="text-sm text-green-700 bg-green-50 border border-green-100 rounded-xl px-3 py-2">
-                  No support warnings found. Backup looks healthy.
+                  {t("admin.noWarnings")}
                 </p>
               ) : (
                 <ul className="space-y-2">
@@ -697,54 +720,51 @@ export default function UserDetailPage() {
                   ))}
                 </ul>
               )}
-            </div>
+            </SectionCard>
 
-            <div className="bg-white border border-slate-200 rounded-2xl p-5">
-              <h2 className="text-sm font-semibold text-slate-700 mb-3">
-                Backup Counts
-              </h2>
-              <div className="grid grid-cols-2 gap-3 text-sm">
+            <SectionCard title={t("admin.backupCounts")}>
+            <div className="grid grid-cols-2 gap-3 text-sm">
                 <ReadRow
-                  label="Bill items"
+                  label={t("admin.billItems")}
                   value={String(
                     support.syncMeta?.recordCounts?.billItems ?? "—",
                   )}
                 />
                 <ReadRow
-                  label="Stock movements"
+                  label={t("admin.movements")}
                   value={String(support.stockMovementCount)}
                 />
                 <ReadRow
-                  label="Customer payments"
+                  label={t("admin.payments")}
                   value={String(support.customerPaymentCount)}
                 />
                 <ReadRow
-                  label="Settings updated"
+                  label={t("admin.settingsUpdated")}
                   value={
                     support.settingsUpdatedAt
                       ? relativeTime(support.settingsUpdatedAt)
-                      : "No settings"
+                      : "—"
                   }
                 />
                 <ReadRow
-                  label="Active products"
+                  label={t("admin.activeProducts")}
                   value={String(support.activeProductCount)}
                 />
                 <ReadRow
-                  label="Inactive products"
+                  label={t("admin.inactiveProducts")}
                   value={String(support.inactiveProductCount)}
                 />
                 <ReadRow
-                  label="Voided bills"
+                  label={t("admin.voidedBills")}
                   value={String(support.voidedBillCount)}
                 />
                 <ReadRow
-                  label="Returned bills"
+                  label={t("admin.returnedBills")}
                   value={String(support.returnedBillCount)}
                 />
               </div>
-            </div>
-          </section>
+            </SectionCard>
+          </div>
 
           <section className="bg-white border border-slate-200 rounded-2xl p-5">
             <h2 className="text-sm font-semibold text-slate-700 mb-3">
@@ -790,6 +810,7 @@ export default function UserDetailPage() {
         }
         emptyTitle="No bills synced yet"
         pageSize={10}
+        labels={tableLabels}
       />
 
       <SettingsCard uid={uid} settings={settings} onSaved={setSettings} />
@@ -800,6 +821,7 @@ export default function UserDetailPage() {
         title="Recent Customer Payments"
         emptyTitle="No customer payments synced yet"
         pageSize={10}
+        labels={tableLabels}
       />
 
       <DataTable
@@ -823,6 +845,7 @@ export default function UserDetailPage() {
         }
         emptyTitle="No products synced yet"
         pageSize={10}
+        labels={tableLabels}
       />
 
       <DataTable
@@ -831,8 +854,9 @@ export default function UserDetailPage() {
         title="Recent Stock Movements"
         emptyTitle="No stock movements synced yet"
         pageSize={10}
+        labels={tableLabels}
       />
-    </div>
+    </PageShell>
   );
 }
 
@@ -876,30 +900,6 @@ function healthLabel(health: SupportHealth) {
   return "No backup";
 }
 
-function StatCard({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string | number;
-  tone?: "green" | "amber" | "red";
-}) {
-  const toneClass =
-    tone === "green"
-      ? "text-green-700"
-      : tone === "amber"
-        ? "text-amber-600"
-        : tone === "red"
-          ? "text-red-600"
-          : "text-slate-800";
-  return (
-    <div className="bg-white border border-slate-200 rounded-2xl px-5 py-4">
-      <p className="text-xs text-slate-500 mb-1">{label}</p>
-      <p className={`text-lg font-bold tabular-nums ${toneClass}`}>{value}</p>
-    </div>
-  );
-}
 
 function BillStatusBadge({ status }: { status: Bill["status"] }) {
   const cls =

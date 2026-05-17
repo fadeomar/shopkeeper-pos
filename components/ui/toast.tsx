@@ -40,7 +40,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     <ToastContext.Provider value={value}>
       {children}
       {/* Use end-5 (logical) so toasts sit in the trailing corner in both LTR & RTL */}
-      <div className="fixed bottom-5 end-5 z-[100] flex flex-col gap-2 pointer-events-none">
+      <div className="fixed bottom-20 end-4 z-[100] flex flex-col gap-2 pointer-events-none lg:bottom-5 lg:end-5">
         {toasts.map((toast) => (
           <div
             key={toast.id}

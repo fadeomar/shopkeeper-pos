@@ -109,7 +109,7 @@ function createEmptyRow(key: string, name = 'Unknown customer', phone?: string):
 
 export async function getCustomerLedger(): Promise<CustomerLedgerRow[]> {
   const [bills, payments, customers] = await Promise.all([
-    db.bills.where('paymentMethod').equals('credit').toArray(),
+    db.bills.toArray().then(all => all.filter(b => (b.creditAmount ?? 0) > 0)),
     db.customerPayments.toArray(),
     db.customers.toArray(),
   ]);
@@ -170,7 +170,7 @@ export async function getCustomerLedger(): Promise<CustomerLedgerRow[]> {
 export async function getCustomerLedgerDetails(customerKey: string): Promise<CustomerLedgerDetails | null> {
   const [ledger, bills, payments, customers] = await Promise.all([
     getCustomerLedger(),
-    db.bills.where('paymentMethod').equals('credit').toArray(),
+    db.bills.toArray().then(all => all.filter(b => (b.creditAmount ?? 0) > 0)),
     db.customerPayments.toArray(),
     db.customers.toArray(),
   ]);

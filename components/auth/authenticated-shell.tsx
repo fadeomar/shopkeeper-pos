@@ -6,6 +6,7 @@ import type { Route } from "next";
 import { useRouter, usePathname } from "next/navigation";
 import clsx from "clsx";
 import { useAuth } from "@/components/providers/auth-context";
+import { useLocale } from "@/components/providers/locale-context";
 import { signIn, registerUser } from "@/lib/firebase/auth-service";
 import { syncAllToCloud, type SyncMeta } from "@/lib/firebase/sync-service";
 import { getPendingSyncCount } from "@/lib/services/sync-queue-service";
@@ -57,6 +58,7 @@ export function AuthenticatedShell({
 
 function AdminShell({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
+  const { t } = useLocale();
   const pathname = usePathname();
   const router = useRouter();
 
@@ -95,7 +97,7 @@ function AdminShell({ children }: { children: React.ReactNode }) {
                 : "text-slate-300 hover:bg-white/10 hover:text-white",
             )}
           >
-            Users
+            {t("admin.users")}
           </Link>
         </nav>
 
@@ -312,7 +314,7 @@ function CashierShell({ children }: { children: React.ReactNode }) {
             Shopkeeper POS
           </span>
           <div className="ms-auto flex items-center gap-2">
-            <div className="hidden sm:block max-w-[220px]">
+            <div className="block max-w-[220px]">
               <SyncStatusBadge compact />
             </div>
             <SafeSignOutButton className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700 hover:text-white transition-colors" />
@@ -367,6 +369,7 @@ function RestoreModal({
   onRestore: () => void;
   onSkip: () => void;
 }) {
+  const { t } = useLocale();
   const { bills, products, stockMovements } = meta.recordCounts;
   const date = new Date(meta.lastSyncedAt).toLocaleDateString(undefined, {
     year: "numeric",
@@ -457,7 +460,7 @@ function RestoreModal({
             disabled={restoring}
             className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm font-medium rounded-xl transition-colors"
           >
-            {restoring ? "Syncing…" : "Sync cloud data"}
+            {restoring ? t("auth.syncing") : t("auth.syncCloudData")}
           </button>
           <button
             onClick={onSkip}
@@ -496,6 +499,7 @@ function LoadingScreen() {
 
 function PendingScreen({ onLogout }: { onLogout: () => void }) {
   const { refreshStatus } = useAuth();
+  const { t } = useLocale();
   const [checking, setChecking] = useState(false);
   const [checked, setChecked] = useState(false);
 
@@ -526,7 +530,7 @@ function PendingScreen({ onLogout }: { onLogout: () => void }) {
             />
           </svg>
         </div>
-        <h2 className="font-semibold text-slate-800 mb-2">Awaiting Approval</h2>
+        <h2 className="font-semibold text-slate-800 mb-2">{t("auth.pendingTitle")}</h2>
         <p className="text-sm text-slate-500 mb-2">
           Your account request was received. An admin must approve it before you
           can access the app.
@@ -545,13 +549,13 @@ function PendingScreen({ onLogout }: { onLogout: () => void }) {
             disabled={checking}
             className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm font-medium rounded-xl transition-colors"
           >
-            {checking ? "Checking…" : "Check approval status"}
+            {checking ? t("auth.checking") : t("auth.checkApproval")}
           </button>
           <button
             onClick={onLogout}
             className="w-full py-2 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium rounded-xl transition-colors"
           >
-            Sign out
+            {t("auth.signOut")}
           </button>
         </div>
       </div>
@@ -561,6 +565,7 @@ function PendingScreen({ onLogout }: { onLogout: () => void }) {
 
 function InactiveScreen({ onLogout }: { onLogout: () => void }) {
   const { refreshStatus } = useAuth();
+  const { t } = useLocale();
   const [checking, setChecking] = useState(false);
 
   async function handleCheck() {
@@ -587,7 +592,7 @@ function InactiveScreen({ onLogout }: { onLogout: () => void }) {
             />
           </svg>
         </div>
-        <h2 className="font-semibold text-slate-800 mb-2">Account Disabled</h2>
+        <h2 className="font-semibold text-slate-800 mb-2">{t("auth.inactiveTitle")}</h2>
         <p className="text-sm text-slate-500 mb-6">
           Your account has been deactivated. Contact your admin to restore
           access.
@@ -598,13 +603,13 @@ function InactiveScreen({ onLogout }: { onLogout: () => void }) {
             disabled={checking}
             className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm font-medium rounded-xl transition-colors"
           >
-            {checking ? "Checking…" : "Check account status"}
+            {checking ? t("auth.checking") : t("auth.checkStatus")}
           </button>
           <button
             onClick={onLogout}
             className="w-full py-2 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium rounded-xl transition-colors"
           >
-            Sign out
+            {t("auth.signOut")}
           </button>
         </div>
       </div>
@@ -622,6 +627,7 @@ function AuthScreen() {
 
 function LoginForm({ onShowSignUp }: { onShowSignUp: () => void }) {
   const { authError } = useAuth();
+  const { t } = useLocale();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -640,13 +646,13 @@ function LoginForm({ onShowSignUp }: { onShowSignUp: () => void }) {
         code === "auth/user-not-found" ||
         code === "auth/wrong-password"
       ) {
-        setError("Invalid email or password.");
+        setError(t("auth.invalidCredentials"));
       } else if (code === "auth/too-many-requests") {
-        setError("Too many attempts. Try again later.");
+        setError(t("auth.tooManyAttempts"));
       } else if (code === "auth/network-request-failed") {
-        setError("No internet. You must be online for first login.");
+        setError(t("auth.noInternetLogin"));
       } else {
-        setError("Login failed. Please try again.");
+        setError(t("auth.loginFailed"));
       }
     } finally {
       setLoading(false);
@@ -659,7 +665,7 @@ function LoginForm({ onShowSignUp }: { onShowSignUp: () => void }) {
         <AppLogo />
         <Card padding="lg">
           <form onSubmit={handleSubmit} className="space-y-4">
-            <FormField label="Email">
+            <FormField label={t("auth.email")}>
               <Input
                 type="email"
                 required
@@ -669,7 +675,7 @@ function LoginForm({ onShowSignUp }: { onShowSignUp: () => void }) {
                 placeholder="you@example.com"
               />
             </FormField>
-            <FormField label="Password">
+            <FormField label={t("auth.password")}>
               <Input
                 type="password"
                 required
@@ -681,17 +687,17 @@ function LoginForm({ onShowSignUp }: { onShowSignUp: () => void }) {
             </FormField>
             {(error || authError) && <ErrorBox message={error || authError} />}
             <Button type="submit" loading={loading} fullWidth>
-              {loading ? "Signing in…" : "Sign in"}
+              {loading ? t("auth.signingIn") : t("auth.signIn")}
             </Button>
           </form>
         </Card>
         <p className="text-center text-sm text-slate-500 mt-5">
-          No account?{" "}
+          {t("auth.dontHaveAccount")}{" "}
           <button
             onClick={onShowSignUp}
             className="text-blue-600 hover:underline font-medium"
           >
-            Request access
+            {t("auth.requestAccess")}
           </button>
         </p>
       </div>
@@ -700,6 +706,7 @@ function LoginForm({ onShowSignUp }: { onShowSignUp: () => void }) {
 }
 
 function SignUpForm({ onBack }: { onBack: () => void }) {
+  const { t } = useLocale();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -712,7 +719,7 @@ function SignUpForm({ onBack }: { onBack: () => void }) {
     e.preventDefault();
     setError("");
     if (password !== confirm) {
-      setError("Passwords do not match.");
+      setError(t("auth.passwordMismatch"));
       return;
     }
     setLoading(true);
@@ -721,13 +728,13 @@ function SignUpForm({ onBack }: { onBack: () => void }) {
     } catch (err: unknown) {
       const code = (err as { code?: string }).code ?? "";
       if (code === "auth/email-already-in-use") {
-        setError("An account with this email already exists.");
+        setError(t("auth.emailInUse"));
       } else if (code === "auth/weak-password") {
-        setError("Password must be at least 6 characters.");
+        setError(t("auth.weakPassword"));
       } else if (code === "auth/network-request-failed") {
-        setError("No internet. You need to be online to register.");
+        setError(t("auth.noInternetRegister"));
       } else {
-        setError("Registration failed. Please try again.");
+        setError(t("auth.registrationFailed"));
       }
     } finally {
       setLoading(false);
@@ -737,10 +744,10 @@ function SignUpForm({ onBack }: { onBack: () => void }) {
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
       <div className="max-w-sm w-full">
-        <AppLogo subtitle="Request access" />
+        <AppLogo subtitle={t("auth.requestAccess")} />
         <Card padding="lg">
           <form onSubmit={handleSubmit} className="space-y-4">
-            <FormField label="Full name">
+            <FormField label={t("auth.fullName")}>
               <Input
                 required
                 value={name}
@@ -748,7 +755,7 @@ function SignUpForm({ onBack }: { onBack: () => void }) {
                 placeholder="Jane Smith"
               />
             </FormField>
-            <FormField label="Email">
+            <FormField label={t("auth.email")}>
               <Input
                 type="email"
                 required
@@ -761,8 +768,8 @@ function SignUpForm({ onBack }: { onBack: () => void }) {
             <FormField
               label={
                 <span>
-                  Phone{" "}
-                  <span className="font-normal text-slate-400">(optional)</span>
+                  {t("auth.phone")}{" "}
+                  <span className="font-normal text-slate-400">{t("auth.phoneOptional")}</span>
                 </span>
               }
             >
@@ -774,17 +781,17 @@ function SignUpForm({ onBack }: { onBack: () => void }) {
                 placeholder="+1 555 0123"
               />
             </FormField>
-            <FormField label="Password">
+            <FormField label={t("auth.password")}>
               <Input
                 type="password"
                 required
                 minLength={6}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Min 6 characters"
+                placeholder={t("auth.passwordMinLength")}
               />
             </FormField>
-            <FormField label="Confirm password">
+            <FormField label={t("auth.confirmPassword")}>
               <Input
                 type="password"
                 required
@@ -795,17 +802,17 @@ function SignUpForm({ onBack }: { onBack: () => void }) {
             </FormField>
             {error && <ErrorBox message={error} />}
             <Button type="submit" loading={loading} fullWidth>
-              {loading ? "Sending request…" : "Request access"}
+              {loading ? t("auth.sendingRequest") : t("auth.requestAccess")}
             </Button>
           </form>
         </Card>
         <p className="text-center text-sm text-slate-500 mt-5">
-          Already have an account?{" "}
+          {t("auth.alreadyHaveAccount")}{" "}
           <button
             onClick={onBack}
             className="text-blue-600 hover:underline font-medium"
           >
-            Sign in
+            {t("auth.signIn")}
           </button>
         </p>
       </div>
@@ -813,7 +820,8 @@ function SignUpForm({ onBack }: { onBack: () => void }) {
   );
 }
 
-function AppLogo({ subtitle = "Sign in to continue" }: { subtitle?: string }) {
+function AppLogo({ subtitle }: { subtitle?: string }) {
+  const { t } = useLocale();
   return (
     <div className="text-center mb-8">
       <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
@@ -832,7 +840,7 @@ function AppLogo({ subtitle = "Sign in to continue" }: { subtitle?: string }) {
         </svg>
       </div>
       <h1 className="text-xl font-bold text-slate-800">Shopkeeper POS</h1>
-      <p className="text-sm text-slate-500 mt-1">{subtitle}</p>
+      <p className="text-sm text-slate-500 mt-1">{subtitle ?? t("auth.signInToContinue")}</p>
     </div>
   );
 }
@@ -852,6 +860,7 @@ function ErrorBox({ message }: { message: string }) {
 
 function SafeSignOutButton({ className }: { className?: string }) {
   const { user, logout } = useAuth();
+  const { t } = useLocale();
   const [open, setOpen] = useState(false);
   const [summary, setSummary] = useState<Awaited<
     ReturnType<typeof getLocalDataSummary>
@@ -899,23 +908,23 @@ function SafeSignOutButton({ className }: { className?: string }) {
         onClick={openModal}
         className={className ?? "text-sm text-slate-500 hover:text-slate-700"}
       >
-        Sign out
+        {t("auth.signOut")}
       </button>
       <Modal
         open={open}
         title={
           isOffline
-            ? "You are offline"
+            ? t("auth.offlineTitle")
             : hasUnsynced
-              ? "Unsynced changes"
-              : "Sign out?"
+              ? t("auth.unsyncedTitle")
+              : t("auth.signOutTitle")
         }
         description={
           isOffline
-            ? "Changes saved on this device will stay linked to this account and sync when this same account is opened online again."
+            ? t("auth.offlineDesc")
             : hasUnsynced
-              ? "Some changes have not finished syncing yet. Sync before signing out to make them available on other devices."
-              : "Your local data will stay safely stored for this account on this browser."
+              ? t("auth.unsyncedDesc")
+              : t("auth.signOutDesc")
         }
         onClose={() => setOpen(false)}
         footer={
@@ -926,7 +935,7 @@ function SafeSignOutButton({ className }: { className?: string }) {
               onClick={() => setOpen(false)}
               disabled={signingOut || syncing}
             >
-              Cancel
+              {t("common.cancel")}
             </Button>
             {!isOffline && hasUnsynced && (
               <Button
@@ -934,7 +943,7 @@ function SafeSignOutButton({ className }: { className?: string }) {
                 onClick={syncThenSignOut}
                 disabled={signingOut || syncing}
               >
-                {syncing ? "Syncing…" : "Sync now, then sign out"}
+                {syncing ? t("auth.syncing") : t("auth.syncThenSignOut")}
               </Button>
             )}
             <Button
@@ -944,10 +953,10 @@ function SafeSignOutButton({ className }: { className?: string }) {
               disabled={signingOut || syncing}
             >
               {signingOut
-                ? "Signing out…"
+                ? t("auth.signingOut")
                 : hasUnsynced || isOffline
-                  ? "Sign out anyway"
-                  : "Sign out"}
+                  ? t("auth.signOutAnyway")
+                  : t("auth.signOut")}
             </Button>
           </>
         }
@@ -963,37 +972,37 @@ function SafeSignOutButton({ className }: { className?: string }) {
                 <span className="font-semibold text-slate-800">
                   {summary.products}
                 </span>{" "}
-                products
+                {t("auth.signOutStatProducts")}
               </div>
               <div>
                 <span className="font-semibold text-slate-800">
                   {summary.bills}
                 </span>{" "}
-                bills
+                {t("auth.signOutStatBills")}
               </div>
               <div>
                 <span className="font-semibold text-slate-800">
                   {summary.stockMovements}
                 </span>{" "}
-                stock movements
+                {t("auth.signOutStatMovements")}
               </div>
               <div>
                 <span className="font-semibold text-slate-800">
                   {pendingCount}
                 </span>{" "}
-                pending sync jobs
+                {t("auth.signOutStatPending")}
               </div>
               <div>
                 <span className="font-semibold text-slate-800">
                   {summary.conflicts}
                 </span>{" "}
-                conflicts
+                {t("auth.signOutStatConflicts")}
               </div>
               <div>
                 <span className="font-semibold text-slate-800">
                   {summary.customerPayments}
                 </span>{" "}
-                payments
+                {t("auth.signOutStatPayments")}
               </div>
             </div>
             {summary.conflicts > 0 && (

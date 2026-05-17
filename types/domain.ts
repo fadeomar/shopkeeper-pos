@@ -147,6 +147,9 @@ export interface BillItem {
   lineProfit: number;
   quantityReturned?: number;
   createdAt: string;
+  syncStatus?: SyncStatus;
+  syncedAt?: string;
+  lastSyncError?: string;
 }
 
 export type ShiftStatus = 'open' | 'closed';
@@ -265,6 +268,9 @@ export interface PurchaseItem {
   lineSubtotal: number;
   quantityReturned?: number;
   createdAt: string;
+  syncStatus?: SyncStatus;
+  syncedAt?: string;
+  lastSyncError?: string;
 }
 
 /**

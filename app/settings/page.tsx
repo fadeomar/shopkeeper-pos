@@ -20,6 +20,8 @@ import type { Locale } from '@/lib/i18n';
 import { db } from '@/lib/db/schema';
 import { createLocalBackupSnapshot, downloadJsonFile } from '@/lib/utils/backup';
 import clsx from 'clsx';
+import { PageShell } from '@/components/ui/page-shell';
+import { PageHeader } from '@/components/ui/page-header';
 
 interface SettingsFormValues {
   storeName: string;
@@ -79,11 +81,11 @@ export default function SettingsPage() {
   ];
 
   return (
-    <div className="flex flex-col gap-5">
-      <section>
-        <h2 className="text-xl font-bold text-slate-900">{t('settings.title')}</h2>
-        <p className="mt-1 text-sm text-slate-500">{t('settings.subtitle')}</p>
-      </section>
+    <PageShell>
+      <PageHeader
+        title={t('settings.title')}
+        description={t('settings.subtitle')}
+      />
 
       {/* Language switcher */}
       <Card>
@@ -164,7 +166,7 @@ export default function SettingsPage() {
           </span>
         </div>
       </Card>
-    </div>
+    </PageShell>
   );
 }
 

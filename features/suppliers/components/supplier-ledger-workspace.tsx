@@ -10,8 +10,10 @@ import {
   type SupplierLedgerRow,
 } from '@/lib/services/supplier-ledger-service';
 import { useLocale } from '@/components/providers/locale-context';
+import { PageShell } from '@/components/ui/page-shell';
+import { PageHeader } from '@/components/ui/page-header';
 import { useToast } from '@/components/ui/toast';
-import { Card } from '@/components/ui/card';
+import { StatCard } from '@/components/ui/stat-card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { DataTable } from '@/components/ui/data-table';
@@ -21,15 +23,6 @@ import { formatCurrency } from '@/lib/utils/money';
 import { settingsRepo } from '@/lib/db/repositories';
 import type { ColumnDef } from '@tanstack/react-table';
 
-function StatCard({ label, value, helper }: { label: string; value: string; helper?: string }) {
-  return (
-    <Card className="p-4">
-      <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{label}</p>
-      <p className="mt-2 text-2xl font-bold text-slate-900 tabular-nums">{value}</p>
-      {helper && <p className="mt-1 text-xs text-slate-500">{helper}</p>}
-    </Card>
-  );
-}
 
 export function SupplierLedgerWorkspace() {
   const { t, dir } = useLocale();
@@ -134,16 +127,16 @@ export function SupplierLedgerWorkspace() {
   ];
 
   return (
-    <div className="space-y-5" dir={dir}>
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">{t('suppliers.title')}</h1>
-          <p className="text-sm text-slate-500 mt-1 max-w-2xl">{t('suppliers.subtitle')}</p>
-        </div>
-        <Button type="button" onClick={() => setSearch('')}>
-          {t('suppliers.showAll')}
-        </Button>
-      </div>
+    <PageShell size="wide">
+      <PageHeader
+        title={t('suppliers.title')}
+        description={t('suppliers.subtitle')}
+        actions={
+          <Button type="button" onClick={() => setSearch('')}>
+            {t('suppliers.showAll')}
+          </Button>
+        }
+      />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
         <StatCard
@@ -361,6 +354,6 @@ export function SupplierLedgerWorkspace() {
           </label>
         </div>
       </Modal>
-    </div>
+    </PageShell>
   );
 }

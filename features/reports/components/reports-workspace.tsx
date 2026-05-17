@@ -7,15 +7,19 @@ import { db } from "@/lib/db/schema";
 import { settingsRepo } from "@/lib/db/repositories";
 import { formatCurrency } from "@/lib/utils/money";
 import { Card } from "@/components/ui/card";
+import { StatCard } from "@/components/ui/stat-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useLocale } from "@/components/providers/locale-context";
+import { PageShell } from "@/components/ui/page-shell";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   buildDailyTrend,
   filterBillsForReport,
   filterByDateRange,
   getLowStockSoldProducts,
+  getReportRange,
   summarizeProductSales,
   summarizeReportBills,
   summarizeReportPurchases,
@@ -24,27 +28,6 @@ import {
   type TrendRow,
 } from "@/features/reports/utils/report-summary";
 
-function StatCard({
-  label,
-  value,
-  helper,
-}: {
-  label: string;
-  value: string;
-  helper?: string;
-}) {
-  return (
-    <Card className="min-h-[112px]">
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-        {label}
-      </p>
-      <p className="mt-2 text-2xl font-black text-slate-900 tabular-nums">
-        {value}
-      </p>
-      {helper && <p className="mt-1 text-xs text-slate-500">{helper}</p>}
-    </Card>
-  );
-}
 
 function ProductRows({
   rows,
@@ -138,6 +121,7 @@ export function ReportsWorkspace() {
     [],
   );
   const settings = useLiveQuery(() => settingsRepo.get(), []);
+  const customerPayments = useLiveQuery(() => db.customerPayments.toArray(), []);
   const [range, setRange] = useState<ReportRange>("today");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
@@ -166,6 +150,17 @@ export function ReportsWorkspace() {
     () => summarizeReportBills(filteredBills),
     [filteredBills],
   );
+  const customerPaymentsCashIn = useMemo(() => {
+    const { from, to } = getReportRange({ range, customFrom, customTo });
+    return (customerPayments ?? [])
+      .filter(p => {
+        const created = new Date(p.createdAt);
+        if (from && created < from) return false;
+        if (to && created >= to) return false;
+        return (p.paymentMethod ?? 'cash') === 'cash';
+      })
+      .reduce((sum, p) => sum + p.amount, 0);
+  }, [customerPayments, range, customFrom, customTo]);
   const purchaseSummary = useMemo(
     () => summarizeReportPurchases(filteredPurchases, filteredSupplierPayments),
     [filteredPurchases, filteredSupplierPayments],
@@ -196,31 +191,27 @@ export function ReportsWorkspace() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <section className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-slate-900">
-            {t("reports.title")}
-          </h2>
-          <p className="mt-1 max-w-2xl text-sm text-slate-500">
-            {t("reports.subtitle")}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Link
-            href="/bills"
-            className="inline-flex min-h-[42px] items-center justify-center rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-200"
-          >
-            {t("reports.openBills")}
-          </Link>
-          <Link
-            href="/inventory"
-            className="inline-flex min-h-[42px] items-center justify-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
-          >
-            {t("reports.openInventory")}
-          </Link>
-        </div>
-      </section>
+    <PageShell>
+      <PageHeader
+        title={t("reports.title")}
+        description={t("reports.subtitle")}
+        actions={
+          <>
+            <Link
+              href="/bills"
+              className="inline-flex min-h-[42px] items-center justify-center rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-200"
+            >
+              {t("reports.openBills")}
+            </Link>
+            <Link
+              href="/inventory"
+              className="inline-flex min-h-[42px] items-center justify-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
+            >
+              {t("reports.openInventory")}
+            </Link>
+          </>
+        }
+      />
 
       <Card>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto] md:items-end">
@@ -295,6 +286,10 @@ export function ReportsWorkspace() {
         <StatCard
           label={t("reports.cashExpected")}
           value={formatCurrency(summary.cashExpected, currency)}
+        />
+        <StatCard
+          label={t("reports.customerPaymentsCashIn")}
+          value={formatCurrency(customerPaymentsCashIn, currency)}
         />
       </section>
 
@@ -405,6 +400,6 @@ export function ReportsWorkspace() {
           />
         </Card>
       </section>
-    </div>
+    </PageShell>
   );
 }

@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import clsx from 'clsx';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from '@/lib/db/schema';
 import { useLocale } from '@/components/providers/locale-context';
 
 const routes = [
@@ -22,6 +24,7 @@ const routes = [
 export function SidebarNav() {
   const pathname = usePathname();
   const { t } = useLocale();
+  const activeShift = useLiveQuery(() => db.shifts.where('status').equals('open').first(), []);
 
   return (
     <nav
@@ -38,14 +41,24 @@ export function SidebarNav() {
             href={href as any}
             className={clsx(
               'whitespace-nowrap px-3 py-2.5 rounded-xl text-sm font-medium transition-colors snap-start',
-              'min-w-[76px] text-center lg:min-w-0 lg:text-start lg:w-full',
+              'min-w-fit text-center lg:min-w-0 lg:text-start lg:w-full',
               active
                 ? 'bg-blue-600 text-white'
                 : 'text-slate-300 hover:bg-white/10 hover:text-white',
             )}
           >
-            <span className="lg:hidden">{t(shortKey)}</span>
-            <span className="hidden lg:inline">{t(key)}</span>
+            <span className="lg:hidden relative">
+              {t(shortKey)}
+              {href === '/shift' && activeShift && (
+                <span className="absolute -top-0.5 -end-1 h-2 w-2 rounded-full bg-emerald-400" />
+              )}
+            </span>
+            <span className="hidden lg:flex lg:items-center lg:justify-between lg:w-full">
+              {t(key)}
+              {href === '/shift' && activeShift && (
+                <span className="inline-block h-2 w-2 rounded-full bg-emerald-400 shrink-0" />
+              )}
+            </span>
           </Link>
         );
       })}

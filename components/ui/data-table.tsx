@@ -2,6 +2,7 @@
 
 import { useMemo, useState, type ReactNode } from 'react';
 import clsx from 'clsx';
+import { useLocale } from '@/components/providers/locale-context';
 import {
   flexRender,
   getCoreRowModel,
@@ -205,4 +206,19 @@ export function DataTable<TData>({
       </div>
     </div>
   );
+}
+
+export function useDataTableLabels(): DataTableLabels {
+  const { t } = useLocale();
+  return {
+    searchPlaceholder: t('dataTable.search'),
+    loading: t('dataTable.loading'),
+    page: t('dataTable.page'),
+    of: t('dataTable.of'),
+    rowsPerPage: t('dataTable.rowsPerPage'),
+    first: t('dataTable.first'),
+    previous: t('dataTable.previous'),
+    next: t('dataTable.next'),
+    last: t('dataTable.last'),
+  };
 }

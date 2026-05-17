@@ -15,6 +15,8 @@ import { SearchableSelect } from '@/components/ui/searchable-select';
 import { Modal } from '@/components/ui/modal';
 import { useToast } from '@/components/ui/toast';
 import { useLocale } from '@/components/providers/locale-context';
+import { PageShell } from '@/components/ui/page-shell';
+import { PageHeader } from '@/components/ui/page-header';
 import type { Product, StockMovement } from '@/types/domain';
 import type { ColumnDef } from '@tanstack/react-table';
 
@@ -185,24 +187,24 @@ export function InventoryWorkspace() {
   }));
 
   return (
-    <div className="flex flex-col gap-6">
-      <section className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-slate-900">{t('inventory.title')}</h2>
-          <p className="mt-1 max-w-2xl text-sm text-slate-500">{t('inventory.subtitle')}</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="secondary" onClick={() => openModal('count')}>
-            {t('inventory.stockCount')}
-          </Button>
-          <Link
-            href={"/purchases/new" as never}
-            className="inline-flex h-[42px] items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-700 active:bg-blue-800"
-          >
-            {t('purchases.newPurchase')}
-          </Link>
-        </div>
-      </section>
+    <PageShell>
+      <PageHeader
+        title={t('inventory.title')}
+        description={t('inventory.subtitle')}
+        actions={
+          <>
+            <Button type="button" variant="secondary" onClick={() => openModal('count')}>
+              {t('inventory.stockCount')}
+            </Button>
+            <Link
+              href={"/purchases/new" as never}
+              className="inline-flex h-[42px] items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-700 active:bg-blue-800"
+            >
+              {t('purchases.newPurchase')}
+            </Link>
+          </>
+        }
+      />
 
       <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label={t('inventory.lowStock')} value={lowStockProducts.length} />
@@ -261,7 +263,7 @@ export function InventoryWorkspace() {
         }}
         pageSize={10}
         getRowId={(row) => row.id}
-      />
+        />
 
       <Modal
         open={mode !== null}
@@ -321,7 +323,7 @@ export function InventoryWorkspace() {
           </label>
         </div>
       </Modal>
-    </div>
+    </PageShell>
   );
 }
 

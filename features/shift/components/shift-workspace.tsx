@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db/schema";
@@ -17,11 +17,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
+import { StatCard } from "@/components/ui/stat-card";
 import { Modal } from "@/components/ui/modal";
 import { EmptyState } from "@/components/ui/empty-state";
-import { DataTable } from "@/components/ui/data-table";
+import { DataTable, useDataTableLabels } from "@/components/ui/data-table";
 import { useToast } from "@/components/ui/toast";
 import { useLocale } from "@/components/providers/locale-context";
+import { PageShell } from "@/components/ui/page-shell";
+import { PageHeader } from "@/components/ui/page-header";
 import { formatCurrency } from "@/lib/utils/money";
 import { formatDateTime } from "@/lib/utils/date";
 import { ShiftReport } from "./shift-report";
@@ -40,38 +43,10 @@ function dismissOnEnter(e: React.KeyboardEvent<HTMLInputElement>) {
   }
 }
 
-function StatCard({
-  label,
-  value,
-  helper,
-  tone,
-}: {
-  label: string;
-  value: string;
-  helper?: string;
-  tone?: "neutral" | "positive" | "warning";
-}) {
-  const toneClasses =
-    tone === "positive"
-      ? "text-emerald-700"
-      : tone === "warning"
-        ? "text-red-700"
-        : "text-slate-900";
-  return (
-    <Card className="flex flex-col gap-1 p-4">
-      <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">
-        {label}
-      </p>
-      <p className={`text-2xl font-bold tabular-nums ${toneClasses}`}>
-        {value}
-      </p>
-      {helper && <p className="text-xs text-slate-500">{helper}</p>}
-    </Card>
-  );
-}
 
 export function ShiftWorkspace() {
   const { t, dir } = useLocale();
+  const tableLabels = useDataTableLabels();
   const { push } = useToast();
   const settings = useLiveQuery(() => settingsRepo.get(), []);
   const activeShift = useLiveQuery(() => getActiveShift(), []);
@@ -111,6 +86,12 @@ export function ShiftWorkspace() {
   const [openingCash, setOpeningCash] = useState("");
   const [openNotes, setOpenNotes] = useState("");
   const [cashierName, setCashierName] = useState("");
+  useEffect(() => {
+    if (settings?.cashierName && !cashierName) {
+      setCashierName(settings.cashierName);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings?.cashierName]);
   const [submittingOpen, setSubmittingOpen] = useState(false);
 
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
@@ -288,15 +269,11 @@ export function ShiftWorkspace() {
   }
 
   return (
-    <div className="space-y-5" dir={dir}>
-      <section>
-        <h1 className="text-2xl font-bold text-slate-900">
-          {t("shift.title")}
-        </h1>
-        <p className="mt-1 max-w-2xl text-sm text-slate-500">
-          {t("shift.subtitle")}
-        </p>
-      </section>
+    <PageShell>
+      <PageHeader
+        title={t("shift.title")}
+        description={t("shift.subtitle")}
+      />
 
       {activeShift === undefined ? null : activeShift === null ? (
         // ── No active shift: show the open-shift form ──────────────────
@@ -483,6 +460,7 @@ export function ShiftWorkspace() {
             enableGlobalSearch
             emptyTitle={t("shift.noPastShifts")}
             pageSize={10}
+            labels={tableLabels}
           />
         )}
       </Card>
@@ -580,7 +558,7 @@ export function ShiftWorkspace() {
       >
         {reportShift && <ShiftReport shift={reportShift} settings={settings} />}
       </Modal>
-    </div>
+    </PageShell>
   );
 }
 
