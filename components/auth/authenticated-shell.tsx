@@ -24,7 +24,14 @@ import { SidebarNav } from "@/components/sidebar-nav";
 import { useSettings } from "@/components/providers/settings-context";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
-import { getLocalDataSummary, saveCurrentAccountSnapshot } from "@/lib/services/account-data-service";
+import { Card } from "@/components/ui/card";
+import { FormField } from "@/components/ui/form-field";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import {
+  getLocalDataSummary,
+  saveCurrentAccountSnapshot,
+} from "@/lib/services/account-data-service";
 import { SyncStatusBadge } from "@/components/sync/sync-status-badge";
 import { ConflictResolverModal } from "@/components/sync/conflict-resolver-modal";
 
@@ -108,7 +115,9 @@ function AdminShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <main className="min-w-0 p-3 pb-24 sm:p-4 sm:pb-24 lg:p-6 lg:pb-6">{children}</main>
+      <main className="min-w-0 p-3 pb-24 sm:p-4 sm:pb-24 lg:p-6 lg:pb-6">
+        {children}
+      </main>
     </div>
   );
 }
@@ -375,7 +384,12 @@ function RestoreModal({
           disabled={restoring}
           className="absolute end-3 top-3 rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 disabled:opacity-40"
         >
-          <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <svg
+            className="h-4 w-4"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            aria-hidden="true"
+          >
             <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
           </svg>
         </button>
@@ -401,7 +415,9 @@ function RestoreModal({
         </h2>
         <p className="text-sm text-slate-500 text-center mb-4">
           We found data for this account in the cloud from{" "}
-          <span className="font-medium text-slate-700">{date}</span>. Sync it to this device, or start with an empty local workspace. Starting empty will not delete your cloud data.
+          <span className="font-medium text-slate-700">{date}</span>. Sync it to
+          this device, or start with an empty local workspace. Starting empty
+          will not delete your cloud data.
         </p>
 
         {/* Counts */}
@@ -641,46 +657,34 @@ function LoginForm({ onShowSignUp }: { onShowSignUp: () => void }) {
     <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
       <div className="max-w-sm w-full">
         <AppLogo />
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+        <Card padding="lg">
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Email
-              </label>
-              <input
+            <FormField label="Email">
+              <Input
                 type="email"
                 required
                 autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="you@example.com"
               />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Password
-              </label>
-              <input
+            </FormField>
+            <FormField label="Password">
+              <Input
                 type="password"
                 required
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="••••••••"
               />
-            </div>
+            </FormField>
             {(error || authError) && <ErrorBox message={error || authError} />}
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm font-medium rounded-xl transition-colors"
-            >
+            <Button type="submit" loading={loading} fullWidth>
               {loading ? "Signing in…" : "Sign in"}
-            </button>
+            </Button>
           </form>
-        </div>
+        </Card>
         <p className="text-center text-sm text-slate-500 mt-5">
           No account?{" "}
           <button
@@ -734,85 +738,67 @@ function SignUpForm({ onBack }: { onBack: () => void }) {
     <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
       <div className="max-w-sm w-full">
         <AppLogo subtitle="Request access" />
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+        <Card padding="lg">
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Full name
-              </label>
-              <input
+            <FormField label="Full name">
+              <Input
                 required
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="Jane Smith"
               />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Email
-              </label>
-              <input
+            </FormField>
+            <FormField label="Email">
+              <Input
                 type="email"
                 required
                 autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="you@example.com"
               />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Phone{" "}
-                <span className="text-slate-400 font-normal">(optional)</span>
-              </label>
-              <input
+            </FormField>
+            <FormField
+              label={
+                <span>
+                  Phone{" "}
+                  <span className="font-normal text-slate-400">(optional)</span>
+                </span>
+              }
+            >
+              <Input
                 type="tel"
                 autoComplete="tel"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="+1 555 0123"
               />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Password
-              </label>
-              <input
+            </FormField>
+            <FormField label="Password">
+              <Input
                 type="password"
                 required
                 minLength={6}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="Min 6 characters"
               />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Confirm password
-              </label>
-              <input
+            </FormField>
+            <FormField label="Confirm password">
+              <Input
                 type="password"
                 required
                 value={confirm}
                 onChange={(e) => setConfirm(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="••••••••"
               />
-            </div>
+            </FormField>
             {error && <ErrorBox message={error} />}
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm font-medium rounded-xl transition-colors"
-            >
+            <Button type="submit" loading={loading} fullWidth>
               {loading ? "Sending request…" : "Request access"}
-            </button>
+            </Button>
           </form>
-        </div>
+        </Card>
         <p className="text-center text-sm text-slate-500 mt-5">
           Already have an account?{" "}
           <button
@@ -853,25 +839,52 @@ function AppLogo({ subtitle = "Sign in to continue" }: { subtitle?: string }) {
 
 function ErrorBox({ message }: { message: string }) {
   return (
-    <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
-      {message}
-    </p>
+    <div role="alert">
+      <Badge
+        tone="danger"
+        className="whitespace-normal rounded-xl px-3 py-2 text-sm"
+      >
+        {message}
+      </Badge>
+    </div>
   );
 }
-
 
 function SafeSignOutButton({ className }: { className?: string }) {
   const { user, logout } = useAuth();
   const [open, setOpen] = useState(false);
-  const [summary, setSummary] = useState<Awaited<ReturnType<typeof getLocalDataSummary>> | null>(null);
+  const [summary, setSummary] = useState<Awaited<
+    ReturnType<typeof getLocalDataSummary>
+  > | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
 
-  async function openModal() { setSummary(await getLocalDataSummary()); setOpen(true); }
-  async function signOutKeepingDeviceData() { setSigningOut(true); try { if (user?.uid) await saveCurrentAccountSnapshot(user.uid); await logout(); } finally { setSigningOut(false); } }
-  async function syncThenSignOut() { if (!user?.uid) return signOutKeepingDeviceData(); setSyncing(true); const result = await syncAllToCloud(user.uid); setSyncing(false); if (!result) { setSummary(await getLocalDataSummary()); return; } await signOutKeepingDeviceData(); }
+  async function openModal() {
+    setSummary(await getLocalDataSummary());
+    setOpen(true);
+  }
+  async function signOutKeepingDeviceData() {
+    setSigningOut(true);
+    try {
+      if (user?.uid) await saveCurrentAccountSnapshot(user.uid);
+      await logout();
+    } finally {
+      setSigningOut(false);
+    }
+  }
+  async function syncThenSignOut() {
+    if (!user?.uid) return signOutKeepingDeviceData();
+    setSyncing(true);
+    const result = await syncAllToCloud(user.uid);
+    setSyncing(false);
+    if (!result) {
+      setSummary(await getLocalDataSummary());
+      return;
+    }
+    await signOutKeepingDeviceData();
+  }
 
-  const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+  const isOffline = typeof navigator !== "undefined" && !navigator.onLine;
   const hasUnsynced = Boolean(summary?.hasUnsyncedWork);
   // Include blocked (Sprint A) so the sign-out modal accurately shows how
   // much work hasn't yet reached the cloud. Conflicts have their own dedicated
@@ -879,5 +892,119 @@ function SafeSignOutButton({ className }: { className?: string }) {
   const pendingCount = summary
     ? summary.pending + summary.failed + summary.syncing + summary.blocked
     : 0;
-  return <><button type="button" onClick={openModal} className={className ?? 'text-sm text-slate-500 hover:text-slate-700'}>Sign out</button><Modal open={open} title={isOffline ? 'You are offline' : hasUnsynced ? 'Unsynced changes' : 'Sign out?'} description={isOffline ? 'Changes saved on this device will stay linked to this account and sync when this same account is opened online again.' : hasUnsynced ? 'Some changes have not finished syncing yet. Sync before signing out to make them available on other devices.' : 'Your local data will stay safely stored for this account on this browser.'} onClose={() => setOpen(false)} footer={<><Button type="button" variant="secondary" onClick={() => setOpen(false)} disabled={signingOut || syncing}>Cancel</Button>{!isOffline && hasUnsynced && <Button type="button" onClick={syncThenSignOut} disabled={signingOut || syncing}>{syncing ? 'Syncing…' : 'Sync now, then sign out'}</Button>}<Button type="button" variant={hasUnsynced || isOffline ? 'danger' : 'primary'} onClick={signOutKeepingDeviceData} disabled={signingOut || syncing}>{signingOut ? 'Signing out…' : hasUnsynced || isOffline ? 'Sign out anyway' : 'Sign out'}</Button></>}>{summary && <div className="space-y-3 text-sm text-slate-600"><p>Data on this browser is preserved per account. Other accounts on this browser will not see this account&apos;s local data.</p><div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-50 p-3 text-xs"><div><span className="font-semibold text-slate-800">{summary.products}</span> products</div><div><span className="font-semibold text-slate-800">{summary.bills}</span> bills</div><div><span className="font-semibold text-slate-800">{summary.stockMovements}</span> stock movements</div><div><span className="font-semibold text-slate-800">{pendingCount}</span> pending sync jobs</div><div><span className="font-semibold text-slate-800">{summary.conflicts}</span> conflicts</div><div><span className="font-semibold text-slate-800">{summary.customerPayments}</span> payments</div></div>{summary.conflicts > 0 && <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">Resolve conflicts before expecting every change to sync cleanly to the cloud.</p>}</div>}</Modal></>;
+  return (
+    <>
+      <button
+        type="button"
+        onClick={openModal}
+        className={className ?? "text-sm text-slate-500 hover:text-slate-700"}
+      >
+        Sign out
+      </button>
+      <Modal
+        open={open}
+        title={
+          isOffline
+            ? "You are offline"
+            : hasUnsynced
+              ? "Unsynced changes"
+              : "Sign out?"
+        }
+        description={
+          isOffline
+            ? "Changes saved on this device will stay linked to this account and sync when this same account is opened online again."
+            : hasUnsynced
+              ? "Some changes have not finished syncing yet. Sync before signing out to make them available on other devices."
+              : "Your local data will stay safely stored for this account on this browser."
+        }
+        onClose={() => setOpen(false)}
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setOpen(false)}
+              disabled={signingOut || syncing}
+            >
+              Cancel
+            </Button>
+            {!isOffline && hasUnsynced && (
+              <Button
+                type="button"
+                onClick={syncThenSignOut}
+                disabled={signingOut || syncing}
+              >
+                {syncing ? "Syncing…" : "Sync now, then sign out"}
+              </Button>
+            )}
+            <Button
+              type="button"
+              variant={hasUnsynced || isOffline ? "danger" : "primary"}
+              onClick={signOutKeepingDeviceData}
+              disabled={signingOut || syncing}
+            >
+              {signingOut
+                ? "Signing out…"
+                : hasUnsynced || isOffline
+                  ? "Sign out anyway"
+                  : "Sign out"}
+            </Button>
+          </>
+        }
+      >
+        {summary && (
+          <div className="space-y-3 text-sm text-slate-600">
+            <p>
+              Data on this browser is preserved per account. Other accounts on
+              this browser will not see this account&apos;s local data.
+            </p>
+            <div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-50 p-3 text-xs">
+              <div>
+                <span className="font-semibold text-slate-800">
+                  {summary.products}
+                </span>{" "}
+                products
+              </div>
+              <div>
+                <span className="font-semibold text-slate-800">
+                  {summary.bills}
+                </span>{" "}
+                bills
+              </div>
+              <div>
+                <span className="font-semibold text-slate-800">
+                  {summary.stockMovements}
+                </span>{" "}
+                stock movements
+              </div>
+              <div>
+                <span className="font-semibold text-slate-800">
+                  {pendingCount}
+                </span>{" "}
+                pending sync jobs
+              </div>
+              <div>
+                <span className="font-semibold text-slate-800">
+                  {summary.conflicts}
+                </span>{" "}
+                conflicts
+              </div>
+              <div>
+                <span className="font-semibold text-slate-800">
+                  {summary.customerPayments}
+                </span>{" "}
+                payments
+              </div>
+            </div>
+            {summary.conflicts > 0 && (
+              <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
+                Resolve conflicts before expecting every change to sync cleanly
+                to the cloud.
+              </p>
+            )}
+          </div>
+        )}
+      </Modal>
+    </>
+  );
 }

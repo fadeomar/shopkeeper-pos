@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { ColumnDef } from "@tanstack/react-table";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useLiveQuery } from "dexie-react-hooks";
@@ -15,31 +16,18 @@ import {
   calculateChange,
   calculateLineSubtotal,
 } from "@/lib/utils/calculations";
+import { formatCurrency } from "@/lib/utils/money";
 import { createFinalizedBill } from "@/lib/services/billing-service";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Modal } from "@/components/ui/modal";
-import { LoadingState } from "@/components/ui/loading-state";
-import { Badge } from "@/components/ui/badge";
-import { FormField } from "@/components/ui/form-field";
-import { SectionCard } from "@/components/ui/section-card";
-import { StatusPill } from "@/components/ui/status-pill";
-import { TableShell } from "@/components/ui/table-shell";
-import { Toolbar } from "@/components/ui/toolbar";
 import { useToast } from "@/components/ui/toast";
 import { BarcodeScannerModal } from "@/components/barcode/barcode-scanner-modal";
 import { useLocale } from "@/components/providers/locale-context";
-import { PriceDisplay } from "@/components/pos/price-display";
-import { StockBadge } from "@/components/pos/stock-badge";
-import { CheckoutActionBar } from "@/components/pos/checkout-action-bar";
-import {
-  alertTones,
-  buttonVariants,
-  panelTones,
-  typographyClasses,
-} from "@/lib/design/variants";
+import { Card } from "@/components/ui/card";
 import { QuickProductModal } from "./quick-product-modal";
 import { ReceiptView } from "./receipt-view";
 import { normalizeBarcode } from "@/lib/utils/barcode";
@@ -62,32 +50,41 @@ const SUCCESS_AUTO_DISMISS_MS = 8000;
 // scratch state is dropped on the migration).
 const POS_DRAFT_KEY_PREFIX = "shopkeeper-pos-bill-draft-v1";
 
+function FormField({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="flex flex-col gap-1.5">
+      <span className="text-xs font-medium text-slate-600 uppercase tracking-wide">
+        {label}
+      </span>
+      {children}
+    </label>
+  );
+}
+
 function SummaryRow({
   label,
   value,
   highlight,
 }: {
   label: string;
-  value: ReactNode;
+  value: string;
   highlight?: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between gap-2 border-b border-slate-100 py-2 last:border-0">
+    <div className="flex items-center justify-between gap-2 py-2 border-b border-slate-100 last:border-0">
       <span
-        className={
-          highlight
-            ? "text-sm font-semibold text-slate-900"
-            : typographyClasses.bodyMuted
-        }
+        className={`text-sm ${highlight ? "font-semibold text-slate-900" : "text-slate-500"}`}
       >
         {label}
       </span>
       <span
-        className={
-          highlight
-            ? "text-sm font-bold tabular-nums text-slate-900"
-            : "text-sm font-medium tabular-nums text-slate-700"
-        }
+        className={`text-sm tabular-nums ${highlight ? "font-bold text-slate-900" : "font-medium text-slate-700"}`}
       >
         {value}
       </span>
@@ -117,49 +114,38 @@ function SuccessPanel({
   }, []);
 
   return (
-    <SectionCard tone="success" padding="md">
+    <Card className="flex flex-col gap-4" padding="sm">
       <div className="flex items-start gap-3">
         <span
           aria-hidden
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-green-100 text-green-700 text-lg font-bold"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-lg font-bold"
         >
           ✓
         </span>
         <div className="min-w-0 flex-1">
-          <StatusPill
-            status="completed"
-            tone="success"
-            label={t("billing.saleCompleted")}
-          />
-          <p className="sr-only">{t("billing.saleCompleted")}</p>
+          <p className="text-sm font-semibold text-emerald-700">
+            {t("billing.saleCompleted")}
+          </p>
           <p className="font-mono text-base font-bold text-slate-900">
             {bill.billNumber}
           </p>
         </div>
       </div>
 
-      <div className={panelTones.success + " rounded-xl border px-4 py-3"}>
+      <div className="rounded-xl bg-emerald-50 border border-emerald-100 px-4 py-3">
         <SummaryRow
           label={t("billing.total")}
-          value={
-            <PriceDisplay
-              value={bill.totalAmount}
-              currency={currency}
-              emphasis
-            />
-          }
+          value={formatCurrency(bill.totalAmount, currency)}
           highlight
         />
         <SummaryRow
           label={t("billing.change")}
-          value={<PriceDisplay value={bill.changeAmount} currency={currency} />}
+          value={formatCurrency(bill.changeAmount, currency)}
         />
         {amountDue > 0 && (
           <SummaryRow
             label={t("billing.amountDue")}
-            value={
-              <PriceDisplay value={amountDue} currency={currency} emphasis />
-            }
+            value={formatCurrency(amountDue, currency)}
             highlight
           />
         )}
@@ -170,10 +156,7 @@ function SuccessPanel({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <Link
           href={`/bills/${bill.id}`}
-          className={
-            buttonVariants.outline +
-            " inline-flex h-11 items-center justify-center rounded-xl px-4 text-sm font-semibold"
-          }
+          className="inline-flex h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
         >
           {t("billing.openBillDetail")}
         </Link>
@@ -186,7 +169,7 @@ function SuccessPanel({
           {t("billing.newSale")}
         </Button>
       </div>
-    </SectionCard>
+    </Card>
   );
 }
 
@@ -231,6 +214,24 @@ export function PosScreen() {
     bill: Bill;
     items: BillItem[];
   } | null>(null);
+  const productOptions = useMemo(
+    () =>
+      (products ?? []).map((product) => ({
+        value: product.id,
+        label: product.name,
+        description: [product.barcode, product.brand, product.category]
+          .filter(Boolean)
+          .join(" • "),
+        meta: (
+          <span className="text-xs text-slate-500">
+            {formatCurrency(product.sellPrice, currency)} ·{" "}
+            {product.quantityInStock} {t("billing.stock").toLowerCase()}
+          </span>
+        ),
+      })),
+    [products, currency, t],
+  );
+
   const [lastAdded, setLastAdded] = useState<{
     name: string;
     qty: number;
@@ -680,8 +681,98 @@ export function PosScreen() {
     }
   }
 
+  const draftItemColumns: ColumnDef<BillDraftItem, unknown>[] = [
+    {
+      accessorKey: "name",
+      header: t("billing.product"),
+      cell: ({ row }) => (
+        <span className="font-medium text-slate-800">{row.original.name}</span>
+      ),
+    },
+    {
+      accessorKey: "availableStock",
+      header: t("billing.stock"),
+      cell: ({ row }) => (
+        <span className="tabular-nums text-slate-500">
+          {row.original.availableStock}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "quantity",
+      header: t("billing.qty"),
+      cell: ({ row }) => {
+        const item = row.original;
+        return (
+          <Input
+            type="number"
+            inputMode="numeric"
+            enterKeyHint="done"
+            min={1}
+            max={item.availableStock}
+            value={item.quantity}
+            onChange={(e) =>
+              updateQuantity(item.productId, Number(e.target.value))
+            }
+            onKeyDown={dismissKeyboardOnEnter}
+            className="w-20 text-center"
+          />
+        );
+      },
+    },
+    {
+      accessorKey: "unitSellPrice",
+      header: t("billing.sell"),
+      cell: ({ row }) => (
+        <span className="tabular-nums text-slate-700">
+          {formatCurrency(row.original.unitSellPrice, currency)}
+        </span>
+      ),
+    },
+    {
+      id: "subtotal",
+      header: t("billing.subtotalCol"),
+      accessorFn: (row) =>
+        calculateLineSubtotal(row.quantity, row.unitSellPrice),
+      cell: ({ row }) => (
+        <span className="font-medium tabular-nums text-slate-800">
+          {formatCurrency(
+            calculateLineSubtotal(
+              row.original.quantity,
+              row.original.unitSellPrice,
+            ),
+            currency,
+          )}
+        </span>
+      ),
+    },
+    {
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      cell: ({ row }) => (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() =>
+            setDraftItems((cur) =>
+              cur.filter((i) => i.productId !== row.original.productId),
+            )
+          }
+        >
+          {t("common.remove")}
+        </Button>
+      ),
+    },
+  ];
+
   if (!products) {
-    return <LoadingState title={t("billing.loadingPos")} />;
+    return (
+      <Card>
+        <p className="text-sm text-slate-500">{t("billing.loadingPos")}</p>
+      </Card>
+    );
   }
 
   return (
@@ -696,10 +787,7 @@ export function PosScreen() {
           // by sidebar-nav.tsx for dynamic hrefs.
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           href={"/shift" as any}
-          className={
-            alertTones.warning +
-            " mb-4 flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-sm transition-colors hover:bg-amber-100"
-          }
+          className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 hover:bg-amber-100 transition-colors"
         >
           <span className="font-medium">{t("billing.noShiftOpenWarning")}</span>
           <span className="text-xs font-semibold uppercase tracking-wide">
@@ -711,119 +799,107 @@ export function PosScreen() {
       {/* Mobile-first layout, desktop keeps two columns */}
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_400px] gap-4 xl:gap-5 items-start">
         {/* ── Build bill panel ─────────────────────────────────────────── */}
-        <SectionCard
-          title={t("billing.buildBill")}
-          padding="md"
-          actions={
-            draftItems.length > 0 ? (
-              <Badge tone="info">
+        <Card className="flex flex-col gap-4" padding="sm">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-base font-semibold text-slate-800">
+              {t("billing.buildBill")}
+            </h3>
+            {draftItems.length > 0 && (
+              <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
                 {draftItems.length} {t("billing.items")}
-              </Badge>
-            ) : undefined
-          }
-        >
+              </span>
+            )}
+          </div>
+
           {lastAdded && (
             <div
               role="status"
               aria-live="polite"
-              className={
-                alertTones.success +
-                " flex items-center gap-2 rounded-xl border px-3 py-2 text-sm"
-              }
+              className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
             >
-              <span aria-hidden className="text-green-600">
+              <span aria-hidden className="text-emerald-600">
                 ✓
               </span>
               <span className="font-medium truncate">{lastAdded.name}</span>
-              <span className="ml-auto shrink-0 text-xs font-semibold tabular-nums text-green-700">
+              <span className="ml-auto shrink-0 text-xs font-semibold tabular-nums text-emerald-700">
                 ×{lastAdded.qty} ·{" "}
-                <PriceDisplay
-                  value={lastAdded.subtotal}
-                  currency={currency}
-                  size="sm"
-                />
+                {formatCurrency(lastAdded.subtotal, currency)}
               </span>
             </div>
           )}
 
           {/* Barcode input row */}
-          <Toolbar align="between" wrap>
-            <div className="grid min-w-0 flex-1 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto]">
-              <Input
-                ref={barcodeInputRef}
-                placeholder={t("billing.typeBarcode")}
-                value={barcodeQuery}
-                onChange={(e) => setBarcodeQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    addByBarcode();
-                  } else if (e.key === "Escape" && barcodeQuery) {
-                    e.preventDefault();
-                    setBarcodeQuery("");
-                  }
-                }}
-                className="flex-1"
-              />
-              <Button type="button" variant="secondary" onClick={addByBarcode}>
-                {t("common.add")}
-              </Button>
-              <Button type="button" onClick={() => setScannerOpen(true)}>
-                {t("common.scan")}
-              </Button>
-              <div className="relative">
-                <Button
-                  type="button"
-                  aria-label={t("billing.shortcutsHelp")}
-                  aria-expanded={helpOpen}
-                  onClick={() => setHelpOpen((open) => !open)}
-                  variant="outline"
-                  size="icon"
-                >
-                  ?
-                </Button>
-                {helpOpen && (
-                  <>
-                    {/* Backdrop captures outside clicks to dismiss the popover. */}
-                    <div
-                      className="fixed inset-0 z-10"
-                      onClick={() => setHelpOpen(false)}
-                      aria-hidden
-                    />
-                    <div
-                      role="dialog"
-                      aria-label={t("billing.shortcutsHelp")}
-                      className="absolute end-0 top-full mt-2 z-20 min-w-[260px] rounded-xl border border-slate-200 bg-white p-3 shadow-lg"
-                    >
-                      <p className="text-sm font-semibold text-slate-800 mb-1.5">
-                        {t("billing.shortcutsHelp")}
-                      </p>
-                      <ul className="space-y-1 text-xs text-slate-600">
-                        <li>{t("billing.shortcutFinalize")}</li>
-                        <li>{t("billing.shortcutClearBarcode")}</li>
-                      </ul>
-                    </div>
-                  </>
-                )}
-              </div>
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto_auto] gap-2">
+            <Input
+              ref={barcodeInputRef}
+              placeholder={t("billing.typeBarcode")}
+              value={barcodeQuery}
+              onChange={(e) => setBarcodeQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addByBarcode();
+                } else if (e.key === "Escape" && barcodeQuery) {
+                  e.preventDefault();
+                  setBarcodeQuery("");
+                }
+              }}
+              className="flex-1"
+            />
+            <Button type="button" variant="secondary" onClick={addByBarcode}>
+              {t("common.add")}
+            </Button>
+            <Button type="button" onClick={() => setScannerOpen(true)}>
+              {t("common.scan")}
+            </Button>
+            <div className="relative">
+              <button
+                type="button"
+                aria-label={t("billing.shortcutsHelp")}
+                aria-expanded={helpOpen}
+                onClick={() => setHelpOpen((open) => !open)}
+                className="inline-flex h-[42px] w-[42px] items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors"
+              >
+                ?
+              </button>
+              {helpOpen && (
+                <>
+                  {/* Backdrop captures outside clicks to dismiss the popover. */}
+                  <div
+                    className="fixed inset-0 z-10"
+                    onClick={() => setHelpOpen(false)}
+                    aria-hidden
+                  />
+                  <div
+                    role="dialog"
+                    aria-label={t("billing.shortcutsHelp")}
+                    className="absolute end-0 top-full mt-2 z-20 min-w-[260px] rounded-xl border border-slate-200 bg-white p-3 shadow-lg"
+                  >
+                    <p className="text-sm font-semibold text-slate-800 mb-1.5">
+                      {t("billing.shortcutsHelp")}
+                    </p>
+                    <ul className="space-y-1 text-xs text-slate-600">
+                      <li>{t("billing.shortcutFinalize")}</li>
+                      <li>{t("billing.shortcutClearBarcode")}</li>
+                    </ul>
+                  </div>
+                </>
+              )}
             </div>
-          </Toolbar>
+          </div>
 
           {/* Product select row */}
           <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">
-            <Select
+            <SearchableSelect
               value={productId}
-              onChange={(e) => setProductId(e.target.value)}
+              onValueChange={(value) => setProductId(value ?? "")}
+              options={productOptions}
+              placeholder={t("billing.selectProduct")}
+              searchPlaceholder={t("products.searchPlaceholder")}
+              emptyMessage={t("products.noProducts")}
+              disabled={!products?.length}
               className="flex-1"
-            >
-              <option value="">{t("billing.selectProduct")}</option>
-              {products.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({p.quantityInStock}{" "}
-                  {t("billing.stock").toLowerCase()})
-                </option>
-              ))}
-            </Select>
+            />
             <Button type="button" variant="secondary" onClick={addBySelection}>
               {t("billing.addItem")}
             </Button>
@@ -866,45 +942,31 @@ export function PosScreen() {
                       </Button>
                     </div>
                     <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
-                      <div
-                        className={
-                          panelTones.neutral + " rounded-xl border p-2"
-                        }
-                      >
+                      <div className="rounded-xl bg-slate-50 p-2">
                         <p className="text-slate-500">{t("billing.stock")}</p>
-                        <StockBadge
-                          quantity={item.availableStock}
-                          minQuantity={null}
-                        />
+                        <p className="font-bold text-slate-800 tabular-nums">
+                          {item.availableStock}
+                        </p>
                       </div>
-                      <div
-                        className={
-                          panelTones.neutral + " rounded-xl border p-2"
-                        }
-                      >
+                      <div className="rounded-xl bg-slate-50 p-2">
                         <p className="text-slate-500">{t("billing.sell")}</p>
-                        <PriceDisplay
-                          value={item.unitSellPrice}
-                          currency={currency}
-                          emphasis
-                        />
+                        <p className="font-bold text-slate-800 tabular-nums">
+                          {formatCurrency(item.unitSellPrice, currency)}
+                        </p>
                       </div>
-                      <div
-                        className={
-                          panelTones.neutral + " rounded-xl border p-2"
-                        }
-                      >
+                      <div className="rounded-xl bg-slate-50 p-2">
                         <p className="text-slate-500">
                           {t("billing.subtotalCol")}
                         </p>
-                        <PriceDisplay
-                          value={calculateLineSubtotal(
-                            item.quantity,
-                            item.unitSellPrice,
+                        <p className="font-bold text-slate-800 tabular-nums">
+                          {formatCurrency(
+                            calculateLineSubtotal(
+                              item.quantity,
+                              item.unitSellPrice,
+                            ),
+                            currency,
                           )}
-                          currency={currency}
-                          emphasis
-                        />
+                        </p>
                       </div>
                     </div>
                     <div className="mt-3 flex items-center justify-between gap-3">
@@ -929,100 +991,18 @@ export function PosScreen() {
                 ))}
               </div>
 
-              <TableShell className="hidden md:block">
-                <table className="w-full text-sm min-w-[560px]">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200">
-                      {[
-                        t("billing.product"),
-                        t("billing.stock"),
-                        t("billing.qty"),
-                        t("billing.sell"),
-                        t("billing.subtotalCol"),
-                        "",
-                      ].map((h) => (
-                        <th
-                          key={h}
-                          className="px-3 py-2.5 text-start text-xs font-semibold text-slate-500 uppercase tracking-wide"
-                        >
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {draftItems.map((item) => (
-                      <tr
-                        key={item.productId}
-                        className="hover:bg-slate-50/50 transition-colors"
-                      >
-                        <td className="px-3 py-2.5 font-medium text-slate-800">
-                          {item.name}
-                        </td>
-                        <td className="px-3 py-2.5 text-slate-500 tabular-nums">
-                          <StockBadge
-                            quantity={item.availableStock}
-                            minQuantity={null}
-                          />
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <Input
-                            type="number"
-                            inputMode="numeric"
-                            enterKeyHint="done"
-                            min={1}
-                            max={item.availableStock}
-                            value={item.quantity}
-                            onChange={(e) =>
-                              updateQuantity(
-                                item.productId,
-                                Number(e.target.value),
-                              )
-                            }
-                            onKeyDown={dismissKeyboardOnEnter}
-                            className="w-20 text-center"
-                          />
-                        </td>
-                        <td className="px-3 py-2.5 tabular-nums text-slate-700">
-                          <PriceDisplay
-                            value={item.unitSellPrice}
-                            currency={currency}
-                          />
-                        </td>
-                        <td className="px-3 py-2.5 tabular-nums font-medium text-slate-800">
-                          <PriceDisplay
-                            value={calculateLineSubtotal(
-                              item.quantity,
-                              item.unitSellPrice,
-                            )}
-                            currency={currency}
-                            emphasis
-                          />
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() =>
-                              setDraftItems((cur) =>
-                                cur.filter(
-                                  (i) => i.productId !== item.productId,
-                                ),
-                              )
-                            }
-                          >
-                            {t("common.remove")}
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </TableShell>
+              <div className="hidden md:block">
+                <DataTable
+                  columns={draftItemColumns}
+                  data={draftItems}
+                  enableGlobalSearch={false}
+                  emptyTitle={t("billing.addOneProduct")}
+                  pageSize={10}
+                />
+              </div>
             </>
           )}
-        </SectionCard>
+        </Card>
 
         {/* ── Bill summary panel ───────────────────────────────────────── */}
         <div className="xl:sticky xl:top-6">
@@ -1038,7 +1018,11 @@ export function PosScreen() {
               }}
             />
           ) : (
-            <SectionCard title={t("billing.billSummary")} padding="md">
+            <Card className="flex flex-col gap-4" padding="sm">
+              <h3 className="text-base font-semibold text-slate-800">
+                {t("billing.billSummary")}
+              </h3>
+
               <form
                 className="flex flex-col gap-3"
                 onSubmit={form.handleSubmit(() => setConfirmOpen(true))}
@@ -1097,12 +1081,23 @@ export function PosScreen() {
                   )}
                 </div>
                 <FormField label={t("billing.paymentMethod")}>
-                  <Select {...form.register("paymentMethod")}>
-                    <option value="cash">{t("common.cash")}</option>
-                    <option value="card">{t("common.card")}</option>
-                    <option value="mixed">{t("common.mixed")}</option>
-                    <option value="credit">{t("common.credit")}</option>
-                  </Select>
+                  <SearchableSelect
+                    value={form.watch("paymentMethod")}
+                    onValueChange={(value) =>
+                      form.setValue(
+                        "paymentMethod",
+                        (value ?? "cash") as BillFormSchema["paymentMethod"],
+                      )
+                    }
+                    placeholder={t("billing.paymentMethod")}
+                    searchPlaceholder={t("common.search")}
+                    options={[
+                      { value: "cash", label: t("common.cash") },
+                      { value: "card", label: t("common.card") },
+                      { value: "mixed", label: t("common.mixed") },
+                      { value: "credit", label: t("common.credit") },
+                    ]}
+                  />
                 </FormField>
 
                 <div className="grid grid-cols-2 gap-3">
@@ -1244,20 +1239,17 @@ export function PosScreen() {
                       </div>
                       {watchedPaymentMethod === "cash" && (
                         <div className="flex flex-wrap gap-1.5">
-                          <Button
+                          <button
                             type="button"
-                            variant="outline"
-                            size="xs"
                             onClick={() => setIsPaidAmountManuallyEdited(false)}
+                            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-colors"
                           >
                             {t("billing.exact")}
-                          </Button>
+                          </button>
                           {[5, 10, 20, 50, 100].map((denomination) => (
-                            <Button
+                            <button
                               key={denomination}
                               type="button"
-                              variant="outline"
-                              size="xs"
                               onClick={() => {
                                 setIsPaidAmountManuallyEdited(true);
                                 form.setValue("paidAmount", denomination, {
@@ -1265,10 +1257,10 @@ export function PosScreen() {
                                   shouldValidate: true,
                                 });
                               }}
-                              className="tabular-nums"
+                              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 tabular-nums hover:bg-slate-50 hover:border-slate-300 transition-colors"
                             >
                               {denomination}
-                            </Button>
+                            </button>
                           ))}
                         </div>
                       )}
@@ -1281,83 +1273,62 @@ export function PosScreen() {
                 </FormField>
 
                 {/* Totals card */}
-                <div
-                  className={
-                    panelTones.neutral + " rounded-xl border px-4 py-3"
-                  }
-                >
+                <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3">
                   <SummaryRow
                     label={t("billing.subtotal")}
-                    value={
-                      <PriceDisplay
-                        value={billSummary.subtotal}
-                        currency={currency}
-                      />
-                    }
+                    value={formatCurrency(billSummary.subtotal, currency)}
                   />
                   <SummaryRow
                     label={t("billing.total")}
-                    value={
-                      <PriceDisplay
-                        value={billSummary.totalAmount}
-                        currency={currency}
-                        emphasis
-                      />
-                    }
+                    value={formatCurrency(billSummary.totalAmount, currency)}
                     highlight
                   />
                   <SummaryRow
                     label={t("billing.change")}
-                    value={
-                      <PriceDisplay
-                        value={Math.max(0, actualChangeAmount)}
-                        currency={currency}
-                        emphasis
-                      />
-                    }
+                    value={formatCurrency(
+                      Math.max(0, actualChangeAmount),
+                      currency,
+                    )}
                     highlight
                   />
                   {isCreditSale && amountDue > 0 && (
                     <SummaryRow
                       label={t("billing.amountDue")}
-                      value={
-                        <PriceDisplay
-                          value={amountDue}
-                          currency={currency}
-                          emphasis
-                        />
-                      }
+                      value={formatCurrency(amountDue, currency)}
                       highlight
                     />
                   )}
                 </div>
 
                 {!hasValidTotal && draftItems.length > 0 && (
-                  <Badge tone="danger">{t("billing.invalidTotal")}</Badge>
+                  <p className="text-xs text-red-600 font-medium">
+                    {t("billing.invalidTotal")}
+                  </p>
                 )}
 
                 {isCreditSale &&
                   !hasCreditCustomer &&
                   draftItems.length > 0 && (
-                    <Badge tone="danger">
+                    <p className="text-xs text-red-600 font-medium">
                       {t("billing.creditCustomerRequired")}
-                    </Badge>
+                    </p>
                   )}
 
                 {isMixedSale && !isMixedSplitValid && draftItems.length > 0 && (
-                  <Badge tone="danger">{t("billing.mixedSumMismatch")}</Badge>
+                  <p className="text-xs text-red-600 font-medium">
+                    {t("billing.mixedSumMismatch")}
+                  </p>
                 )}
 
                 {hasValidTotal &&
                   !hasEnoughPayment &&
                   draftItems.length > 0 && (
-                    <Badge tone="danger">{t("billing.paidBelowTotal")}</Badge>
+                    <p className="text-xs text-red-600 font-medium">
+                      {t("billing.paidBelowTotal")}
+                    </p>
                   )}
 
-                <CheckoutActionBar
-                  sticky={false}
-                  className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1"
-                >
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
                   <Button
                     type="button"
                     variant="ghost"
@@ -1368,38 +1339,31 @@ export function PosScreen() {
                   </Button>
                   <Button
                     type="submit"
-                    variant="success"
-                    size="lg"
                     disabled={!canFinalize}
                     className="flex-1"
                   >
                     {t("billing.reviewFinalize")}
                   </Button>
-                </CheckoutActionBar>
+                </div>
               </form>
-            </SectionCard>
+            </Card>
           )}
         </div>
       </div>
 
       {draftItems.length > 0 && (
-        <CheckoutActionBar className="fixed inset-x-0 bottom-0 lg:hidden">
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 px-3 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.12)] backdrop-blur lg:hidden">
           <div className="mx-auto flex max-w-screen-sm items-center gap-3">
             <div className="min-w-0 flex-1">
               <p className="text-xs font-medium text-slate-500">
                 {draftItems.length} {t("billing.items")}
               </p>
-              <PriceDisplay
-                value={billSummary.totalAmount}
-                currency={currency}
-                size="xl"
-                emphasis
-              />
+              <p className="truncate text-lg font-black text-slate-900 tabular-nums">
+                {formatCurrency(billSummary.totalAmount, currency)}
+              </p>
             </div>
             <Button
               type="button"
-              variant="success"
-              size="lg"
               disabled={!canFinalize}
               onClick={form.handleSubmit(() => setConfirmOpen(true))}
               className="min-w-[132px]"
@@ -1407,7 +1371,7 @@ export function PosScreen() {
               {t("billing.reviewFinalize")}
             </Button>
           </div>
-        </CheckoutActionBar>
+        </div>
       )}
 
       {/* ── Confirm modal ────────────────────────────────────────────────── */}
@@ -1425,55 +1389,35 @@ export function PosScreen() {
             >
               {t("common.cancel")}
             </Button>
-            <Button
-              type="button"
-              variant="success"
-              onClick={form.handleSubmit(finalize)}
-            >
+            <Button type="button" onClick={form.handleSubmit(finalize)}>
               {t("billing.confirmSave")}
             </Button>
           </>
         }
       >
-        <div className={panelTones.neutral + " rounded-xl border px-4 py-3"}>
+        <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3">
           <SummaryRow
             label={t("billing.items")}
             value={String(draftItems.length)}
           />
           <SummaryRow
             label={t("billing.total")}
-            value={
-              <PriceDisplay
-                value={billSummary.totalAmount}
-                currency={currency}
-                emphasis
-              />
-            }
+            value={formatCurrency(billSummary.totalAmount, currency)}
             highlight
           />
           <SummaryRow
             label={t("billing.paid")}
-            value={
-              <PriceDisplay value={actualPaidAmount} currency={currency} />
-            }
+            value={formatCurrency(actualPaidAmount, currency)}
           />
           <SummaryRow
             label={t("billing.change")}
-            value={
-              <PriceDisplay
-                value={Math.max(0, actualChangeAmount)}
-                currency={currency}
-                emphasis
-              />
-            }
+            value={formatCurrency(Math.max(0, actualChangeAmount), currency)}
             highlight
           />
           {isCreditSale && amountDue > 0 && (
             <SummaryRow
               label={t("billing.amountDue")}
-              value={
-                <PriceDisplay value={amountDue} currency={currency} emphasis />
-              }
+              value={formatCurrency(amountDue, currency)}
               highlight
             />
           )}

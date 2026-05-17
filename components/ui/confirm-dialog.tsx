@@ -54,7 +54,7 @@ export function ConfirmDialog({
       }
     >
       {description ? (
-        <p className={typographyClasses.body}>{description}</p>
+        <p className={typographyClasses.muted}>{description}</p>
       ) : null}
     </Modal>
   );

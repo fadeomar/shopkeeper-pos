@@ -48,6 +48,31 @@ export interface TranslationDict {
     shift: string;
     settings: string;
   };
+  navShort: {
+    dashboard: string;
+    products: string;
+    inventory: string;
+    reports: string;
+    customers: string;
+    suppliers: string;
+    newBill: string;
+    billHistory: string;
+    newPurchase: string;
+    shift: string;
+    settings: string;
+  };
+  dataTable: {
+    search: string;
+    loading: string;
+    noResults: string;
+    page: string;
+    of: string;
+    rowsPerPage: string;
+    first: string;
+    previous: string;
+    next: string;
+    last: string;
+  };
   sidebar: { title: string; subtitle: string };
   pwa: {
     online: string;
@@ -453,6 +478,7 @@ export interface TranslationDict {
     storeName: string;
     cashierName: string;
     currency: string;
+    currencyHint: string;
     allowLossSale: string;
     lowStockHighlight: string;
     save: string;

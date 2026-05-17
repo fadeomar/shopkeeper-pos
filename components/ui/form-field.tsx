@@ -1,6 +1,16 @@
 import type { ReactNode } from "react";
 import clsx from "clsx";
-import { formFieldSpacing, typographyClasses } from "@/lib/design/variants";
+import { typographyClasses } from "@/lib/design/variants";
+
+interface FormFieldProps {
+  label?: ReactNode;
+  hint?: ReactNode;
+  error?: ReactNode;
+  required?: boolean;
+  children: ReactNode;
+  className?: string;
+  htmlFor?: string;
+}
 
 export function FormField({
   label,
@@ -10,26 +20,26 @@ export function FormField({
   children,
   className,
   htmlFor,
-}: {
-  label?: ReactNode;
-  hint?: ReactNode;
-  error?: ReactNode;
-  required?: boolean;
-  children: ReactNode;
-  className?: string;
-  htmlFor?: string;
-}) {
+}: FormFieldProps) {
   return (
-    <div className={clsx(formFieldSpacing.default, className)}>
+    <div className={clsx("flex flex-col gap-1.5", className)}>
       {label && (
         <label htmlFor={htmlFor} className={typographyClasses.label}>
-          {label}
-          {required && <span className="ms-1 text-red-600">*</span>}
+          {label}{" "}
+          {required && (
+            <span className="text-red-500" aria-hidden="true">
+              *
+            </span>
+          )}
         </label>
       )}
       {children}
       {hint && !error && <p className={typographyClasses.hint}>{hint}</p>}
-      {error && <p className={typographyClasses.error}>{error}</p>}
+      {error && (
+        <p role="alert" className={typographyClasses.error}>
+          {error}
+        </p>
+      )}
     </div>
   );
 }

@@ -13,75 +13,36 @@ import {
 } from "@/lib/services/customer-ledger-service";
 import { useLocale } from "@/components/providers/locale-context";
 import { useToast } from "@/components/ui/toast";
-import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { EmptyState } from "@/components/ui/empty-state";
-import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
+import { DataTable } from "@/components/ui/data-table";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Modal } from "@/components/ui/modal";
-import { SectionCard } from "@/components/ui/section-card";
-import { Select } from "@/components/ui/select";
-import { TableShell } from "@/components/ui/table-shell";
-import { Toolbar } from "@/components/ui/toolbar";
-import { PriceDisplay } from "@/components/pos/price-display";
 import { formatCurrency } from "@/lib/utils/money";
 import { settingsRepo } from "@/lib/db/repositories";
-import { typographyClasses } from "@/lib/design/variants";
+import type { ColumnDef } from "@tanstack/react-table";
 
-type PaymentMethod = "cash" | "card" | "bank" | "other";
-
-function LedgerStatCard({
+function StatCard({
   label,
   value,
-  currency,
   helper,
-  tone = "neutral",
-  money = true,
 }: {
   label: string;
-  value: number;
-  currency: string;
+  value: string;
   helper?: string;
-  tone?: "neutral" | "success" | "warning" | "danger";
-  money?: boolean;
 }) {
   return (
-    <SectionCard padding="sm" tone={tone} className="gap-2">
-      <p className={typographyClasses.statLabel}>{label}</p>
-      {money ? (
-        <PriceDisplay
-          value={value}
-          currency={currency}
-          size="xl"
-          emphasis
-          className={typographyClasses.statValue}
-        />
-      ) : (
-        <p className={`${typographyClasses.statValue} tabular-nums`}>{value}</p>
-      )}
-      {helper && <p className={typographyClasses.statHelper}>{helper}</p>}
-    </SectionCard>
+    <Card className="p-4">
+      <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">
+        {label}
+      </p>
+      <p className="mt-2 text-2xl font-bold text-slate-900 tabular-nums">
+        {value}
+      </p>
+      {helper && <p className="mt-1 text-xs text-slate-500">{helper}</p>}
+    </Card>
   );
-}
-
-function BalanceBadge({
-  balance,
-  debtLabel,
-  creditLabel,
-}: {
-  balance: number;
-  debtLabel: string;
-  creditLabel: string;
-}) {
-  if (balance > 0.005) {
-    return <Badge tone="danger">{debtLabel}</Badge>;
-  }
-
-  if (balance < -0.005) {
-    return <Badge tone="info">{creditLabel}</Badge>;
-  }
-
-  return null;
 }
 
 export function CustomerLedgerWorkspace() {
@@ -89,16 +50,13 @@ export function CustomerLedgerWorkspace() {
   const { push } = useToast();
   const settings = useLiveQuery(() => settingsRepo.get(), []);
   const ledger = useLiveQuery(() => getCustomerLedger(), []);
-  const activeShift = useLiveQuery(
-    () => db.shifts.where("status").equals("open").first(),
-    [],
-  );
+  const activeShift = useLiveQuery(() => db.shifts.where("status").equals("open").first(), []);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<CustomerLedgerDetails | null>(null);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "card" | "bank" | "other">("cash");
   const currency = settings?.currency ?? "USD";
 
   const rows = ledger ?? [];
@@ -146,6 +104,26 @@ export function CustomerLedgerWorkspace() {
     setSelected(details);
   }
 
+  const ledgerColumns: ColumnDef<CustomerLedgerRow>[] = [
+    { header: t("customers.customer"), accessorKey: "name", cell: ({ row }) => <span className="font-medium text-slate-900">{row.original.name}</span> },
+    { header: t("customers.phone"), accessorKey: "phone", cell: ({ row }) => row.original.phone || "—" },
+    { header: t("customers.creditSales"), accessorKey: "creditSales", cell: ({ row }) => <span className="tabular-nums">{formatCurrency(row.original.creditSales, currency)}</span> },
+    { header: t("customers.paid"), id: "paid", cell: ({ row }) => <span className="tabular-nums">{formatCurrency(row.original.paidOnBills + row.original.payments, currency)}</span> },
+    {
+      header: t("customers.balanceDue"),
+      accessorKey: "balanceDue",
+      cell: ({ row }) => (
+        <span className={`tabular-nums font-semibold ${row.original.balanceDue > 0.005 ? "text-red-600" : row.original.balanceDue < -0.005 ? "text-blue-600" : "text-green-600"}`}>
+          {formatCurrency(row.original.balanceDue, currency)}
+          {row.original.balanceDue < -0.005 && <span className="ms-1 text-[10px] font-medium uppercase tracking-wide text-blue-500">{t("customers.creditBalanceNote")}</span>}
+        </span>
+      ),
+    },
+    { header: t("customers.bills"), accessorKey: "billCount" },
+    { header: t("customers.lastActivity"), accessorKey: "lastActivityAt", cell: ({ row }) => row.original.lastActivityAt ? new Date(row.original.lastActivityAt).toLocaleString() : "—" },
+    { header: "", id: "actions", enableSorting: false, cell: ({ row }) => <Button type="button" size="sm" variant="secondary" onClick={() => openDetails(row.original)}>{t("customers.view")}</Button> },
+  ];
+
   async function savePayment() {
     if (!selected) return;
     try {
@@ -173,151 +151,64 @@ export function CustomerLedgerWorkspace() {
     }
   }
 
-  const tableToolbar = (
-    <Toolbar align="end" className="w-full sm:w-auto">
-      <Input
-        value={search}
-        onChange={(event) => setSearch(event.target.value)}
-        placeholder={t("customers.searchPlaceholder")}
-        inputSize="sm"
-        className="min-w-[220px] sm:min-w-[280px]"
-      />
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={() => setSearch("")}
-      >
-        {t("customers.showAll")}
-      </Button>
-    </Toolbar>
-  );
-
   return (
     <div className="space-y-5" dir={dir}>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <LedgerStatCard
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">
+            {t("customers.title")}
+          </h1>
+          <p className="text-sm text-slate-500 mt-1 max-w-2xl">
+            {t("customers.subtitle")}
+          </p>
+        </div>
+        <Button type="button" onClick={() => setSearch("")}>
+          {t("customers.showAll")}
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+        <StatCard
           label={t("customers.totalCreditSales")}
-          value={totals.creditSales}
-          currency={currency}
+          value={formatCurrency(totals.creditSales, currency)}
         />
-        <LedgerStatCard
+        <StatCard
           label={t("customers.totalPaid")}
-          value={totals.payments}
-          currency={currency}
-          tone="success"
+          value={formatCurrency(totals.payments, currency)}
         />
-        <LedgerStatCard
+        <StatCard
           label={t("customers.totalBalanceDue")}
-          value={totals.balanceDue}
-          currency={currency}
-          tone={totals.balanceDue > 0.005 ? "danger" : "success"}
+          value={formatCurrency(totals.balanceDue, currency)}
         />
-        <LedgerStatCard
+        <StatCard
           label={t("customers.customersWithDebt")}
-          value={totals.customersWithDebt}
-          currency={currency}
-          money={false}
-          tone={totals.customersWithDebt > 0 ? "warning" : "success"}
+          value={String(totals.customersWithDebt)}
         />
       </div>
 
-      <TableShell
+      <DataTable
+        columns={ledgerColumns}
+        data={filteredRows}
         title={t("customers.ledger")}
         description={t("customers.ledgerDesc")}
-        toolbar={tableToolbar}
         loading={!ledger}
-        empty={
-          ledger && filteredRows.length === 0 ? (
-            <EmptyState
-              compact
-              title={t("customers.noCustomers")}
-              description={t("customers.noCustomersDesc")}
-            />
-          ) : undefined
-        }
-      >
-        <table className="min-w-[820px] w-full text-sm">
-          <thead className="border-b border-slate-200 bg-slate-50">
-            <tr>
-              {[
-                t("customers.customer"),
-                t("customers.phone"),
-                t("customers.creditSales"),
-                t("customers.paid"),
-                t("customers.balanceDue"),
-                t("customers.bills"),
-                t("customers.lastActivity"),
-                "",
-              ].map((head) => (
-                <th key={head} className={typographyClasses.tableHeader}>
-                  {head}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {filteredRows.map((row) => (
-              <tr key={row.key} className="hover:bg-slate-50/60">
-                <td className={typographyClasses.tableCellStrong}>
-                  {row.name}
-                </td>
-                <td className={typographyClasses.tableCellMuted}>
-                  {row.phone || "—"}
-                </td>
-                <td className="px-3 py-3">
-                  <PriceDisplay value={row.creditSales} currency={currency} />
-                </td>
-                <td className="px-3 py-3">
-                  <PriceDisplay
-                    value={row.paidOnBills + row.payments}
-                    currency={currency}
-                  />
-                </td>
-                <td className="px-3 py-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <PriceDisplay
-                      value={row.balanceDue}
-                      currency={currency}
-                      emphasis
-                      className={
-                        row.balanceDue > 0.005
-                          ? "text-red-700"
-                          : row.balanceDue < -0.005
-                            ? "text-blue-700"
-                            : "text-green-700"
-                      }
-                    />
-                    {Math.abs(row.balanceDue) > 0.005 && (
-                      <BalanceBadge
-                        balance={row.balanceDue}
-                        debtLabel={t("customers.balanceDue")}
-                        creditLabel={t("customers.creditBalanceNote")}
-                      />
-                    )}
-                  </div>
-                </td>
-                <td className="px-3 py-3 tabular-nums">{row.billCount}</td>
-                <td className={typographyClasses.tableCellMuted}>
-                  {row.lastActivityAt
-                    ? new Date(row.lastActivityAt).toLocaleString()
-                    : "—"}
-                </td>
-                <td className="px-3 py-3 text-end">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => openDetails(row)}
-                  >
-                    {t("customers.view")}
-                  </Button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </TableShell>
+        emptyTitle={t("customers.noCustomers")}
+        emptyDescription={t("customers.noCustomersDesc")}
+        searchPlaceholder={t("customers.searchPlaceholder")}
+        labels={{
+          searchPlaceholder: t("customers.searchPlaceholder"),
+          loading: t("dataTable.loading"),
+          page: t("dataTable.page"),
+          of: t("dataTable.of"),
+          rowsPerPage: t("dataTable.rowsPerPage"),
+          first: t("dataTable.first"),
+          previous: t("dataTable.previous"),
+          next: t("dataTable.next"),
+          last: t("dataTable.last"),
+        }}
+        pageSize={10}
+        getRowId={(row) => row.key}
+      />
 
       <Modal
         open={Boolean(selected)}
@@ -343,30 +234,33 @@ export function CustomerLedgerWorkspace() {
       >
         {selected && (
           <div className="space-y-4">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <LedgerStatCard
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <StatCard
                 label={t("customers.creditSales")}
-                value={selected.creditSales}
-                currency={currency}
+                value={formatCurrency(selected.creditSales, currency)}
               />
-              <LedgerStatCard
+              <StatCard
                 label={t("customers.paid")}
-                value={selected.paidOnBills + selected.payments}
-                currency={currency}
-                tone="success"
+                value={formatCurrency(
+                  selected.paidOnBills + selected.payments,
+                  currency,
+                )}
               />
-              <LedgerStatCard
+              <StatCard
                 label={t("customers.balanceDue")}
-                value={selected.balanceDue}
-                currency={currency}
-                tone={selected.balanceDue > 0.005 ? "danger" : "success"}
+                value={formatCurrency(selected.balanceDue, currency)}
               />
             </div>
 
-            <SectionCard title={t("customers.creditBills")} padding="sm">
-              <div className="max-h-56 space-y-2 overflow-y-auto pe-1">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900 mb-2">
+                {t("customers.creditBills")}
+              </h3>
+              <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
                 {selected.bills.length === 0 ? (
-                  <EmptyState compact title={t("customers.noCreditBills")} />
+                  <p className="text-sm text-slate-500">
+                    {t("customers.noCreditBills")}
+                  </p>
                 ) : (
                   selected.bills.map((bill) => {
                     const netTotal = Math.max(
@@ -377,7 +271,7 @@ export function CustomerLedgerWorkspace() {
                     return (
                       <div
                         key={bill.id}
-                        className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 p-3"
+                        className="rounded-xl border border-slate-100 p-3 flex items-center justify-between gap-3"
                       >
                         <div>
                           <Link
@@ -386,19 +280,15 @@ export function CustomerLedgerWorkspace() {
                           >
                             {bill.billNumber}
                           </Link>
-                          <p className={typographyClasses.hint}>
+                          <p className="text-xs text-slate-500">
                             {new Date(bill.createdAt).toLocaleString()}
                           </p>
                         </div>
                         <div className="text-end text-sm tabular-nums">
-                          <PriceDisplay value={netTotal} currency={currency} />
-                          <p className="mt-1 flex items-center justify-end gap-1 text-red-700">
-                            <span>{t("customers.due")}:</span>
-                            <PriceDisplay
-                              value={due}
-                              currency={currency}
-                              className="text-red-700"
-                            />
+                          <p>{formatCurrency(netTotal, currency)}</p>
+                          <p className="text-red-600 font-medium">
+                            {t("customers.due")}:{" "}
+                            {formatCurrency(due, currency)}
                           </p>
                         </div>
                       </div>
@@ -406,36 +296,39 @@ export function CustomerLedgerWorkspace() {
                   })
                 )}
               </div>
-            </SectionCard>
+            </div>
 
-            <SectionCard title={t("customers.payments")} padding="sm">
-              <div className="max-h-44 space-y-2 overflow-y-auto pe-1">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900 mb-2">
+                {t("customers.payments")}
+              </h3>
+              <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
                 {selected.paymentRows.length === 0 ? (
-                  <EmptyState compact title={t("customers.noPayments")} />
+                  <p className="text-sm text-slate-500">
+                    {t("customers.noPayments")}
+                  </p>
                 ) : (
                   selected.paymentRows.map((payment) => (
                     <div
                       key={payment.id}
-                      className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 p-3"
+                      className="rounded-xl border border-slate-100 p-3 flex items-center justify-between gap-3"
                     >
                       <div>
-                        <PriceDisplay
-                          value={payment.amount}
-                          currency={currency}
-                          emphasis
-                        />
-                        <p className={typographyClasses.hint}>
+                        <p className="font-medium text-slate-900">
+                          {formatCurrency(payment.amount, currency)}
+                        </p>
+                        <p className="text-xs text-slate-500">
                           {payment.note || t("customers.payment")}
                         </p>
                       </div>
-                      <p className={typographyClasses.hint}>
+                      <p className="text-xs text-slate-500">
                         {new Date(payment.createdAt).toLocaleString()}
                       </p>
                     </div>
                   ))
                 )}
               </div>
-            </SectionCard>
+            </div>
           </div>
         )}
       </Modal>
@@ -466,67 +359,57 @@ export function CustomerLedgerWorkspace() {
           </>
         }
       >
-        <div className="space-y-4">
-          {selected && (
-            <SectionCard
-              padding="sm"
-              tone={selected.balanceDue > 0.005 ? "warning" : "neutral"}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <span className={typographyClasses.label}>
-                  {t("customers.balanceDue")}
-                </span>
-                <PriceDisplay
-                  value={selected.balanceDue}
-                  currency={currency}
-                  emphasis
-                />
-              </div>
-            </SectionCard>
-          )}
-
-          <FormField label={t("customers.paymentAmount")}>
+        <div className="space-y-3">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-slate-600 uppercase tracking-wide">
+              {t("customers.paymentAmount")}
+            </span>
             <Input
               type="number"
-              inputMode="decimal"
-              enterKeyHint="done"
               step="0.01"
               min="0"
               value={amount}
               onChange={(event) => setAmount(event.target.value)}
             />
-          </FormField>
-
+          </label>
           {isOverpayment && (
-            <Badge tone="warning" className="whitespace-normal text-start">
+            <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
               {t("customers.overpaymentWarning", {
                 extra: formatCurrency(overpaymentExtra, currency),
               })}
-            </Badge>
+            </p>
           )}
-
-          <FormField label={t("customers.paymentMethod")}>
-            <Select
-              value={paymentMethod}
-              onChange={(event) =>
-                setPaymentMethod(event.target.value as PaymentMethod)
-              }
-            >
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-slate-600 uppercase tracking-wide">
+              {t("customers.paymentMethod")}
+            </span>
+            <div className="flex gap-2 flex-wrap">
               {(["cash", "card", "bank", "other"] as const).map((m) => (
-                <option key={m} value={m}>
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setPaymentMethod(m)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                    paymentMethod === m
+                      ? "bg-blue-600 text-white"
+                      : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                  }`}
+                >
                   {t(`common.${m}`)}
-                </option>
+                </button>
               ))}
-            </Select>
-          </FormField>
-
-          <FormField label={t("customers.note")}>
+            </div>
+          </div>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-slate-600 uppercase tracking-wide">
+              {t("customers.note")}
+            </span>
             <Input
               value={note}
               onChange={(event) => setNote(event.target.value)}
               placeholder={t("customers.notePlaceholder")}
             />
-          </FormField>
+          </label>
         </div>
       </Modal>
     </div>

@@ -12,8 +12,7 @@ import {
 import { createId } from "@/lib/utils/id";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
-import { FormField } from "@/components/ui/form-field";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useToast } from "@/components/ui/toast";
 import { BarcodeScannerModal } from "@/components/barcode/barcode-scanner-modal";
 import { useLocale } from "@/components/providers/locale-context";
@@ -42,6 +41,26 @@ const emptyDefaults: ProductSchema = {
   notes: "",
   status: "active",
 };
+
+function FormField({
+  label,
+  error,
+  children,
+}: {
+  label: string;
+  error?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="flex flex-col gap-1.5">
+      <span className="text-sm font-medium text-slate-700">{label}</span>
+      {children}
+      {error && (
+        <span className="text-xs text-red-600 font-medium">{error}</span>
+      )}
+    </label>
+  );
+}
 
 export function ProductForm({ product, onSaved }: Props) {
   const { t } = useLocale();
@@ -96,24 +115,20 @@ export function ProductForm({ product, onSaved }: Props) {
 
   return (
     <form
-      className="flex flex-col gap-5"
+      className="flex flex-col gap-4"
       onSubmit={form.handleSubmit(onSubmit)}
     >
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <FormField label={t("products.name")} error={e.name?.message}>
-          <Input {...form.register("name")} error={Boolean(e.name)} />
+          <Input {...form.register("name")} />
         </FormField>
 
         <FormField label={t("products.barcode")} error={e.barcode?.message}>
           <div className="flex gap-2">
-            <Input
-              {...form.register("barcode")}
-              error={Boolean(e.barcode)}
-              className="flex-1"
-            />
+            <Input {...form.register("barcode")} className="flex-1" />
             <Button
               type="button"
-              variant="outline"
+              variant="secondary"
               onClick={() => setScannerOpen(true)}
             >
               {t("common.scan")}
@@ -179,10 +194,21 @@ export function ProductForm({ product, onSaved }: Props) {
         </FormField>
 
         <FormField label={t("products.status")}>
-          <Select {...form.register("status")}>
-            <option value="active">{t("common.active")}</option>
-            <option value="inactive">{t("common.inactive")}</option>
-          </Select>
+          <SearchableSelect
+            value={form.watch("status")}
+            onValueChange={(value) =>
+              form.setValue(
+                "status",
+                (value ?? "active") as "active" | "inactive",
+              )
+            }
+            placeholder={t("products.status")}
+            searchPlaceholder={t("common.search")}
+            options={[
+              { value: "active", label: t("common.active") },
+              { value: "inactive", label: t("common.inactive") },
+            ]}
+          />
         </FormField>
 
         <FormField label={t("products.notes")}>
@@ -191,7 +217,7 @@ export function ProductForm({ product, onSaved }: Props) {
       </div>
 
       {/* Footer row */}
-      <div className="flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-center justify-between gap-4 pt-2 border-t border-slate-100">
         <p
           className={clsx(
             "text-sm",
@@ -200,7 +226,7 @@ export function ProductForm({ product, onSaved }: Props) {
         >
           {lossWarning ? t("products.lossWarning") : t("products.editNote")}
         </p>
-        <Button type="submit" size="lg">
+        <Button type="submit">
           {product ? t("products.saveProduct") : t("products.addProduct")}
         </Button>
       </div>

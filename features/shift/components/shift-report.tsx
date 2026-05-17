@@ -3,16 +3,11 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db/schema";
 import { summarizeShiftBills } from "@/lib/services/shift-service";
+import { formatCurrency } from "@/lib/utils/money";
 import { formatDateTime } from "@/lib/utils/date";
 import { useLocale } from "@/components/providers/locale-context";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { SectionCard } from "@/components/ui/section-card";
-import { StatusPill } from "@/components/ui/status-pill";
-import { PriceDisplay } from "@/components/pos/price-display";
-import { dividerClasses, typographyClasses } from "@/lib/design/variants";
 import type { Bill, Settings, Shift } from "@/types/domain";
-import type { ReactNode } from "react";
 
 function Row({
   label,
@@ -21,55 +16,28 @@ function Row({
   tone,
 }: {
   label: string;
-  value: ReactNode;
+  value: string;
   emphasis?: boolean;
-  tone?: "success" | "danger" | "neutral";
+  tone?: "positive" | "warning" | "neutral";
 }) {
+  const toneClass =
+    tone === "positive"
+      ? "text-emerald-700"
+      : tone === "warning"
+        ? "text-red-700"
+        : "text-slate-900";
   return (
     <div className="flex items-center justify-between gap-3 py-1.5">
       <span
-        className={
-          emphasis
-            ? "text-sm font-semibold text-slate-900"
-            : "text-sm text-slate-500"
-        }
+        className={`text-sm ${emphasis ? "font-semibold text-slate-900" : "text-slate-500"}`}
       >
         {label}
       </span>
       <span
-        className={
-          emphasis
-            ? "text-sm font-bold tabular-nums text-slate-900"
-            : "text-sm font-medium tabular-nums text-slate-700"
-        }
+        className={`text-sm tabular-nums ${emphasis ? `font-bold ${toneClass}` : "font-medium text-slate-700"}`}
       >
-        {tone && tone !== "neutral" ? (
-          <Badge tone={tone}>{value}</Badge>
-        ) : (
-          value
-        )}
+        {value}
       </span>
-    </div>
-  );
-}
-
-function ReceiptSection({
-  children,
-  label,
-}: {
-  children: ReactNode;
-  label?: ReactNode;
-}) {
-  return (
-    <div
-      className={`mb-3 space-y-1 border-b border-dashed pb-3 ${dividerClasses.borderDefault}`}
-    >
-      {label && (
-        <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-          {label}
-        </p>
-      )}
-      {children}
     </div>
   );
 }
@@ -101,12 +69,11 @@ export function ShiftReport({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3 no-print">
-        <StatusPill
-          status={isClosed ? "shiftClosed" : "shiftOpen"}
-          label={
-            isClosed ? t("shift.shiftStatusClosed") : t("shift.shiftStatusOpen")
-          }
-        />
+        <p className="text-xs text-slate-500">
+          {isClosed
+            ? t("shift.shiftStatusClosed")
+            : t("shift.shiftStatusOpen")}
+        </p>
         <Button
           type="button"
           size="sm"
@@ -117,165 +84,122 @@ export function ShiftReport({
         </Button>
       </div>
 
-      <SectionCard
-        padding="sm"
-        className="mx-auto w-full max-w-sm print:border-0 print:shadow-none"
+      <div
+        id="receipt-print-area"
+        className="mx-auto w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 text-slate-900 shadow-sm print:shadow-none print:border-0"
       >
-        <div id="receipt-print-area" className="text-slate-900">
-          <div
-            className={`mb-3 border-b border-dashed pb-3 text-center ${dividerClasses.borderDefault}`}
-          >
-            <p className="text-lg font-black tracking-tight">{storeName}</p>
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-              {t("shift.activeShift")}
-            </p>
-          </div>
+        <div className="text-center border-b border-dashed border-slate-300 pb-3 mb-3">
+          <p className="text-lg font-black tracking-tight">{storeName}</p>
+          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+            {t("shift.activeShift")}
+          </p>
+        </div>
 
-          <ReceiptSection>
+        <div className="space-y-1 text-xs text-slate-600 border-b border-dashed border-slate-300 pb-3 mb-3">
+          <Row
+            label={t("shift.openedAt")}
+            value={formatDateTime(shift.openedAt)}
+          />
+          {shift.closedAt && (
             <Row
-              label={t("shift.openedAt")}
-              value={formatDateTime(shift.openedAt)}
+              label={t("shift.shiftStatusClosed")}
+              value={formatDateTime(shift.closedAt)}
             />
-            {shift.closedAt && (
+          )}
+          <Row label={t("shift.openedBy")} value={shift.openedByCashierName} />
+        </div>
+
+        <div className="space-y-1 border-b border-dashed border-slate-300 pb-3 mb-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-1">
+            {t("shift.cashCollected")}
+          </p>
+          <Row
+            label={t("shift.cashCollected")}
+            value={formatCurrency(totals.cashCollected, currency)}
+          />
+          <Row
+            label={t("shift.cardCollected")}
+            value={formatCurrency(totals.cardCollected, currency)}
+          />
+          <Row
+            label={t("shift.creditAccrued")}
+            value={formatCurrency(totals.creditAccrued, currency)}
+          />
+        </div>
+
+        <div className="space-y-1 border-b border-dashed border-slate-300 pb-3 mb-3">
+          <Row
+            label={t("shift.openingCash")}
+            value={formatCurrency(shift.openingCash, currency)}
+          />
+          <Row
+            label={t("shift.expectedCash")}
+            value={formatCurrency(expectedCash, currency)}
+            emphasis
+          />
+          {isClosed && (
+            <>
               <Row
-                label={t("shift.shiftStatusClosed")}
-                value={formatDateTime(shift.closedAt)}
+                label={t("shift.countedCash")}
+                value={formatCurrency(countedCash, currency)}
+                emphasis
               />
-            )}
-            <Row
-              label={t("shift.openedBy")}
-              value={shift.openedByCashierName}
-            />
-          </ReceiptSection>
-
-          <ReceiptSection label={t("shift.cashCollected")}>
-            <Row
-              label={t("shift.cashCollected")}
-              value={
-                <PriceDisplay
-                  value={totals.cashCollected}
-                  currency={currency}
-                />
-              }
-            />
-            <Row
-              label={t("shift.cardCollected")}
-              value={
-                <PriceDisplay
-                  value={totals.cardCollected}
-                  currency={currency}
-                />
-              }
-            />
-            <Row
-              label={t("shift.creditAccrued")}
-              value={
-                <PriceDisplay
-                  value={totals.creditAccrued}
-                  currency={currency}
-                />
-              }
-            />
-          </ReceiptSection>
-
-          <ReceiptSection>
-            <Row
-              label={t("shift.openingCash")}
-              value={
-                <PriceDisplay value={shift.openingCash} currency={currency} />
-              }
-            />
-            <Row
-              label={t("shift.expectedCash")}
-              value={
-                <PriceDisplay
-                  value={expectedCash}
-                  currency={currency}
-                  emphasis
-                />
-              }
-              emphasis
-            />
-            {isClosed && (
-              <>
-                <Row
-                  label={t("shift.countedCash")}
-                  value={
-                    <PriceDisplay
-                      value={countedCash}
-                      currency={currency}
-                      emphasis
-                    />
-                  }
-                  emphasis
-                />
-                <Row
-                  label={t("shift.cashDifference")}
-                  value={
-                    <PriceDisplay
-                      value={difference}
-                      currency={currency}
-                      emphasis
-                    />
-                  }
-                  emphasis
-                  tone={
-                    difference > 0.005
-                      ? "success"
-                      : difference < -0.005
-                        ? "danger"
-                        : "neutral"
-                  }
-                />
-              </>
-            )}
-          </ReceiptSection>
-
-          <ReceiptSection>
-            <Row
-              label={t("shift.billsInShift")}
-              value={String(totals.billCount)}
-            />
-            <Row
-              label={t("shift.itemsInShift")}
-              value={String(totals.itemCount)}
-            />
-            {totals.voidedBillCount > 0 && (
               <Row
-                label={t("shift.voidedCount")}
-                value={String(totals.voidedBillCount)}
+                label={t("shift.cashDifference")}
+                value={formatCurrency(difference, currency)}
+                emphasis
+                tone={
+                  difference > 0.005
+                    ? "positive"
+                    : difference < -0.005
+                      ? "warning"
+                      : "neutral"
+                }
               />
-            )}
-            {totals.returnedBillCount > 0 && (
-              <Row
-                label={t("shift.returnedCount")}
-                value={String(totals.returnedBillCount)}
-              />
-            )}
-          </ReceiptSection>
-
-          {(shift.notes || shift.closingNotes) && (
-            <div className={typographyClasses.hint}>
-              {shift.notes && (
-                <p>
-                  <span className="font-semibold">
-                    {t("shift.openShiftNotes")}:
-                  </span>{" "}
-                  {shift.notes}
-                </p>
-              )}
-              {shift.closingNotes && (
-                <p>
-                  <span className="font-semibold">
-                    {t("shift.closingNotes")}:
-                  </span>{" "}
-                  {shift.closingNotes}
-                </p>
-              )}
-            </div>
+            </>
           )}
         </div>
-      </SectionCard>
+
+        <div className="space-y-1 border-b border-dashed border-slate-300 pb-3 mb-3">
+          <Row
+            label={t("shift.billsInShift")}
+            value={String(totals.billCount)}
+          />
+          <Row
+            label={t("shift.itemsInShift")}
+            value={String(totals.itemCount)}
+          />
+          {totals.voidedBillCount > 0 && (
+            <Row
+              label={t("shift.voidedCount")}
+              value={String(totals.voidedBillCount)}
+            />
+          )}
+          {totals.returnedBillCount > 0 && (
+            <Row
+              label={t("shift.returnedCount")}
+              value={String(totals.returnedBillCount)}
+            />
+          )}
+        </div>
+
+        {(shift.notes || shift.closingNotes) && (
+          <div className="space-y-1 text-xs text-slate-600">
+            {shift.notes && (
+              <p>
+                <span className="font-semibold">{t("shift.openShiftNotes")}:</span>{" "}
+                {shift.notes}
+              </p>
+            )}
+            {shift.closingNotes && (
+              <p>
+                <span className="font-semibold">{t("shift.closingNotes")}:</span>{" "}
+                {shift.closingNotes}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

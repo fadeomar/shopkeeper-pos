@@ -1,26 +1,28 @@
 import clsx from "clsx";
 import { formatCurrency } from "@/lib/utils/money";
-import { priceDisplaySizes } from "@/lib/design/variants";
-
 export function PriceDisplay({
   value,
   currency = "USD",
   size = "md",
-  emphasis = false,
+  emphasis,
   className,
 }: {
   value: number;
   currency?: string;
-  size?: keyof typeof priceDisplaySizes;
+  size?: "sm" | "md" | "lg" | "xl";
   emphasis?: boolean;
   className?: string;
 }) {
   return (
     <span
       className={clsx(
-        "tabular-nums whitespace-nowrap",
-        priceDisplaySizes[size],
-        emphasis ? "font-bold text-slate-900" : "font-medium text-slate-700",
+        "tabular-nums",
+        size === "sm" && "text-sm",
+        size === "md" && "text-base",
+        size === "lg" && "text-lg",
+        size === "xl" && "text-2xl",
+        emphasis && "font-black text-slate-900",
+        !emphasis && "font-semibold",
         className,
       )}
     >

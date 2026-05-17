@@ -1,43 +1,32 @@
 import type { ReactNode } from "react";
 import clsx from "clsx";
-import { actionRowClasses, typographyClasses } from "@/lib/design/variants";
-
 export function PageHeader({
   title,
   description,
   actions,
-  eyebrow,
   className,
 }: {
   title: ReactNode;
   description?: ReactNode;
   actions?: ReactNode;
-  eyebrow?: ReactNode;
   className?: string;
 }) {
   return (
     <section
       className={clsx(
-        "flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between",
+        "flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between",
         className,
       )}
     >
-      <div className="min-w-0">
-        {eyebrow && (
-          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-blue-700">
-            {eyebrow}
-          </p>
-        )}
-        <h2 className={typographyClasses.pageTitle}>{title}</h2>
+      <div>
+        <h1 className="text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">
+          {title}
+        </h1>
         {description && (
-          <p className={clsx("mt-1", typographyClasses.pageDescription)}>
-            {description}
-          </p>
+          <p className="mt-1 text-sm text-slate-500">{description}</p>
         )}
       </div>
-      {actions && (
-        <div className={clsx(actionRowClasses.end, "shrink-0")}>{actions}</div>
-      )}
+      {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
     </section>
   );
 }

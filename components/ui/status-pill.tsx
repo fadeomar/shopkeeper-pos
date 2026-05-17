@@ -1,28 +1,28 @@
-import type { ReactNode } from "react";
+import type React from "react";
 import { Badge } from "@/components/ui/badge";
-import { getStatusMeta, type StatusTone } from "@/lib/design/status";
-
+import {
+  paymentStatusTone,
+  syncStatusTone,
+  type Tone,
+} from "@/lib/design/status";
 export function StatusPill({
   status,
-  tone,
   label,
+  tone,
   size = "sm",
   className,
 }: {
   status: string;
-  tone?: StatusTone;
-  label?: ReactNode;
+  label?: React.ReactNode;
+  tone?: Tone;
   size?: "sm" | "md";
   className?: string;
 }) {
-  const meta = getStatusMeta(status);
+  const resolvedTone =
+    tone ?? syncStatusTone[status] ?? paymentStatusTone[status] ?? "neutral";
   return (
-    <Badge
-      tone={tone ?? meta?.tone ?? "neutral"}
-      size={size}
-      className={className}
-    >
-      {label ?? meta?.label ?? status}
+    <Badge tone={resolvedTone} size={size} className={className}>
+      {label ?? status}
     </Badge>
   );
 }

@@ -1,61 +1,32 @@
-import type { ReactNode } from "react";
-import clsx from "clsx";
+import type { PropsWithChildren, ReactNode } from "react";
 import { Card } from "@/components/ui/card";
-import { typographyClasses } from "@/lib/design/variants";
-import type { StatusTone } from "@/lib/design/status";
-
-type SectionTone = Exclude<StatusTone, "info">;
-
-const toneVariant: Record<
-  SectionTone,
-  "default" | "success" | "warning" | "danger"
-> = {
-  neutral: "default",
-  success: "success",
-  warning: "warning",
-  danger: "danger",
-};
-
 export function SectionCard({
   title,
   description,
   actions,
   children,
-  tone = "neutral",
-  padding = "md",
   className,
-}: {
+  padding = "md",
+}: PropsWithChildren<{
   title?: ReactNode;
   description?: ReactNode;
   actions?: ReactNode;
-  children: ReactNode;
-  tone?: SectionTone;
-  padding?: "sm" | "md" | "lg" | "xl";
   className?: string;
-}) {
+  padding?: "sm" | "md" | "lg";
+}>) {
   return (
-    <Card
-      variant={toneVariant[tone]}
-      padding={padding}
-      className={clsx("flex flex-col gap-4", className)}
-    >
+    <Card padding={padding} className={className}>
       {(title || description || actions) && (
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
             {title && (
-              <h3 className={typographyClasses.sectionTitle}>{title}</h3>
+              <h2 className="text-base font-bold text-slate-900">{title}</h2>
             )}
             {description && (
-              <p className={clsx("mt-1", typographyClasses.sectionDescription)}>
-                {description}
-              </p>
+              <p className="mt-0.5 text-sm text-slate-500">{description}</p>
             )}
           </div>
-          {actions && (
-            <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
-              {actions}
-            </div>
-          )}
+          {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
         </div>
       )}
       {children}

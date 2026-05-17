@@ -1,15 +1,14 @@
 import { StatusPill } from "@/components/ui/status-pill";
-
 export function StockBadge({
   quantity,
   minQuantity,
-  className,
   size = "sm",
+  className,
 }: {
   quantity: number;
   minQuantity?: number | null;
-  className?: string;
   size?: "sm" | "md";
+  className?: string;
 }) {
   const status =
     quantity <= 0
@@ -17,5 +16,25 @@ export function StockBadge({
       : minQuantity != null && quantity <= minQuantity
         ? "lowStock"
         : "inStock";
-  return <StatusPill status={status} size={size} className={className} />;
+  const tone =
+    status === "outOfStock"
+      ? "danger"
+      : status === "lowStock"
+        ? "warning"
+        : "success";
+  const label =
+    status === "outOfStock"
+      ? "Out of stock"
+      : status === "lowStock"
+        ? "Low stock"
+        : "In stock";
+  return (
+    <StatusPill
+      status={status}
+      tone={tone}
+      label={label}
+      size={size}
+      className={className}
+    />
+  );
 }

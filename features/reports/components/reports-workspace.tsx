@@ -1,28 +1,16 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import clsx from "clsx";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db/schema";
 import { settingsRepo } from "@/lib/db/repositories";
 import { formatCurrency } from "@/lib/utils/money";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { EmptyState } from "@/components/ui/empty-state";
-import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
-import { LoadingState } from "@/components/ui/loading-state";
-import { SectionCard } from "@/components/ui/section-card";
-import { Select } from "@/components/ui/select";
-import { Toolbar } from "@/components/ui/toolbar";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useLocale } from "@/components/providers/locale-context";
-import { PriceDisplay } from "@/components/pos/price-display";
-import {
-  buttonSizes,
-  buttonVariants,
-  dividerClasses,
-  typographyClasses,
-} from "@/lib/design/variants";
 import {
   buildDailyTrend,
   filterBillsForReport,
@@ -36,31 +24,25 @@ import {
   type TrendRow,
 } from "@/features/reports/utils/report-summary";
 
-function ReportStatCard({
+function StatCard({
   label,
   value,
   helper,
-  tone = "neutral",
 }: {
   label: string;
-  value: ReactNode;
-  helper?: ReactNode;
-  tone?: "neutral" | "success" | "warning" | "danger";
+  value: string;
+  helper?: string;
 }) {
   return (
-    <SectionCard
-      tone={tone}
-      padding="sm"
-      className="min-h-[112px] justify-between"
-    >
-      <div>
-        <p className={typographyClasses.statLabel}>{label}</p>
-        <div className={clsx("mt-2", typographyClasses.statValue)}>{value}</div>
-      </div>
-      {helper && (
-        <p className={clsx("mt-1", typographyClasses.statHelper)}>{helper}</p>
-      )}
-    </SectionCard>
+    <Card className="min-h-[112px]">
+      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+        {label}
+      </p>
+      <p className="mt-2 text-2xl font-black text-slate-900 tabular-nums">
+        {value}
+      </p>
+      {helper && <p className="mt-1 text-xs text-slate-500">{helper}</p>}
+    </Card>
   );
 }
 
@@ -75,11 +57,13 @@ function ProductRows({
 }) {
   const { t } = useLocale();
   if (rows.length === 0) {
-    return <EmptyState title={emptyText} compact />;
+    return (
+      <p className="py-8 text-center text-sm text-slate-400">{emptyText}</p>
+    );
   }
 
   return (
-    <div className={dividerClasses.subtle}>
+    <div className="divide-y divide-slate-100">
       {rows.map((row) => (
         <div
           key={row.key}
@@ -87,13 +71,15 @@ function ProductRows({
         >
           <div className="min-w-0">
             <p className="truncate font-semibold text-slate-800">{row.name}</p>
-            <p className={clsx("truncate", typographyClasses.hint)}>
+            <p className="truncate text-xs text-slate-500">
               {row.barcode} · {row.category || "—"}
             </p>
           </div>
           <div className="text-end">
-            <PriceDisplay value={row.revenue} currency={currency} emphasis />
-            <p className={typographyClasses.hint}>
+            <p className="font-bold text-slate-900 tabular-nums">
+              {formatCurrency(row.revenue, currency)}
+            </p>
+            <p className="text-xs text-slate-500">
               {t("reports.qty")}: {row.quantity} ·{" "}
               {formatCurrency(row.profit, currency)}
             </p>
@@ -125,7 +111,9 @@ function TrendBars({ rows, currency }: { rows: TrendRow[]; currency: string }) {
                 style={{ width: `${width}%` }}
               />
             </div>
-            <PriceDisplay value={row.sales} currency={currency} size="sm" />
+            <span className="text-xs font-semibold tabular-nums text-slate-700">
+              {formatCurrency(row.sales, currency)}
+            </span>
           </div>
         );
       })}
@@ -200,70 +188,79 @@ export function ReportsWorkspace() {
   );
 
   if (loading) {
-    return <LoadingState title={t("common.loading")} />;
+    return (
+      <Card>
+        <p className="text-sm text-slate-500">{t("common.loading")}</p>
+      </Card>
+    );
   }
 
   return (
     <div className="flex flex-col gap-6">
-      <Toolbar align="between" className="items-start">
-        <div />
+      <section className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-bold text-slate-900">
+            {t("reports.title")}
+          </h2>
+          <p className="mt-1 max-w-2xl text-sm text-slate-500">
+            {t("reports.subtitle")}
+          </p>
+        </div>
         <div className="flex flex-wrap gap-2">
           <Link
             href="/bills"
-            className={clsx(
-              "inline-flex items-center justify-center font-semibold transition-colors",
-              buttonSizes.md,
-              buttonVariants.secondary,
-            )}
+            className="inline-flex min-h-[42px] items-center justify-center rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-200"
           >
             {t("reports.openBills")}
           </Link>
           <Link
             href="/inventory"
-            className={clsx(
-              "inline-flex items-center justify-center font-semibold transition-colors",
-              buttonSizes.md,
-              buttonVariants.primary,
-            )}
+            className="inline-flex min-h-[42px] items-center justify-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
           >
             {t("reports.openInventory")}
           </Link>
         </div>
-      </Toolbar>
+      </section>
 
-      <SectionCard>
+      <Card>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto] md:items-end">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <FormField label={t("reports.period")}>
-              <Select
+            <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
+              {t("reports.period")}
+              <SearchableSelect
                 value={range}
-                onChange={(event) =>
-                  setRange(event.target.value as ReportRange)
+                onValueChange={(value) =>
+                  setRange((value ?? "today") as ReportRange)
                 }
-              >
-                <option value="today">{t("reports.today")}</option>
-                <option value="week">{t("reports.last7Days")}</option>
-                <option value="month">{t("reports.thisMonth")}</option>
-                <option value="all">{t("reports.allTime")}</option>
-                <option value="custom">{t("reports.customRange")}</option>
-              </Select>
-            </FormField>
+                placeholder={t("reports.period")}
+                searchPlaceholder={t("common.search")}
+                options={[
+                  { value: "today", label: t("reports.today") },
+                  { value: "week", label: t("reports.last7Days") },
+                  { value: "month", label: t("reports.thisMonth") },
+                  { value: "all", label: t("reports.allTime") },
+                  { value: "custom", label: t("reports.customRange") },
+                ]}
+              />
+            </label>
             {range === "custom" && (
               <>
-                <FormField label={t("reports.fromDate")}>
+                <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
+                  {t("reports.fromDate")}
                   <Input
                     type="date"
                     value={customFrom}
                     onChange={(event) => setCustomFrom(event.target.value)}
                   />
-                </FormField>
-                <FormField label={t("reports.toDate")}>
+                </label>
+                <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
+                  {t("reports.toDate")}
                   <Input
                     type="date"
                     value={customTo}
                     onChange={(event) => setCustomTo(event.target.value)}
                   />
-                </FormField>
+                </label>
               </>
             )}
           </div>
@@ -279,196 +276,134 @@ export function ReportsWorkspace() {
             {t("common.reset")}
           </Button>
         </div>
-      </SectionCard>
+      </Card>
 
       <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <ReportStatCard
+        <StatCard
           label={t("reports.totalSales")}
-          value={
-            <PriceDisplay
-              value={summary.sales}
-              currency={currency}
-              size="xl"
-              emphasis
-            />
-          }
+          value={formatCurrency(summary.sales, currency)}
         />
-        <ReportStatCard
+        <StatCard
           label={t("reports.totalProfit")}
-          value={
-            <PriceDisplay
-              value={summary.profit}
-              currency={currency}
-              size="xl"
-              emphasis
-            />
-          }
-          tone="success"
+          value={formatCurrency(summary.profit, currency)}
         />
-        <ReportStatCard
+        <StatCard
           label={t("reports.billCount")}
           value={String(summary.billCount)}
           helper={`${t("reports.averageBill")}: ${formatCurrency(summary.averageBill, currency)}`}
         />
-        <ReportStatCard
+        <StatCard
           label={t("reports.cashExpected")}
-          value={
-            <PriceDisplay
-              value={summary.cashExpected}
-              currency={currency}
-              size="xl"
-              emphasis
-            />
-          }
+          value={formatCurrency(summary.cashExpected, currency)}
         />
       </section>
 
       <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <ReportStatCard
+        <StatCard
           label={t("reports.purchaseCost")}
-          value={
-            <PriceDisplay
-              value={purchaseSummary.purchaseCost}
-              currency={currency}
-              size="xl"
-              emphasis
-            />
-          }
+          value={formatCurrency(purchaseSummary.purchaseCost, currency)}
           helper={`${t("reports.purchaseCount")}: ${purchaseSummary.purchaseCount}`}
         />
-        <ReportStatCard
+        <StatCard
           label={t("reports.cashPaidOut")}
-          value={
-            <PriceDisplay
-              value={purchaseSummary.cashPaidOut}
-              currency={currency}
-              size="xl"
-              emphasis
-            />
-          }
+          value={formatCurrency(purchaseSummary.cashPaidOut, currency)}
           helper={t("reports.cashPaidOutHelper")}
-          tone={purchaseSummary.cashPaidOut > 0 ? "warning" : "neutral"}
         />
-        <ReportStatCard
+        <StatCard
           label={t("reports.supplierPayments")}
-          value={
-            <PriceDisplay
-              value={purchaseSummary.supplierPayments}
-              currency={currency}
-              size="xl"
-              emphasis
-            />
-          }
+          value={formatCurrency(purchaseSummary.supplierPayments, currency)}
           helper={`${filteredSupplierPayments.length} ${t("reports.entries")}`}
         />
-        <ReportStatCard
+        <StatCard
           label={t("reports.netSupplierDebt")}
-          value={
-            <PriceDisplay
-              value={purchaseSummary.netSupplierDebt}
-              currency={currency}
-              size="xl"
-              emphasis
-            />
-          }
+          value={formatCurrency(purchaseSummary.netSupplierDebt, currency)}
           helper={t("reports.netSupplierDebtHelper")}
         />
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">
-        <SectionCard title={t("reports.paymentBreakdown")}>
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            <ReportStatCard
+        <Card>
+          <h3 className="text-base font-semibold text-slate-900">
+            {t("reports.paymentBreakdown")}
+          </h3>
+          <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+            <StatCard
               label={t("common.cash")}
-              value={
-                <PriceDisplay
-                  value={summary.byPayment.cash}
-                  currency={currency}
-                  size="lg"
-                  emphasis
-                />
-              }
+              value={formatCurrency(summary.byPayment.cash, currency)}
             />
-            <ReportStatCard
+            <StatCard
               label={t("common.card")}
-              value={
-                <PriceDisplay
-                  value={summary.byPayment.card}
-                  currency={currency}
-                  size="lg"
-                  emphasis
-                />
-              }
+              value={formatCurrency(summary.byPayment.card, currency)}
             />
-            <ReportStatCard
+            <StatCard
               label={t("common.mixed")}
-              value={
-                <PriceDisplay
-                  value={summary.byPayment.mixed}
-                  currency={currency}
-                  size="lg"
-                  emphasis
-                />
-              }
+              value={formatCurrency(summary.byPayment.mixed, currency)}
             />
-            <ReportStatCard
+            <StatCard
               label={t("common.credit")}
-              value={
-                <PriceDisplay
-                  value={summary.byPayment.credit}
-                  currency={currency}
-                  size="lg"
-                  emphasis
-                />
-              }
+              value={formatCurrency(summary.byPayment.credit, currency)}
             />
           </div>
-          <p className={typographyClasses.hint}>
+          <p className="mt-3 text-xs text-slate-500">
             {t("reports.adjustmentsNote")}: {t("common.voided")}{" "}
             {summary.voidedBills} · {t("common.returned")}{" "}
             {summary.returnedBills}
           </p>
-        </SectionCard>
+        </Card>
 
-        <SectionCard
-          title={t("reports.salesTrend")}
-          description={t("reports.salesTrendDesc")}
-        >
-          <TrendBars rows={trendRows} currency={currency} />
-        </SectionCard>
+        <Card>
+          <h3 className="text-base font-semibold text-slate-900">
+            {t("reports.salesTrend")}
+          </h3>
+          <p className="mt-1 text-sm text-slate-500">
+            {t("reports.salesTrendDesc")}
+          </p>
+          <div className="mt-4">
+            <TrendBars rows={trendRows} currency={currency} />
+          </div>
+        </Card>
       </section>
 
       <section className="grid gap-4 xl:grid-cols-3">
-        <SectionCard
-          title={t("reports.topSellingProducts")}
-          description={t("reports.topSellingProductsDesc")}
-        >
+        <Card>
+          <h3 className="text-base font-semibold text-slate-900">
+            {t("reports.topSellingProducts")}
+          </h3>
+          <p className="mt-1 text-sm text-slate-500">
+            {t("reports.topSellingProductsDesc")}
+          </p>
           <ProductRows
             rows={topProducts}
             currency={currency}
             emptyText={t("reports.noProductSales")}
           />
-        </SectionCard>
-        <SectionCard
-          title={t("reports.highestProfitProducts")}
-          description={t("reports.highestProfitProductsDesc")}
-        >
+        </Card>
+        <Card>
+          <h3 className="text-base font-semibold text-slate-900">
+            {t("reports.highestProfitProducts")}
+          </h3>
+          <p className="mt-1 text-sm text-slate-500">
+            {t("reports.highestProfitProductsDesc")}
+          </p>
           <ProductRows
             rows={highestProfitProducts}
             currency={currency}
             emptyText={t("reports.noProductSales")}
           />
-        </SectionCard>
-        <SectionCard
-          title={t("reports.lowStockSoldProducts")}
-          description={t("reports.lowStockSoldProductsDesc")}
-        >
+        </Card>
+        <Card>
+          <h3 className="text-base font-semibold text-slate-900">
+            {t("reports.lowStockSoldProducts")}
+          </h3>
+          <p className="mt-1 text-sm text-slate-500">
+            {t("reports.lowStockSoldProductsDesc")}
+          </p>
           <ProductRows
             rows={lowStockSoldProducts}
             currency={currency}
             emptyText={t("reports.noLowStockSold")}
           />
-        </SectionCard>
+        </Card>
       </section>
     </div>
   );

@@ -1,34 +1,31 @@
-import type { ReactNode } from "react";
 import clsx from "clsx";
-import {
-  loadingSpinnerClasses,
-  typographyClasses,
-} from "@/lib/design/variants";
-
 export function LoadingState({
-  title,
+  title = "Loading…",
   description,
-  compact = false,
+  compact,
   className,
 }: {
-  title?: ReactNode;
-  description?: ReactNode;
+  title?: React.ReactNode;
+  description?: React.ReactNode;
   compact?: boolean;
   className?: string;
 }) {
   return (
     <div
       className={clsx(
-        "flex items-center justify-center gap-3 text-center text-slate-500",
-        compact ? "p-5" : "p-8",
+        "flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white text-center",
+        compact ? "p-4" : "p-8",
         className,
       )}
     >
-      <span className={loadingSpinnerClasses.md} aria-hidden="true" />
-      <div className="text-start">
-        {title && <p className={typographyClasses.label}>{title}</p>}
-        {description && <p className={typographyClasses.hint}>{description}</p>}
-      </div>
+      <span
+        className="mb-3 h-6 w-6 animate-spin rounded-full border-2 border-blue-600 border-t-transparent"
+        aria-hidden
+      />
+      <p className="text-sm font-semibold text-slate-700">{title}</p>
+      {description && (
+        <p className="mt-1 text-xs text-slate-500">{description}</p>
+      )}
     </div>
   );
 }

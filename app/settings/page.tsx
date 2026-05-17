@@ -1,45 +1,25 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
-import { useLiveQuery } from "dexie-react-hooks";
-import { settingsRepo } from "@/lib/db/repositories";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { FormField } from "@/components/ui/form-field";
-import { PageHeader } from "@/components/ui/page-header";
-import { PageShell } from "@/components/ui/page-shell";
-import { SectionCard } from "@/components/ui/section-card";
-import { StatusPill } from "@/components/ui/status-pill";
-import { Toolbar } from "@/components/ui/toolbar";
-import { useToast } from "@/components/ui/toast";
-import { useLocale } from "@/components/providers/locale-context";
-import { useAuth } from "@/components/providers/auth-context";
-import { useSettings } from "@/components/providers/settings-context";
-import { syncAllToCloud, type SyncMeta } from "@/lib/firebase/sync-service";
-import { runSync } from "@/components/providers/sync-provider";
-import { getOpenConflicts } from "@/lib/services/sync-conflict-service";
-import {
-  enqueueSyncJob,
-  getPendingSyncCount,
-  getSyncQueueCounts,
-  retryFailedSyncJobs,
-} from "@/lib/services/sync-queue-service";
-import type { Locale } from "@/lib/i18n";
-import { db } from "@/lib/db/schema";
-import {
-  createLocalBackupSnapshot,
-  downloadJsonFile,
-} from "@/lib/utils/backup";
-import {
-  actionRowClasses,
-  alertTones,
-  dividerClasses,
-  panelTones,
-  typographyClasses,
-} from "@/lib/design/variants";
-import clsx from "clsx";
+import { useEffect, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { settingsRepo } from '@/lib/db/repositories';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { FormField } from '@/components/ui/form-field';
+import { Card } from '@/components/ui/card';
+import { useToast } from '@/components/ui/toast';
+import { useLocale } from '@/components/providers/locale-context';
+import { useAuth } from '@/components/providers/auth-context';
+import { useSettings } from '@/components/providers/settings-context';
+import { syncAllToCloud, type SyncMeta } from '@/lib/firebase/sync-service';
+import { runSync } from '@/components/providers/sync-provider';
+import { getOpenConflicts } from '@/lib/services/sync-conflict-service';
+import { enqueueSyncJob, getPendingSyncCount, getSyncQueueCounts, retryFailedSyncJobs } from '@/lib/services/sync-queue-service';
+import type { Locale } from '@/lib/i18n';
+import { db } from '@/lib/db/schema';
+import { createLocalBackupSnapshot, downloadJsonFile } from '@/lib/utils/backup';
+import clsx from 'clsx';
 
 interface SettingsFormValues {
   storeName: string;
@@ -57,11 +37,8 @@ export default function SettingsPage() {
 
   const form = useForm<SettingsFormValues>({
     defaultValues: {
-      storeName: "",
-      cashierName: "",
-      currency: "USD",
-      allowLossSale: false,
-      lowStockHighlight: true,
+      storeName: '', cashierName: '', currency: 'USD',
+      allowLossSale: false, lowStockHighlight: true,
     },
   });
 
@@ -69,7 +46,7 @@ export default function SettingsPage() {
     if (!settings) return;
     form.reset({
       storeName: settings.storeName,
-      cashierName: settings.cashierName || "",
+      cashierName: settings.cashierName || '',
       currency: settings.currency,
       allowLossSale: settings.allowLossSale,
       lowStockHighlight: settings.lowStockHighlight,
@@ -80,132 +57,114 @@ export default function SettingsPage() {
     // Normalize and validate the currency code so it can be safely passed to
     // Intl.NumberFormat across the app. Free-text values like "us" or "$"
     // would throw inside formatCurrency on any view that renders money.
-    const normalizedCurrency = (values.currency ?? "").trim().toUpperCase();
+    const normalizedCurrency = (values.currency ?? '').trim().toUpperCase();
     if (!/^[A-Z]{3}$/.test(normalizedCurrency)) {
-      push(t("settings.invalidCurrency"), "error");
+      push(t('settings.invalidCurrency'), 'error');
       return;
     }
     const saved = await settingsRepo.update({
       ...values,
       currency: normalizedCurrency,
-      syncStatus: "pending",
+      syncStatus: 'pending',
       lastSyncError: undefined,
     });
     setSettings(saved);
-    await enqueueSyncJob({
-      entity: "settings",
-      entityId: saved.id,
-      operation: "upsert",
-    });
-    push(t("settings.saved"));
+    await enqueueSyncJob({ entity: 'settings', entityId: saved.id, operation: 'upsert' });
+    push(t('settings.saved'));
   }
 
   const languages: { value: Locale; label: string }[] = [
-    { value: "en", label: t("settings.english") },
-    { value: "ar", label: t("settings.arabic") },
+    { value: 'en', label: t('settings.english') },
+    { value: 'ar', label: t('settings.arabic') },
   ];
 
   return (
-    <PageShell>
-      <PageHeader
-        title={t("settings.title")}
-        description={t("settings.subtitle")}
-      />
+    <div className="flex flex-col gap-5">
+      <section>
+        <h2 className="text-xl font-bold text-slate-900">{t('settings.title')}</h2>
+        <p className="mt-1 text-sm text-slate-500">{t('settings.subtitle')}</p>
+      </section>
 
-      <SectionCard
-        title={t("settings.language")}
-        description={t("settings.languageDesc")}
-      >
-        <Toolbar align="start">
-          {languages.map(({ value, label }) => {
-            const isActive = locale === value;
-            return (
-              <Button
-                key={value}
-                type="button"
-                variant={isActive ? "primary" : "outline"}
-                size="sm"
-                onClick={() => setLocale(value)}
-                aria-pressed={isActive}
-              >
-                {label}
-              </Button>
-            );
-          })}
-        </Toolbar>
-      </SectionCard>
+      {/* Language switcher */}
+      <Card>
+        <h3 className="text-sm font-semibold text-slate-700 mb-1">{t('settings.language')}</h3>
+        <p className="text-xs text-slate-500 mb-4">{t('settings.languageDesc')}</p>
+        <div className="flex flex-wrap gap-2">
+          {languages.map(({ value, label }) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setLocale(value)}
+              className={clsx(
+                'px-5 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all duration-150',
+                locale === value
+                  ? 'border-blue-600 bg-blue-50 text-blue-700'
+                  : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50',
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </Card>
 
+      {/* Store settings form */}
       <form onSubmit={form.handleSubmit(onSubmit)}>
-        <SectionCard
-          title={t("settings.storeName")}
-          description={t("settings.subtitle")}
-          actions={<Button type="submit">{t("settings.save")}</Button>}
-        >
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <FormField label={t("settings.storeName")}>
-              <Input {...form.register("storeName")} />
+        <Card className="flex flex-col gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <FormField label={t('settings.storeName')}>
+              <Input {...form.register('storeName')} />
             </FormField>
-            <FormField label={t("settings.cashierName")}>
-              <Input {...form.register("cashierName")} />
+            <FormField label={t('settings.cashierName')}>
+              <Input {...form.register('cashierName')} />
             </FormField>
-            <FormField label={t("settings.currency")} className="sm:max-w-xs">
-              <Input {...form.register("currency")} />
+            <FormField label={t('settings.currency')} hint={t('settings.currencyHint')}>
+              <Input {...form.register('currency')} autoCapitalize="characters" maxLength={3} />
             </FormField>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <SettingToggleRow
-              label={t("settings.allowLossSale")}
-              inputProps={form.register("allowLossSale")}
-            />
-            <SettingToggleRow
-              label={t("settings.lowStockHighlight")}
-              inputProps={form.register("lowStockHighlight")}
-            />
+          <div className="flex flex-col gap-3">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                className="w-4 h-4 rounded accent-blue-600"
+                {...form.register('allowLossSale')}
+              />
+              <span className="text-sm font-medium text-slate-700">{t('settings.allowLossSale')}</span>
+            </label>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                className="w-4 h-4 rounded accent-blue-600"
+                {...form.register('lowStockHighlight')}
+              />
+              <span className="text-sm font-medium text-slate-700">{t('settings.lowStockHighlight')}</span>
+            </label>
           </div>
-        </SectionCard>
+
+          <div className="flex justify-end pt-1">
+            <Button type="submit">{t('settings.save')}</Button>
+          </div>
+        </Card>
       </form>
 
+      {/* Cloud Backup */}
       <CloudBackupCard />
+
+      {/* Device health / release safety */}
       <DeviceHealthCard />
 
-      <SectionCard title={t("settings.about")}>
-        <div className="flex items-center justify-between gap-3">
-          <span className={typographyClasses.bodyMuted}>
-            {t("settings.version")}
+      {/* About */}
+      <Card>
+        <h3 className="text-sm font-semibold text-slate-700 mb-3">{t('settings.about')}</h3>
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-slate-500">{t('settings.version')}</span>
+          <span className="text-sm font-mono font-medium text-slate-700">
+            v{process.env.NEXT_PUBLIC_APP_VERSION ?? '—'}
           </span>
-          <Badge tone="neutral" size="md" className="font-mono">
-            v{process.env.NEXT_PUBLIC_APP_VERSION ?? "—"}
-          </Badge>
         </div>
-      </SectionCard>
-    </PageShell>
-  );
-}
-
-function SettingToggleRow({
-  label,
-  inputProps,
-}: {
-  label: string;
-  inputProps: ReturnType<
-    ReturnType<typeof useForm<SettingsFormValues>>["register"]
-  >;
-}) {
-  return (
-    <label
-      className={clsx(
-        "flex min-h-14 cursor-pointer items-center gap-3 rounded-2xl border p-4",
-        panelTones.neutral,
-      )}
-    >
-      <input
-        type="checkbox"
-        className="size-4 rounded border-slate-300 accent-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-        {...inputProps}
-      />
-      <span className={typographyClasses.label}>{label}</span>
-    </label>
+      </Card>
+    </div>
   );
 }
 
@@ -214,7 +173,7 @@ function CloudBackupCard() {
   const { push } = useToast();
   const { t } = useLocale();
   const uid = user?.uid;
-  const [syncing, setSyncing] = useState(false);
+  const [syncing, setSyncing]   = useState(false);
   const [syncMeta, setSyncMeta] = useState<SyncMeta | null>(null);
 
   // Load last sync info from localStorage (no Firestore read needed)
@@ -223,9 +182,7 @@ function CloudBackupCard() {
     try {
       const stored = localStorage.getItem(`shopkeeper_last_sync_${uid}`);
       if (stored) setSyncMeta(JSON.parse(stored) as SyncMeta);
-    } catch {
-      /* ignore */
-    }
+    } catch { /* ignore */ }
   }, [uid]);
 
   async function handleSync() {
@@ -241,25 +198,22 @@ function CloudBackupCard() {
       ]);
 
       if (openConflicts.length > 0) {
-        push("Resolve the open conflict first, then sync again.", "error");
+        push('Resolve the open conflict first, then sync again.', 'error');
         return;
       }
 
       if (pendingCount > 0) {
-        window.dispatchEvent(new Event("shopkeeper:sync-requested"));
-        push(
-          `${pendingCount} change(s) are still waiting to sync. Try again after the sync badge becomes green.`,
-          "error",
-        );
+        window.dispatchEvent(new Event('shopkeeper:sync-requested'));
+        push(`${pendingCount} change(s) are still waiting to sync. Try again after the sync badge becomes green.`, 'error');
         return;
       }
 
       const result = await syncAllToCloud(uid);
       if (result) {
         setSyncMeta(result);
-        push(t("settings.syncSuccess"));
+        push(t('settings.syncSuccess'));
       } else {
-        push(t("settings.syncFailed"), "error");
+        push(t('settings.syncFailed'), 'error');
       }
     } finally {
       setSyncing(false);
@@ -268,72 +222,45 @@ function CloudBackupCard() {
 
   const lastSyncDisplay = syncMeta
     ? new Date(syncMeta.lastSyncedAt).toLocaleString(undefined, {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
+        year: 'numeric', month: 'short', day: 'numeric',
+        hour: '2-digit', minute: '2-digit',
       })
     : null;
 
   return (
-    <SectionCard
-      title={t("settings.cloudBackup")}
-      description={t("settings.cloudBackupDesc")}
-      actions={
+    <Card>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-700 mb-1">{t('settings.cloudBackup')}</h3>
+          <p className="text-xs text-slate-500 max-w-xs">
+            {t('settings.cloudBackupDesc')}
+          </p>
+        </div>
         <Button
           type="button"
           onClick={handleSync}
-          loading={syncing}
-          disabled={!uid}
+          disabled={syncing}
+          className="shrink-0"
         >
-          {syncing ? t("sync.syncing") : t("settings.syncNow")}
+          {syncing ? t('sync.syncing') : t('settings.syncNow')}
         </Button>
-      }
-    >
-      <Toolbar align="start">
-        <StatusPill
-          status={uid ? "online" : "offline"}
-          label={uid ? t("pwa.online") : t("pwa.offline")}
-        />
-        {syncMeta ? (
-          <StatusPill status="synced" label={t("sync.synced")} />
-        ) : (
-          <StatusPill status="pendingSync" label={t("settings.neverSynced")} />
-        )}
-      </Toolbar>
+      </div>
 
       {syncMeta ? (
-        <div
-          className={clsx(
-            "grid grid-cols-2 gap-3 border-t pt-4 sm:grid-cols-4",
-            dividerClasses.borderSubtle,
-          )}
-        >
-          <SyncStat
-            label={t("settings.lastSynced")}
-            value={lastSyncDisplay ?? "—"}
-            wide
-          />
-          <SyncStat
-            label={t("settings.bills")}
-            value={syncMeta.recordCounts.bills}
-          />
-          <SyncStat
-            label={t("settings.products")}
-            value={syncMeta.recordCounts.products}
-          />
-          <SyncStat
-            label={t("settings.movements")}
-            value={syncMeta.recordCounts.stockMovements}
-          />
+        <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <SyncStat label={t('settings.lastSynced')} value={lastSyncDisplay ?? '—'} wide />
+          <SyncStat label={t('settings.bills')}       value={syncMeta.recordCounts.bills} />
+          <SyncStat label={t('settings.products')}    value={syncMeta.recordCounts.products} />
+          <SyncStat label={t('settings.movements')}   value={syncMeta.recordCounts.stockMovements} />
         </div>
       ) : (
-        <p className={typographyClasses.hint}>{t("settings.neverSynced")}</p>
+        <p className="mt-3 text-xs text-slate-400">{t('settings.neverSynced')}</p>
       )}
-    </SectionCard>
+    </Card>
   );
 }
+
+
 
 function DeviceHealthCard() {
   const { t } = useLocale();
@@ -358,14 +285,7 @@ function DeviceHealthCard() {
   async function refreshHealth() {
     setLoading(true);
     try {
-      const [
-        products,
-        bills,
-        billItems,
-        stockMovements,
-        customerPayments,
-        queue,
-      ] = await Promise.all([
+      const [products, bills, billItems, stockMovements, customerPayments, queue] = await Promise.all([
         db.products.count(),
         db.bills.count(),
         db.billItems.count(),
@@ -373,14 +293,7 @@ function DeviceHealthCard() {
         db.customerPayments.count(),
         getSyncQueueCounts(),
       ]);
-      setStats({
-        products,
-        bills,
-        billItems,
-        stockMovements,
-        customerPayments,
-        ...queue,
-      });
+      setStats({ products, bills, billItems, stockMovements, customerPayments, ...queue });
     } finally {
       setLoading(false);
     }
@@ -389,12 +302,12 @@ function DeviceHealthCard() {
   useEffect(() => {
     void refreshHealth();
     const id = window.setInterval(refreshHealth, 5000);
-    window.addEventListener("online", refreshHealth);
-    window.addEventListener("shopkeeper:sync-requested", refreshHealth);
+    window.addEventListener('online', refreshHealth);
+    window.addEventListener('shopkeeper:sync-requested', refreshHealth);
     return () => {
       window.clearInterval(id);
-      window.removeEventListener("online", refreshHealth);
-      window.removeEventListener("shopkeeper:sync-requested", refreshHealth);
+      window.removeEventListener('online', refreshHealth);
+      window.removeEventListener('shopkeeper:sync-requested', refreshHealth);
     };
   }, []);
 
@@ -403,11 +316,7 @@ function DeviceHealthCard() {
     try {
       const count = await retryFailedSyncJobs();
       await refreshHealth();
-      push(
-        count > 0
-          ? t("settings.retrySyncQueued")
-          : t("settings.noFailedSyncJobs"),
-      );
+      push(count > 0 ? t('settings.retrySyncQueued') : t('settings.noFailedSyncJobs'));
     } finally {
       setRepairing(false);
     }
@@ -417,11 +326,11 @@ function DeviceHealthCard() {
     setExporting(true);
     try {
       const snapshot = await createLocalBackupSnapshot();
-      const stamp = snapshot.exportedAt.replace(/[:.]/g, "-");
+      const stamp = snapshot.exportedAt.replace(/[:.]/g, '-');
       downloadJsonFile(`shopkeeper-local-backup-${stamp}.json`, snapshot);
-      push(t("settings.localBackupExported"));
+      push(t('settings.localBackupExported'));
     } catch {
-      push(t("settings.localBackupFailed"), "error");
+      push(t('settings.localBackupFailed'), 'error');
     } finally {
       setExporting(false);
     }
@@ -435,146 +344,67 @@ function DeviceHealthCard() {
     }
     try {
       const keys = await browserWindow.caches.keys();
-      await Promise.all(
-        keys
-          .filter((key) => key.startsWith("sk-"))
-          .map((key) => browserWindow.caches.delete(key)),
-      );
-      push(t("settings.cacheCleared"));
+      await Promise.all(keys.filter((key) => key.startsWith('sk-')).map((key) => browserWindow.caches.delete(key)));
+      push(t('settings.cacheCleared'));
     } finally {
       browserWindow.location.reload();
     }
   }
 
-  const waiting = stats
-    ? stats.pending +
-      stats.syncing +
-      stats.failed +
-      stats.conflict +
-      stats.blocked
-    : 0;
+  const waiting = stats ? stats.pending + stats.syncing + stats.failed + stats.conflict + stats.blocked : 0;
   const blocked = stats?.blocked ?? 0;
-  const failed = stats?.failed ?? 0;
-  const healthTone =
-    blocked > 0 || failed > 0 ? "danger" : waiting > 0 ? "info" : "success";
 
   return (
-    <>
-      <SectionCard
-        title={t("settings.deviceHealth")}
-        description={t("settings.deviceHealthDesc")}
-        actions={
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={refreshHealth}
-            loading={loading}
-          >
-            {loading ? t("common.loading") : t("settings.refreshHealth")}
-          </Button>
-        }
-      >
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <SyncStat
-            label={t("settings.products")}
-            value={stats?.products ?? "—"}
-          />
-          <SyncStat label={t("settings.bills")} value={stats?.bills ?? "—"} />
-          <SyncStat
-            label={t("settings.movements")}
-            value={stats?.stockMovements ?? "—"}
-          />
-          <SyncStat label={t("settings.pendingSync")} value={waiting} />
+    <Card>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-700 mb-1">{t('settings.deviceHealth')}</h3>
+          <p className="text-xs text-slate-500 max-w-xl">{t('settings.deviceHealthDesc')}</p>
         </div>
+        <Button type="button" variant="secondary" onClick={refreshHealth} disabled={loading} className="shrink-0">
+          {loading ? t('common.loading') : t('settings.refreshHealth')}
+        </Button>
+      </div>
 
-        <div
-          className={clsx(
-            "rounded-2xl border p-3 text-xs",
-            alertTones[healthTone],
-          )}
-        >
-          {blocked > 0 ? (
-            <span className="font-medium">
-              {t("settings.blockedSyncWarning", { count: blocked })}
-            </span>
-          ) : failed > 0 ? (
-            <span className="font-medium">
-              {t("settings.failedSyncWarning", { count: failed })}
-            </span>
-          ) : waiting > 0 ? (
-            <span className="font-medium">
-              {t("settings.waitingSyncWarning", { count: waiting })}
-            </span>
-          ) : (
-            <span className="font-medium">{t("settings.healthLooksGood")}</span>
-          )}
-        </div>
+      <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <SyncStat label={t('settings.products')} value={stats?.products ?? '—'} />
+        <SyncStat label={t('settings.bills')} value={stats?.bills ?? '—'} />
+        <SyncStat label={t('settings.movements')} value={stats?.stockMovements ?? '—'} />
+        <SyncStat label={t('settings.pendingSync')} value={waiting} />
+      </div>
 
-        <Toolbar align="start">
-          <StatusPill
-            status={waiting > 0 ? "pendingSync" : "synced"}
-            label={waiting > 0 ? t("settings.pendingSync") : t("sync.synced")}
-          />
-          {failed > 0 && <StatusPill status="error" label={t("sync.failed")} />}
-          {blocked > 0 && (
-            <StatusPill status="conflict" label={t("sync.blocked")} />
-          )}
-        </Toolbar>
-      </SectionCard>
+      <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50 p-3 text-xs text-slate-600">
+        {blocked > 0 ? (
+          <span className="font-medium text-red-600">{t('settings.blockedSyncWarning', { count: blocked })}</span>
+        ) : stats?.failed ? (
+          <span className="font-medium text-red-600">{t('settings.failedSyncWarning', { count: stats.failed })}</span>
+        ) : waiting > 0 ? (
+          <span className="font-medium text-blue-700">{t('settings.waitingSyncWarning', { count: waiting })}</span>
+        ) : (
+          <span className="font-medium text-emerald-700">{t('settings.healthLooksGood')}</span>
+        )}
+      </div>
 
-      <SectionCard
-        title={t("settings.exportLocalBackup")}
-        description={t("settings.deviceHealthDesc")}
-      >
-        <div className={actionRowClasses.default}>
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={handleExportBackup}
-            loading={exporting}
-          >
-            {exporting
-              ? t("settings.exportingBackup")
-              : t("settings.exportLocalBackup")}
-          </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={handleRetryFailed}
-            loading={repairing}
-          >
-            {repairing ? t("sync.syncing") : t("settings.retryFailedSync")}
-          </Button>
-          <Button type="button" variant="outline" onClick={handleClearCaches}>
-            {t("settings.clearCacheReload")}
-          </Button>
-        </div>
-      </SectionCard>
-    </>
+      <div className="mt-4 flex flex-col sm:flex-row gap-2">
+        <Button type="button" variant="secondary" onClick={handleExportBackup} disabled={exporting}>
+          {exporting ? t('settings.exportingBackup') : t('settings.exportLocalBackup')}
+        </Button>
+        <Button type="button" variant="secondary" onClick={handleRetryFailed} disabled={repairing}>
+          {repairing ? t('sync.syncing') : t('settings.retryFailedSync')}
+        </Button>
+        <Button type="button" variant="secondary" onClick={handleClearCaches}>
+          {t('settings.clearCacheReload')}
+        </Button>
+      </div>
+    </Card>
   );
 }
 
-function SyncStat({
-  label,
-  value,
-  wide,
-}: {
-  label: string;
-  value: string | number;
-  wide?: boolean;
-}) {
+function SyncStat({ label, value, wide }: { label: string; value: string | number; wide?: boolean }) {
   return (
-    <div
-      className={clsx(
-        "rounded-2xl border p-3",
-        panelTones.neutral,
-        wide && "col-span-2 sm:col-span-1",
-      )}
-    >
-      <span className={typographyClasses.hint}>{label}</span>
-      <span className="mt-1 block text-sm font-semibold tabular-nums text-slate-800">
-        {value}
-      </span>
+    <div className={clsx('flex flex-col gap-0.5', wide && 'col-span-2 sm:col-span-1')}>
+      <span className="text-xs text-slate-400">{label}</span>
+      <span className="text-sm font-medium text-slate-700 tabular-nums">{value}</span>
     </div>
   );
 }

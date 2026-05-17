@@ -1,27 +1,30 @@
-import type { ReactNode } from "react";
+import type { PropsWithChildren, HTMLAttributes } from "react";
 import clsx from "clsx";
-import { badgeSizes, badgeTones } from "@/lib/design/variants";
-import type { StatusTone } from "@/lib/design/status";
+import { badgeTones } from "@/lib/design/variants";
+
+type Tone = keyof typeof badgeTones;
+
+interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
+  tone?: Tone;
+  size?: "sm" | "md";
+}
 
 export function Badge({
-  tone = "neutral",
-  size = "sm",
   children,
   className,
-}: {
-  tone?: StatusTone;
-  size?: keyof typeof badgeSizes;
-  children: ReactNode;
-  className?: string;
-}) {
+  tone = "neutral",
+  size = "sm",
+  ...props
+}: PropsWithChildren<BadgeProps>) {
   return (
     <span
       className={clsx(
-        "inline-flex items-center justify-center gap-1 rounded-full border font-medium whitespace-nowrap",
+        "inline-flex items-center gap-1 rounded-full border font-medium whitespace-nowrap",
+        size === "sm" ? "px-2 py-0.5 text-xs" : "px-2.5 py-1 text-sm",
         badgeTones[tone],
-        badgeSizes[size],
         className,
       )}
+      {...props}
     >
       {children}
     </span>

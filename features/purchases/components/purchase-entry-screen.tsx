@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import clsx from "clsx";
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { ColumnDef } from "@tanstack/react-table";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useLiveQuery } from "dexie-react-hooks";
@@ -22,35 +22,18 @@ import {
   calculateChange,
   calculateLineSubtotal,
 } from "@/lib/utils/calculations";
+import { formatCurrency } from "@/lib/utils/money";
 import { createFinalizedPurchase } from "@/lib/services/purchase-service";
 import { useAuth } from "@/components/providers/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Modal } from "@/components/ui/modal";
-import { PageShell } from "@/components/ui/page-shell";
-import { PageHeader } from "@/components/ui/page-header";
-import { SectionCard } from "@/components/ui/section-card";
-import { FormField } from "@/components/ui/form-field";
-import { TableShell } from "@/components/ui/table-shell";
-import { Toolbar } from "@/components/ui/toolbar";
-import { Badge } from "@/components/ui/badge";
-import { StatusPill } from "@/components/ui/status-pill";
-import { LoadingState } from "@/components/ui/loading-state";
 import { useToast } from "@/components/ui/toast";
 import { useLocale } from "@/components/providers/locale-context";
-import { PriceDisplay } from "@/components/pos/price-display";
-import { CheckoutActionBar } from "@/components/pos/checkout-action-bar";
-import {
-  buttonSizes,
-  buttonVariants,
-  dividerClasses,
-  focusRing,
-  panelTones,
-  surfaceClasses,
-  typographyClasses,
-} from "@/lib/design/variants";
+import { Card } from "@/components/ui/card";
 import type {
   Purchase,
   PurchaseDraftItem,
@@ -65,43 +48,48 @@ void customerRepo;
 
 const PURCHASE_DRAFT_KEY_PREFIX = "shopkeeper-purchase-draft-v1";
 
+function FormField({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="flex flex-col gap-1.5">
+      <span className="text-xs font-medium text-slate-600 uppercase tracking-wide">
+        {label}
+      </span>
+      {children}
+    </label>
+  );
+}
+
 function SummaryRow({
   label,
   value,
   highlight,
 }: {
   label: string;
-  value: React.ReactNode;
+  value: string;
   highlight?: boolean;
 }) {
   return (
-    <div
-      className={clsx(
-        "flex items-center justify-between gap-3 border-b py-2 last:border-0",
-        dividerClasses.borderSubtle,
-      )}
-    >
+    <div className="flex items-center justify-between gap-2 py-2 border-b border-slate-100 last:border-0">
       <span
-        className={clsx(
-          "text-sm",
-          highlight
-            ? "font-semibold text-slate-900"
-            : typographyClasses.bodyMuted,
-        )}
+        className={`text-sm ${highlight ? "font-semibold text-slate-900" : "text-slate-500"}`}
       >
         {label}
       </span>
       <span
-        className={clsx(
-          "text-sm tabular-nums",
-          highlight ? "font-bold text-slate-900" : "font-medium text-slate-700",
-        )}
+        className={`text-sm tabular-nums ${highlight ? "font-bold text-slate-900" : "font-medium text-slate-700"}`}
       >
         {value}
       </span>
     </div>
   );
 }
+
 function dismissKeyboardOnEnter(event: React.KeyboardEvent<HTMLInputElement>) {
   if (event.key === "Enter") {
     event.preventDefault();
@@ -135,74 +123,60 @@ function SuccessPanel({
   void settings;
 
   return (
-    <SectionCard
-      tone="success"
-      padding="md"
-      title={
-        <span className="flex items-center gap-2">
-          <StatusPill
-            status="completed"
-            tone="success"
-            label={t("purchases.purchaseCompleted")}
-          />
-          <span className="font-mono text-base font-bold text-slate-900">
-            {purchase.purchaseNumber}
-          </span>
+    <Card className="flex flex-col gap-4" padding="sm">
+      <div className="flex items-start gap-3">
+        <span
+          aria-hidden
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-lg font-bold"
+        >
+          ✓
         </span>
-      }
-    >
-      <div
-        className={clsx(
-          "rounded-xl border px-4 py-3",
-          panelTones.success,
-          "bg-white/70 text-slate-700",
-        )}
-      >
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-emerald-700">
+            {t("purchases.purchaseCompleted")}
+          </p>
+          <p className="font-mono text-base font-bold text-slate-900">
+            {purchase.purchaseNumber}
+          </p>
+        </div>
+      </div>
+
+      <div className="rounded-xl bg-emerald-50 border border-emerald-100 px-4 py-3">
         <SummaryRow
           label={t("purchases.total")}
-          value={
-            <PriceDisplay
-              value={purchase.totalAmount}
-              currency={currency}
-              emphasis
-            />
-          }
+          value={formatCurrency(purchase.totalAmount, currency)}
           highlight
         />
         <SummaryRow
           label={t("purchases.paid")}
-          value={
-            <PriceDisplay value={purchase.paidAmount} currency={currency} />
-          }
+          value={formatCurrency(purchase.paidAmount, currency)}
         />
         {amountDue > 0 && (
           <SummaryRow
             label={t("purchases.amountDue")}
-            value={
-              <PriceDisplay value={amountDue} currency={currency} emphasis />
-            }
+            value={formatCurrency(amountDue, currency)}
             highlight
           />
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <Link
           href={"/purchases" as never}
-          className={clsx(
-            "h-11",
-            buttonSizes.md,
-            buttonVariants.outline,
-            focusRing,
-          )}
+          className="inline-flex h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
         >
           {t("purchases.historyTitle")}
         </Link>
-        <Button ref={newRef} type="button" onClick={onDismiss} fullWidth>
+        <Button
+          ref={newRef}
+          type="button"
+          onClick={onDismiss}
+          className="w-full"
+        >
           {t("purchases.newPurchaseAction")}
         </Button>
       </div>
-    </SectionCard>
+    </Card>
   );
 }
 
@@ -232,6 +206,24 @@ export function PurchaseEntryScreen() {
     purchase: Purchase;
     items: PurchaseItem[];
   } | null>(null);
+  const productOptions = useMemo(
+    () =>
+      (products ?? []).map((product) => ({
+        value: product.id,
+        label: product.name,
+        description: [product.barcode, product.brand, product.category]
+          .filter(Boolean)
+          .join(" • "),
+        meta: (
+          <span className="text-xs text-slate-500">
+            {formatCurrency(product.buyPrice, currency)} ·{" "}
+            {product.quantityInStock}
+          </span>
+        ),
+      })),
+    [products, currency],
+  );
+
   const [supplierFieldFocused, setSupplierFieldFocused] = useState(false);
 
   const form = useForm<PurchaseFormSchema>({
@@ -521,54 +513,140 @@ export function PurchaseEntryScreen() {
     }
   }
 
+  const draftItemColumns: ColumnDef<PurchaseDraftItem, unknown>[] = [
+    {
+      accessorKey: "name",
+      header: t("purchases.item"),
+      cell: ({ row }) => (
+        <span className="font-medium text-slate-800">{row.original.name}</span>
+      ),
+    },
+    {
+      accessorKey: "currentStock",
+      header: t("purchases.currentStock"),
+      cell: ({ row }) => (
+        <span className="tabular-nums text-slate-500">
+          {row.original.currentStock}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "quantity",
+      header: t("purchases.qty"),
+      cell: ({ row }) => {
+        const item = row.original;
+        return (
+          <Input
+            type="number"
+            inputMode="numeric"
+            enterKeyHint="done"
+            min={1}
+            value={item.quantity}
+            onChange={(e) =>
+              updateLine(item.productId, { quantity: Number(e.target.value) })
+            }
+            onKeyDown={dismissKeyboardOnEnter}
+            className="w-20 text-center"
+          />
+        );
+      },
+    },
+    {
+      accessorKey: "unitCost",
+      header: t("purchases.cost"),
+      cell: ({ row }) => {
+        const item = row.original;
+        return (
+          <Input
+            type="number"
+            inputMode="decimal"
+            enterKeyHint="done"
+            step="0.01"
+            min={0}
+            value={item.unitCost}
+            onChange={(e) =>
+              updateLine(item.productId, { unitCost: Number(e.target.value) })
+            }
+            onKeyDown={dismissKeyboardOnEnter}
+            className="w-24 text-center"
+          />
+        );
+      },
+    },
+    {
+      id: "subtotal",
+      header: t("purchases.subtotal"),
+      accessorFn: (row) => calculateLineSubtotal(row.quantity, row.unitCost),
+      cell: ({ row }) => (
+        <span className="font-medium tabular-nums text-slate-800">
+          {formatCurrency(
+            calculateLineSubtotal(row.original.quantity, row.original.unitCost),
+            currency,
+          )}
+        </span>
+      ),
+    },
+    {
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      cell: ({ row }) => (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => removeLine(row.original.productId)}
+        >
+          ×
+        </Button>
+      ),
+    },
+  ];
+
   if (!products) {
     return (
-      <PageShell size="wide">
-        <PageHeader
-          title={t("purchases.title")}
-          description={t("purchases.subtitle")}
-        />
-        <LoadingState />
-      </PageShell>
+      <Card>
+        <p className="text-sm text-slate-500">Loading…</p>
+      </Card>
     );
   }
 
   return (
-    <PageShell size="wide">
-      <PageHeader
-        title={t("purchases.title")}
-        description={t("purchases.subtitle")}
-      />
+    <>
+      <div className="mb-4">
+        <h1 className="text-2xl font-bold text-slate-900">
+          {t("purchases.title")}
+        </h1>
+        <p className="mt-1 text-sm text-slate-500 max-w-2xl">
+          {t("purchases.subtitle")}
+        </p>
+      </div>
 
-      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_400px] xl:gap-5">
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_400px] gap-4 xl:gap-5 items-start">
         {/* Build purchase panel */}
-        <SectionCard
-          title={t("purchases.title")}
-          actions={
-            draftItems.length > 0 ? (
-              <Badge tone="info">
+        <Card className="flex flex-col gap-4" padding="sm">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-base font-semibold text-slate-800">
+              {t("purchases.title")}
+            </h3>
+            {draftItems.length > 0 && (
+              <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
                 {draftItems.length} {t("purchases.items")}
-              </Badge>
-            ) : undefined
-          }
-          padding="md"
-        >
+              </span>
+            )}
+          </div>
+
           {/* Product + qty + cost entry */}
-          <Toolbar
-            align="between"
-            className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto_auto]"
-          >
-            <Select
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto_auto] gap-2">
+            <SearchableSelect
               value={productId}
-              onChange={(e) => setProductId(e.target.value)}
-            >
-              <option value="">{t("purchases.selectProduct")}</option>
-              {products.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({p.quantityInStock})
-                </option>
-              ))}
-            </Select>
+              onValueChange={(value) => setProductId(value ?? "")}
+              options={productOptions}
+              placeholder={t("purchases.selectProduct")}
+              searchPlaceholder={t("products.searchPlaceholder")}
+              emptyMessage={t("products.noProducts")}
+              disabled={!products?.length}
+            />
             <Input
               type="number"
               inputMode="numeric"
@@ -600,7 +678,7 @@ export function PurchaseEntryScreen() {
             >
               {t("purchases.addItem")}
             </Button>
-          </Toolbar>
+          </div>
 
           {/* Items list */}
           {draftItems.length === 0 ? (
@@ -609,102 +687,15 @@ export function PurchaseEntryScreen() {
               description={t("purchases.subtitle")}
             />
           ) : (
-            <TableShell>
-              <table className="min-w-[560px] w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50">
-                    {[
-                      t("purchases.item"),
-                      t("purchases.currentStock"),
-                      t("purchases.qty"),
-                      t("purchases.cost"),
-                      t("purchases.subtotal"),
-                      "",
-                    ].map((h) => (
-                      <th key={h} className={typographyClasses.tableHeader}>
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {draftItems.map((item) => (
-                    <tr key={item.productId} className="hover:bg-slate-50/50">
-                      <td className={typographyClasses.tableCellStrong}>
-                        {item.name}
-                      </td>
-                      <td
-                        className={clsx(
-                          typographyClasses.tableCellMuted,
-                          "tabular-nums",
-                        )}
-                      >
-                        {item.currentStock}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <Input
-                          type="number"
-                          inputMode="numeric"
-                          enterKeyHint="done"
-                          min={1}
-                          value={item.quantity}
-                          onChange={(e) =>
-                            updateLine(item.productId, {
-                              quantity: Number(e.target.value),
-                            })
-                          }
-                          onKeyDown={dismissKeyboardOnEnter}
-                          className="w-20 text-center"
-                        />
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <Input
-                          type="number"
-                          inputMode="decimal"
-                          enterKeyHint="done"
-                          step="0.01"
-                          min={0}
-                          value={item.unitCost}
-                          onChange={(e) =>
-                            updateLine(item.productId, {
-                              unitCost: Number(e.target.value),
-                            })
-                          }
-                          onKeyDown={dismissKeyboardOnEnter}
-                          className="w-24 text-center"
-                        />
-                      </td>
-                      <td
-                        className={clsx(
-                          typographyClasses.tableCellStrong,
-                          "tabular-nums",
-                        )}
-                      >
-                        <PriceDisplay
-                          value={calculateLineSubtotal(
-                            item.quantity,
-                            item.unitCost,
-                          )}
-                          currency={currency}
-                        />
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeLine(item.productId)}
-                        >
-                          ×
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </TableShell>
+            <DataTable
+              columns={draftItemColumns}
+              data={draftItems}
+              enableGlobalSearch={false}
+              emptyTitle={t("purchases.addOneProduct")}
+              pageSize={10}
+            />
           )}
-        </SectionCard>
+        </Card>
 
         {/* Summary panel */}
         <div className="xl:sticky xl:top-6">
@@ -717,7 +708,11 @@ export function PurchaseEntryScreen() {
               onDismiss={() => setLastFinalized(null)}
             />
           ) : (
-            <SectionCard title={t("purchases.finalizePurchase")} padding="md">
+            <Card className="flex flex-col gap-4" padding="sm">
+              <h3 className="text-base font-semibold text-slate-800">
+                {t("purchases.finalizePurchase")}
+              </h3>
+
               <form
                 className="flex flex-col gap-3"
                 onSubmit={form.handleSubmit(() => setConfirmOpen(true))}
@@ -748,14 +743,7 @@ export function PurchaseEntryScreen() {
                     />
                   </FormField>
                   {supplierSuggestions.length > 0 && (
-                    <ul
-                      className={clsx(
-                        "absolute left-0 right-0 top-full z-20 mt-1 max-h-44 overflow-auto rounded-xl border shadow-md",
-                        dividerClasses.borderDefault,
-                        surfaceClasses.surface,
-                        dividerClasses.subtle,
-                      )}
-                    >
+                    <ul className="absolute left-0 right-0 top-full z-20 mt-1 max-h-44 overflow-auto rounded-xl border border-slate-200 bg-white shadow-md divide-y divide-slate-100">
                       {supplierSuggestions.map((s) => (
                         <li key={s.id}>
                           <button
@@ -780,12 +768,24 @@ export function PurchaseEntryScreen() {
                 </div>
 
                 <FormField label={t("purchases.paymentMethod")}>
-                  <Select {...form.register("paymentMethod")}>
-                    <option value="cash">{t("common.cash")}</option>
-                    <option value="card">{t("common.card")}</option>
-                    <option value="mixed">{t("common.mixed")}</option>
-                    <option value="credit">{t("common.credit")}</option>
-                  </Select>
+                  <SearchableSelect
+                    value={form.watch("paymentMethod")}
+                    onValueChange={(value) =>
+                      form.setValue(
+                        "paymentMethod",
+                        (value ??
+                          "cash") as PurchaseFormSchema["paymentMethod"],
+                      )
+                    }
+                    placeholder={t("purchases.paymentMethod")}
+                    searchPlaceholder={t("common.search")}
+                    options={[
+                      { value: "cash", label: t("common.cash") },
+                      { value: "card", label: t("common.card") },
+                      { value: "mixed", label: t("common.mixed") },
+                      { value: "credit", label: t("common.credit") },
+                    ]}
+                  />
                 </FormField>
 
                 <div className="grid grid-cols-2 gap-3">
@@ -817,7 +817,7 @@ export function PurchaseEntryScreen() {
                   <FormField label={t("purchases.mixedSplit")}>
                     <div className="grid grid-cols-2 gap-2">
                       <label className="flex flex-col gap-1">
-                        <span className={typographyClasses.statLabel}>
+                        <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">
                           {t("common.cash")}
                         </span>
                         <Input
@@ -848,7 +848,7 @@ export function PurchaseEntryScreen() {
                         />
                       </label>
                       <label className="flex flex-col gap-1">
-                        <span className={typographyClasses.statLabel}>
+                        <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">
                           {t("common.card")}
                         </span>
                         <Input
@@ -927,88 +927,63 @@ export function PurchaseEntryScreen() {
                   <Input {...form.register("notes")} />
                 </FormField>
 
-                <div
-                  className={clsx(
-                    "rounded-xl border px-4 py-3",
-                    dividerClasses.borderDefault,
-                    surfaceClasses.surfaceSoft,
-                  )}
-                >
+                <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3">
                   <SummaryRow
                     label={t("purchases.subtotal")}
-                    value={
-                      <PriceDisplay
-                        value={purchaseSummary.subtotal}
-                        currency={currency}
-                      />
-                    }
+                    value={formatCurrency(purchaseSummary.subtotal, currency)}
                   />
                   <SummaryRow
                     label={t("purchases.total")}
-                    value={
-                      <PriceDisplay
-                        value={purchaseSummary.totalAmount}
-                        currency={currency}
-                        emphasis
-                      />
-                    }
+                    value={formatCurrency(
+                      purchaseSummary.totalAmount,
+                      currency,
+                    )}
                     highlight
                   />
                   <SummaryRow
                     label={t("purchases.change")}
-                    value={
-                      <PriceDisplay
-                        value={Math.max(0, actualChangeAmount)}
-                        currency={currency}
-                      />
-                    }
+                    value={formatCurrency(
+                      Math.max(0, actualChangeAmount),
+                      currency,
+                    )}
                   />
                   {isCreditPurchase && amountDue > 0 && (
                     <SummaryRow
                       label={t("purchases.amountDue")}
-                      value={
-                        <PriceDisplay
-                          value={amountDue}
-                          currency={currency}
-                          emphasis
-                        />
-                      }
+                      value={formatCurrency(amountDue, currency)}
                       highlight
                     />
                   )}
                 </div>
 
-                <div className="flex flex-col items-start gap-2">
-                  {!hasValidTotal && draftItems.length > 0 && (
-                    <Badge tone="danger">{t("purchases.invalidTotal")}</Badge>
+                {!hasValidTotal && draftItems.length > 0 && (
+                  <p className="text-xs text-red-600 font-medium">
+                    {t("purchases.invalidTotal")}
+                  </p>
+                )}
+                {isCreditPurchase &&
+                  !hasCreditSupplier &&
+                  draftItems.length > 0 && (
+                    <p className="text-xs text-red-600 font-medium">
+                      {t("purchases.creditSupplierRequired")}
+                    </p>
                   )}
-                  {isCreditPurchase &&
-                    !hasCreditSupplier &&
-                    draftItems.length > 0 && (
-                      <Badge tone="danger">
-                        {t("purchases.creditSupplierRequired")}
-                      </Badge>
-                    )}
-                  {isMixedPurchase &&
-                    !isMixedSplitValid &&
-                    draftItems.length > 0 && (
-                      <Badge tone="danger">
-                        {t("purchases.mixedSumMismatch")}
-                      </Badge>
-                    )}
-                  {hasValidTotal &&
-                    !hasEnoughPayment &&
-                    draftItems.length > 0 && (
-                      <Badge tone="danger">
-                        {t("purchases.paidBelowTotal")}
-                      </Badge>
-                    )}
-                </div>
+                {isMixedPurchase &&
+                  !isMixedSplitValid &&
+                  draftItems.length > 0 && (
+                    <p className="text-xs text-red-600 font-medium">
+                      {t("purchases.mixedSumMismatch")}
+                    </p>
+                  )}
+                {hasValidTotal &&
+                  !hasEnoughPayment &&
+                  draftItems.length > 0 && (
+                    <p className="text-xs text-red-600 font-medium">
+                      {t("purchases.paidBelowTotal")}
+                    </p>
+                  )}
 
-                <CheckoutActionBar
-                  sticky={false}
-                  className="grid grid-cols-1 border-t-0 bg-transparent p-0 shadow-none sm:grid-cols-2"
-                >
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
                   <Button
                     type="button"
                     variant="ghost"
@@ -1024,9 +999,9 @@ export function PurchaseEntryScreen() {
                   >
                     {t("purchases.reviewFinalize")}
                   </Button>
-                </CheckoutActionBar>
+                </div>
               </form>
-            </SectionCard>
+            </Card>
           )}
         </div>
       </div>
@@ -1051,45 +1026,29 @@ export function PurchaseEntryScreen() {
           </>
         }
       >
-        <div
-          className={clsx(
-            "rounded-xl border px-4 py-3",
-            dividerClasses.borderDefault,
-            surfaceClasses.surfaceSoft,
-          )}
-        >
+        <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3">
           <SummaryRow
             label={t("purchases.items")}
-            value={<Badge tone="info">{draftItems.length}</Badge>}
+            value={String(draftItems.length)}
           />
           <SummaryRow
             label={t("purchases.total")}
-            value={
-              <PriceDisplay
-                value={purchaseSummary.totalAmount}
-                currency={currency}
-                emphasis
-              />
-            }
+            value={formatCurrency(purchaseSummary.totalAmount, currency)}
             highlight
           />
           <SummaryRow
             label={t("purchases.paid")}
-            value={
-              <PriceDisplay value={actualPaidAmount} currency={currency} />
-            }
+            value={formatCurrency(actualPaidAmount, currency)}
           />
           {amountDue > 0 && (
             <SummaryRow
               label={t("purchases.amountDue")}
-              value={
-                <PriceDisplay value={amountDue} currency={currency} emphasis />
-              }
+              value={formatCurrency(amountDue, currency)}
               highlight
             />
           )}
         </div>
       </Modal>
-    </PageShell>
+    </>
   );
 }

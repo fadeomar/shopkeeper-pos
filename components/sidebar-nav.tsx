@@ -6,17 +6,17 @@ import clsx from 'clsx';
 import { useLocale } from '@/components/providers/locale-context';
 
 const routes = [
-  { href: '/',          key: 'nav.dashboard',   short: 'Home'      },
-  { href: '/billing',   key: 'nav.newBill',     short: 'Sell'      },
-  { href: '/bills',     key: 'nav.billHistory', short: 'Bills'     },
-  { href: '/purchases/new', key: 'nav.newPurchase', short: 'Buy'   },
-  { href: '/products',  key: 'nav.products',    short: 'Products'  },
-  { href: '/inventory', key: 'nav.inventory',   short: 'Stock'     },
-  { href: '/reports',   key: 'nav.reports',     short: 'Reports'   },
-  { href: '/customers', key: 'nav.customers',   short: 'Customers' },
-  { href: '/suppliers', key: 'nav.suppliers',   short: 'Suppliers' },
-  { href: '/shift',     key: 'nav.shift',       short: 'Shift'     },
-  { href: '/settings',  key: 'nav.settings',    short: 'Settings'  },
+  { href: '/',          key: 'nav.dashboard',   shortKey: 'navShort.dashboard' },
+  { href: '/billing',   key: 'nav.newBill',     shortKey: 'navShort.newBill' },
+  { href: '/bills',     key: 'nav.billHistory', shortKey: 'navShort.billHistory' },
+  { href: '/purchases/new', key: 'nav.newPurchase', shortKey: 'navShort.newPurchase' },
+  { href: '/products',  key: 'nav.products',    shortKey: 'navShort.products' },
+  { href: '/inventory', key: 'nav.inventory',   shortKey: 'navShort.inventory' },
+  { href: '/reports',   key: 'nav.reports',     shortKey: 'navShort.reports' },
+  { href: '/customers', key: 'nav.customers',   shortKey: 'navShort.customers' },
+  { href: '/suppliers', key: 'nav.suppliers',   shortKey: 'navShort.suppliers' },
+  { href: '/shift',     key: 'nav.shift',       shortKey: 'navShort.shift' },
+  { href: '/settings',  key: 'nav.settings',    shortKey: 'navShort.settings' },
 ] as const;
 
 export function SidebarNav() {
@@ -30,7 +30,7 @@ export function SidebarNav() {
         'lg:flex-col lg:px-3 lg:py-2 lg:overflow-x-visible lg:flex-1 lg:snap-none',
       )}
     >
-      {routes.map(({ href, key, short }) => {
+      {routes.map(({ href, key, shortKey }) => {
         const active = pathname === href || (href !== '/' && pathname.startsWith(href));
         return (
           <Link
@@ -44,7 +44,7 @@ export function SidebarNav() {
                 : 'text-slate-300 hover:bg-white/10 hover:text-white',
             )}
           >
-            <span className="lg:hidden">{short}</span>
+            <span className="lg:hidden">{t(shortKey)}</span>
             <span className="hidden lg:inline">{t(key)}</span>
           </Link>
         );

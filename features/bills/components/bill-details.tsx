@@ -1,42 +1,35 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState } from "react";
+import type { ColumnDef } from "@tanstack/react-table";
 import { useLiveQuery } from "dexie-react-hooks";
+import clsx from "clsx";
 import { db } from "@/lib/db/schema";
 import { settingsRepo } from "@/lib/db/repositories";
+import { formatCurrency } from "@/lib/utils/money";
 import { formatDateTime } from "@/lib/utils/date";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
-import { Badge } from "@/components/ui/badge";
-import { StatusPill } from "@/components/ui/status-pill";
-import { LoadingState } from "@/components/ui/loading-state";
-import { SectionCard } from "@/components/ui/section-card";
-import { TableShell } from "@/components/ui/table-shell";
-import { FormField } from "@/components/ui/form-field";
+import { DataTable } from "@/components/ui/data-table";
 import { useToast } from "@/components/ui/toast";
 import { useLocale } from "@/components/providers/locale-context";
-import { PriceDisplay } from "@/components/pos/price-display";
 import { returnBillItem, voidBill } from "@/lib/services/billing-service";
 import {
   getBillNetProfit,
   getBillNetTotal,
 } from "@/features/bills/utils/bill-summary";
 import { ReceiptView } from "@/features/bills/components/receipt-view";
-import { alertTones, typographyClasses } from "@/lib/design/variants";
 import type { BillItem } from "@/types/domain";
 
-function billTone(status: string) {
-  if (status === "finalized") return "success" as const;
-  if (status === "voided") return "danger" as const;
-  return "warning" as const;
-}
-
-function DetailField({ label, value }: { label: string; value: ReactNode }) {
+function DetailField({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex flex-col gap-1 rounded-xl bg-slate-50 p-3">
-      <span className={typographyClasses.statLabel}>{label}</span>
+    <div className="flex flex-col gap-1">
+      <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">
+        {label}
+      </span>
       <span className="text-sm font-semibold text-slate-800">{value}</span>
     </div>
   );
@@ -48,26 +41,18 @@ function SummaryRow({
   highlight,
 }: {
   label: string;
-  value: ReactNode;
+  value: string;
   highlight?: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 border-b border-slate-100 py-2 last:border-0">
+    <div className="flex items-center justify-between gap-4 py-2 border-b border-slate-100 last:border-0">
       <span
-        className={
-          highlight
-            ? "text-sm font-semibold text-slate-900"
-            : "text-sm text-slate-500"
-        }
+        className={`text-sm ${highlight ? "font-semibold text-slate-900" : "text-slate-500"}`}
       >
         {label}
       </span>
       <span
-        className={
-          highlight
-            ? "text-sm font-bold text-slate-900 tabular-nums"
-            : "text-sm font-medium text-slate-700 tabular-nums"
-        }
+        className={`text-sm tabular-nums ${highlight ? "font-bold text-slate-900" : "font-medium text-slate-700"}`}
       >
         {value}
       </span>
@@ -100,7 +85,11 @@ export function BillDetails({ billId }: { billId: string }) {
   const netProfit = useMemo(() => (bill ? getBillNetProfit(bill) : 0), [bill]);
 
   if (bill === undefined || items === undefined) {
-    return <LoadingState title={t("bills.loadingBill")} />;
+    return (
+      <Card>
+        <p className="text-sm text-slate-500">{t("bills.loadingBill")}</p>
+      </Card>
+    );
   }
   if (!bill) {
     return (
@@ -114,6 +103,105 @@ export function BillDetails({ billId }: { billId: string }) {
   const canVoid = bill.status === "finalized";
   const canReturn = bill.status !== "voided";
   const selectedRemaining = returnItem ? remainingQuantity(returnItem) : 0;
+
+  const itemColumns: ColumnDef<BillItem, unknown>[] = [
+    {
+      accessorKey: "barcodeAtSale",
+      header: t("bills.barcodeAtSale"),
+      cell: ({ row }) => (
+        <span className="font-mono text-xs tabular-nums text-slate-600">
+          {row.original.barcodeAtSale}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "productNameAtSale",
+      header: t("bills.productAtSale"),
+      cell: ({ row }) => (
+        <span className="font-medium text-slate-800">
+          {row.original.productNameAtSale}
+        </span>
+      ),
+    },
+    { accessorKey: "categoryAtSale", header: t("bills.categoryAtSale") },
+    {
+      accessorKey: "quantitySold",
+      header: t("billing.qty"),
+      cell: ({ row }) => (
+        <span className="tabular-nums text-slate-700">
+          {row.original.quantitySold}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "quantityReturned",
+      header: t("bills.returnedQty"),
+      cell: ({ row }) => (
+        <span className="tabular-nums text-slate-700">
+          {row.original.quantityReturned ?? 0}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "unitBuyPriceAtSale",
+      header: t("bills.buy"),
+      cell: ({ row }) => (
+        <span className="tabular-nums text-slate-600">
+          {formatCurrency(row.original.unitBuyPriceAtSale, currency)}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "unitSellPriceAtSale",
+      header: t("bills.sell"),
+      cell: ({ row }) => (
+        <span className="tabular-nums text-slate-700">
+          {formatCurrency(row.original.unitSellPriceAtSale, currency)}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "lineSubtotal",
+      header: t("bills.lineTotal"),
+      cell: ({ row }) => (
+        <span className="font-semibold tabular-nums text-slate-800">
+          {formatCurrency(row.original.lineSubtotal, currency)}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "lineProfit",
+      header: t("bills.lineProfit"),
+      cell: ({ row }) => (
+        <span className="font-medium tabular-nums text-green-600">
+          {formatCurrency(row.original.lineProfit, currency)}
+        </span>
+      ),
+    },
+    {
+      id: "actions",
+      header: t("bills.action"),
+      enableSorting: false,
+      cell: ({ row }) => {
+        const item = row.original;
+        const remaining = remainingQuantity(item);
+        return (
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            disabled={!canReturn || remaining <= 0}
+            onClick={() => {
+              setReturnItem(item);
+              setReturnQuantity(String(remaining));
+            }}
+          >
+            {t("bills.returnItem")}
+          </Button>
+        );
+      },
+    },
+  ];
 
   async function handleVoid() {
     try {
@@ -160,24 +248,34 @@ export function BillDetails({ billId }: { billId: string }) {
     <div className="flex flex-col gap-5">
       <ReceiptView bill={bill} items={items} settings={settings} />
 
-      <SectionCard
-        title={bill.billNumber}
-        description={
-          bill.voidReason
-            ? `${t("bills.voidReason")}: ${bill.voidReason}`
-            : bill.lastReturnReason
-              ? `${t("bills.returnReason")}: ${bill.lastReturnReason}`
-              : undefined
-        }
-        actions={
-          <StatusPill
-            status={bill.status}
-            tone={billTone(bill.status)}
-            label={t(`common.${bill.status}` as Parameters<typeof t>[0])}
-          />
-        }
-      >
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+      <Card>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">
+              {bill.billNumber}
+            </h2>
+            {(bill.voidReason || bill.lastReturnReason) && (
+              <p className="mt-1 text-xs text-slate-500">
+                {bill.voidReason
+                  ? `${t("bills.voidReason")}: ${bill.voidReason}`
+                  : `${t("bills.returnReason")}: ${bill.lastReturnReason}`}
+              </p>
+            )}
+          </div>
+          <span
+            className={clsx(
+              "inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold",
+              bill.status === "finalized"
+                ? "bg-green-100 text-green-700"
+                : bill.status === "voided"
+                  ? "bg-red-100 text-red-700"
+                  : "bg-amber-100 text-amber-700",
+            )}
+          >
+            {t(`common.${bill.status}` as Parameters<typeof t>[0])}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
           <DetailField
             label={t("bills.createdAt")}
             value={formatDateTime(bill.createdAt)}
@@ -192,11 +290,7 @@ export function BillDetails({ billId }: { billId: string }) {
           />
           <DetailField
             label={t("bills.payment")}
-            value={
-              <Badge tone="neutral">
-                {t(`common.${bill.paymentMethod}` as Parameters<typeof t>[0])}
-              </Badge>
-            }
+            value={t(`common.${bill.paymentMethod}` as Parameters<typeof t>[0])}
           />
           <DetailField
             label={t("bills.phone")}
@@ -204,17 +298,21 @@ export function BillDetails({ billId }: { billId: string }) {
           />
           <DetailField
             label={t("bills.netTotal")}
-            value={
-              <PriceDisplay value={netTotal} currency={currency} emphasis />
-            }
+            value={formatCurrency(netTotal, currency)}
           />
         </div>
-      </SectionCard>
+      </Card>
 
-      <SectionCard
-        title={t("bills.actions")}
-        description={t("bills.actionsDesc")}
-        actions={
+      <Card>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="text-base font-bold text-slate-900">
+              {t("bills.actions")}
+            </h3>
+            <p className="mt-1 text-sm text-slate-500">
+              {t("bills.actionsDesc")}
+            </p>
+          </div>
           <Button
             type="button"
             variant="danger"
@@ -223,211 +321,86 @@ export function BillDetails({ billId }: { billId: string }) {
           >
             {t("bills.voidBill")}
           </Button>
-        }
-      >
+        </div>
         {!canVoid && bill.status !== "voided" && (
-          <p
-            className={`rounded-xl border px-3 py-2 text-xs ${alertTones.warning}`}
-          >
+          <p className="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
             {t("bills.voidOnlyFinalized")}
           </p>
         )}
-      </SectionCard>
+      </Card>
 
-      <TableShell
-        title={t("bills.items") ?? t("bills.productAtSale")}
-        description={t("bills.action")}
-      >
-        <table className="w-full min-w-[780px] text-sm">
-          <thead>
-            <tr className="border-b border-slate-200">
-              {[
-                t("bills.barcodeAtSale"),
-                t("bills.productAtSale"),
-                t("bills.categoryAtSale"),
-                t("billing.qty"),
-                t("bills.returnedQty"),
-                t("bills.buy"),
-                t("bills.sell"),
-                t("bills.lineTotal"),
-                t("bills.lineProfit"),
-                t("bills.action"),
-              ].map((h) => (
-                <th key={h} className={typographyClasses.tableHeader}>
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {items.map((item) => {
-              const remaining = remainingQuantity(item);
-              return (
-                <tr
-                  key={item.id}
-                  className="transition-colors hover:bg-slate-50/50"
-                >
-                  <td className="px-3 py-2.5 text-xs font-mono text-slate-600 tabular-nums">
-                    {item.barcodeAtSale}
-                  </td>
-                  <td className="px-3 py-2.5 font-medium text-slate-800">
-                    {item.productNameAtSale}
-                  </td>
-                  <td className="px-3 py-2.5 text-slate-600">
-                    {item.categoryAtSale}
-                  </td>
-                  <td className="px-3 py-2.5 text-slate-700 tabular-nums">
-                    {item.quantitySold}
-                  </td>
-                  <td className="px-3 py-2.5 text-slate-700 tabular-nums">
-                    {item.quantityReturned ?? 0}
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <PriceDisplay
-                      value={item.unitBuyPriceAtSale}
-                      currency={currency}
-                      size="sm"
-                    />
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <PriceDisplay
-                      value={item.unitSellPriceAtSale}
-                      currency={currency}
-                      size="sm"
-                    />
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <PriceDisplay
-                      value={item.lineSubtotal}
-                      currency={currency}
-                      size="sm"
-                      emphasis
-                    />
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <PriceDisplay
-                      value={item.lineProfit}
-                      currency={currency}
-                      size="sm"
-                      className="text-green-700"
-                    />
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      disabled={!canReturn || remaining <= 0}
-                      onClick={() => {
-                        setReturnItem(item);
-                        setReturnQuantity(String(remaining));
-                      }}
-                    >
-                      {t("bills.returnItem")}
-                    </Button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </TableShell>
+      <DataTable
+        columns={itemColumns}
+        data={items}
+        title={t("bills.items")}
+        emptyTitle={t("common.noResults")}
+        enableGlobalSearch={false}
+        pageSize={10}
+      />
 
-      <SectionCard title={t("bills.summary") ?? t("bills.total")}>
+      <Card>
         <div className="max-w-xs ms-auto">
           <SummaryRow
             label={t("bills.subtotal")}
-            value={<PriceDisplay value={bill.subtotal} currency={currency} />}
+            value={formatCurrency(bill.subtotal, currency)}
           />
           <SummaryRow
             label={t("bills.discount")}
-            value={
-              <PriceDisplay value={bill.discountAmount} currency={currency} />
-            }
+            value={formatCurrency(bill.discountAmount, currency)}
           />
           <SummaryRow
             label={t("bills.tax")}
-            value={<PriceDisplay value={bill.taxAmount} currency={currency} />}
+            value={formatCurrency(bill.taxAmount, currency)}
           />
           <SummaryRow
             label={t("bills.total")}
-            value={
-              <PriceDisplay
-                value={bill.totalAmount}
-                currency={currency}
-                emphasis
-              />
-            }
+            value={formatCurrency(bill.totalAmount, currency)}
             highlight
           />
           {(bill.returnedAmount ?? 0) > 0 && (
             <SummaryRow
               label={t("bills.returnedAmount")}
-              value={
-                <>
-                  <span>-</span>
-                  <PriceDisplay
-                    value={bill.returnedAmount ?? 0}
-                    currency={currency}
-                  />
-                </>
-              }
+              value={`-${formatCurrency(bill.returnedAmount ?? 0, currency)}`}
             />
           )}
           <SummaryRow
             label={t("bills.netTotal")}
-            value={
-              <PriceDisplay value={netTotal} currency={currency} emphasis />
-            }
+            value={formatCurrency(netTotal, currency)}
             highlight
           />
           <SummaryRow
             label={t("bills.paid")}
-            value={<PriceDisplay value={bill.paidAmount} currency={currency} />}
+            value={formatCurrency(bill.paidAmount, currency)}
           />
           <SummaryRow
             label={t("bills.change")}
-            value={
-              <PriceDisplay value={bill.changeAmount} currency={currency} />
-            }
+            value={formatCurrency(bill.changeAmount, currency)}
           />
           <SummaryRow
             label={t("bills.totalProfit")}
-            value={
-              <PriceDisplay value={bill.totalProfit} currency={currency} />
-            }
+            value={formatCurrency(bill.totalProfit, currency)}
           />
           {(bill.returnedProfit ?? 0) > 0 && (
             <SummaryRow
               label={t("bills.returnedProfit")}
-              value={
-                <>
-                  <span>-</span>
-                  <PriceDisplay
-                    value={bill.returnedProfit ?? 0}
-                    currency={currency}
-                  />
-                </>
-              }
+              value={`-${formatCurrency(bill.returnedProfit ?? 0, currency)}`}
             />
           )}
           <SummaryRow
             label={t("bills.netProfit")}
-            value={
-              <PriceDisplay value={netProfit} currency={currency} emphasis />
-            }
+            value={formatCurrency(netProfit, currency)}
             highlight
           />
         </div>
         {bill.notes && (
-          <p className="mt-4 whitespace-pre-line border-t border-slate-100 pt-4 text-sm text-slate-500">
+          <p className="mt-4 pt-4 border-t border-slate-100 text-sm text-slate-500 whitespace-pre-line">
             <span className="font-medium text-slate-700">
               {t("bills.notes")}:
             </span>{" "}
             {bill.notes}
           </p>
         )}
-      </SectionCard>
+      </Card>
 
       <Modal
         open={voidOpen}
@@ -455,15 +428,19 @@ export function BillDetails({ billId }: { billId: string }) {
           </>
         }
       >
-        <FormField label={t("bills.voidReason")} htmlFor="void-reason">
-          <textarea
-            id="void-reason"
-            value={voidReason}
-            onChange={(event) => setVoidReason(event.target.value)}
-            className="min-h-24 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder={t("bills.reasonPlaceholder")}
-          />
-        </FormField>
+        <label
+          className="text-sm font-medium text-slate-700"
+          htmlFor="void-reason"
+        >
+          {t("bills.voidReason")}
+        </label>
+        <textarea
+          id="void-reason"
+          value={voidReason}
+          onChange={(event) => setVoidReason(event.target.value)}
+          className="mt-2 w-full min-h-24 rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          placeholder={t("bills.reasonPlaceholder")}
+        />
       </Modal>
 
       <Modal
@@ -501,10 +478,13 @@ export function BillDetails({ billId }: { billId: string }) {
         }
       >
         <div className="space-y-3">
-          <FormField
-            label={t("bills.returnQuantity")}
-            htmlFor="return-quantity"
-          >
+          <div>
+            <label
+              className="text-sm font-medium text-slate-700"
+              htmlFor="return-quantity"
+            >
+              {t("bills.returnQuantity")}
+            </label>
             <Input
               id="return-quantity"
               type="number"
@@ -514,16 +494,22 @@ export function BillDetails({ billId }: { billId: string }) {
               value={returnQuantity}
               onChange={(event) => setReturnQuantity(event.target.value)}
             />
-          </FormField>
-          <FormField label={t("bills.returnReason")} htmlFor="return-reason">
+          </div>
+          <div>
+            <label
+              className="text-sm font-medium text-slate-700"
+              htmlFor="return-reason"
+            >
+              {t("bills.returnReason")}
+            </label>
             <textarea
               id="return-reason"
               value={returnReason}
               onChange={(event) => setReturnReason(event.target.value)}
-              className="min-h-24 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="mt-2 w-full min-h-24 rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder={t("bills.reasonPlaceholder")}
             />
-          </FormField>
+          </div>
         </div>
       </Modal>
     </div>
