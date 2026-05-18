@@ -43,9 +43,8 @@ function dismissOnEnter(e: React.KeyboardEvent<HTMLInputElement>) {
   }
 }
 
-
 export function ShiftWorkspace() {
-  const { t, dir } = useLocale();
+  const { t /* dir */ } = useLocale();
   const tableLabels = useDataTableLabels();
   const { push } = useToast();
   const settings = useLiveQuery(() => settingsRepo.get(), []);
@@ -90,7 +89,7 @@ export function ShiftWorkspace() {
     if (settings?.cashierName && !cashierName) {
       setCashierName(settings.cashierName);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings?.cashierName]);
   const [submittingOpen, setSubmittingOpen] = useState(false);
 
@@ -270,10 +269,7 @@ export function ShiftWorkspace() {
 
   return (
     <PageShell>
-      <PageHeader
-        title={t("shift.title")}
-        description={t("shift.subtitle")}
-      />
+      <PageHeader title={t("shift.title")} description={t("shift.subtitle")} />
 
       {activeShift === undefined ? null : activeShift === null ? (
         // ── No active shift: show the open-shift form ──────────────────

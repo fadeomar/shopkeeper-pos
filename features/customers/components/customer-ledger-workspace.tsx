@@ -19,25 +19,29 @@ import { StatCard } from "@/components/ui/stat-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DataTable } from "@/components/ui/data-table";
-import { EmptyState } from "@/components/ui/empty-state";
+// import { EmptyState } from "@/components/ui/empty-state";
 import { Modal } from "@/components/ui/modal";
 import { formatCurrency } from "@/lib/utils/money";
 import { settingsRepo } from "@/lib/db/repositories";
 import type { ColumnDef } from "@tanstack/react-table";
 
-
 export function CustomerLedgerWorkspace() {
-  const { t, dir } = useLocale();
+  const { t /* dir */ } = useLocale();
   const { push } = useToast();
   const settings = useLiveQuery(() => settingsRepo.get(), []);
   const ledger = useLiveQuery(() => getCustomerLedger(), []);
-  const activeShift = useLiveQuery(() => db.shifts.where("status").equals("open").first(), []);
+  const activeShift = useLiveQuery(
+    () => db.shifts.where("status").equals("open").first(),
+    [],
+  );
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<CustomerLedgerDetails | null>(null);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<"cash" | "card" | "bank" | "other">("cash");
+  const [paymentMethod, setPaymentMethod] = useState<
+    "cash" | "card" | "bank" | "other"
+  >("cash");
   const currency = settings?.currency ?? "USD";
 
   const rows = ledger ?? [];
@@ -86,23 +90,79 @@ export function CustomerLedgerWorkspace() {
   }
 
   const ledgerColumns: ColumnDef<CustomerLedgerRow>[] = [
-    { header: t("customers.customer"), accessorKey: "name", cell: ({ row }) => <span className="font-medium text-slate-900">{row.original.name}</span> },
-    { header: t("customers.phone"), accessorKey: "phone", cell: ({ row }) => row.original.phone || "—" },
-    { header: t("customers.creditSales"), accessorKey: "creditSales", cell: ({ row }) => <span className="tabular-nums">{formatCurrency(row.original.creditSales, currency)}</span> },
-    { header: t("customers.paid"), id: "paid", cell: ({ row }) => <span className="tabular-nums">{formatCurrency(row.original.paidOnBills + row.original.payments, currency)}</span> },
+    {
+      header: t("customers.customer"),
+      accessorKey: "name",
+      cell: ({ row }) => (
+        <span className="font-medium text-slate-900">{row.original.name}</span>
+      ),
+    },
+    {
+      header: t("customers.phone"),
+      accessorKey: "phone",
+      cell: ({ row }) => row.original.phone || "—",
+    },
+    {
+      header: t("customers.creditSales"),
+      accessorKey: "creditSales",
+      cell: ({ row }) => (
+        <span className="tabular-nums">
+          {formatCurrency(row.original.creditSales, currency)}
+        </span>
+      ),
+    },
+    {
+      header: t("customers.paid"),
+      id: "paid",
+      cell: ({ row }) => (
+        <span className="tabular-nums">
+          {formatCurrency(
+            row.original.paidOnBills + row.original.payments,
+            currency,
+          )}
+        </span>
+      ),
+    },
     {
       header: t("customers.balanceDue"),
       accessorKey: "balanceDue",
       cell: ({ row }) => (
-        <span className={`tabular-nums font-semibold ${row.original.balanceDue > 0.005 ? "text-red-600" : row.original.balanceDue < -0.005 ? "text-blue-600" : "text-green-600"}`}>
+        <span
+          className={`tabular-nums font-semibold ${row.original.balanceDue > 0.005 ? "text-red-600" : row.original.balanceDue < -0.005 ? "text-blue-600" : "text-green-600"}`}
+        >
           {formatCurrency(row.original.balanceDue, currency)}
-          {row.original.balanceDue < -0.005 && <span className="ms-1 text-[10px] font-medium uppercase tracking-wide text-blue-500">{t("customers.creditBalanceNote")}</span>}
+          {row.original.balanceDue < -0.005 && (
+            <span className="ms-1 text-[10px] font-medium uppercase tracking-wide text-blue-500">
+              {t("customers.creditBalanceNote")}
+            </span>
+          )}
         </span>
       ),
     },
     { header: t("customers.bills"), accessorKey: "billCount" },
-    { header: t("customers.lastActivity"), accessorKey: "lastActivityAt", cell: ({ row }) => row.original.lastActivityAt ? new Date(row.original.lastActivityAt).toLocaleString() : "—" },
-    { header: "", id: "actions", enableSorting: false, cell: ({ row }) => <Button type="button" size="sm" variant="secondary" onClick={() => openDetails(row.original)}>{t("customers.view")}</Button> },
+    {
+      header: t("customers.lastActivity"),
+      accessorKey: "lastActivityAt",
+      cell: ({ row }) =>
+        row.original.lastActivityAt
+          ? new Date(row.original.lastActivityAt).toLocaleString()
+          : "—",
+    },
+    {
+      header: "",
+      id: "actions",
+      enableSorting: false,
+      cell: ({ row }) => (
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          onClick={() => openDetails(row.original)}
+        >
+          {t("customers.view")}
+        </Button>
+      ),
+    },
   ];
 
   async function savePayment() {

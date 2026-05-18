@@ -301,7 +301,9 @@ export default function UserDetailPage() {
     return (
       <PageShell>
         <div className="max-w-md mx-auto mt-12 p-6 bg-white border border-red-100 rounded-2xl text-center">
-          <p className="font-semibold text-red-600">{t("admin.accessDenied")}</p>
+          <p className="font-semibold text-red-600">
+            {t("admin.accessDenied")}
+          </p>
         </div>
       </PageShell>
     );
@@ -329,181 +331,177 @@ export default function UserDetailPage() {
   }
 
   const billColumns: ColumnDef<Bill, unknown>[] = [
-      {
-        accessorKey: "billNumber",
-        header: "Bill #",
-        cell: ({ row }) => (
-          <span className="font-mono text-xs text-slate-600">
-            {row.original.billNumber}
-          </span>
-        ),
-      },
-      {
-        accessorKey: "createdAt",
-        header: "Date",
-        cell: ({ row }) => (
-          <span className="whitespace-nowrap text-slate-500">
-            {row.original.createdAt.slice(0, 10)}
-          </span>
-        ),
-      },
-      {
-        accessorKey: "customerName",
-        header: "Customer",
-        cell: ({ row }) =>
-          row.original.customerName || (
-            <span className="text-slate-300">—</span>
-          ),
-      },
-      {
-        accessorKey: "paymentMethod",
-        header: "Payment",
-        cell: ({ row }) => (
-          <span className="capitalize text-slate-500">
-            {row.original.paymentMethod}
-          </span>
-        ),
-      },
-      {
-        id: "netTotal",
-        header: "Net Total",
-        accessorFn: (row) => netBillTotal(row),
-        cell: ({ row }) => (
-          <span className="block text-right font-medium tabular-nums text-slate-800">
-            {netBillTotal(row.original).toFixed(2)}
-          </span>
-        ),
-      },
-      {
-        accessorKey: "status",
-        header: "Status",
-        cell: ({ row }) => (
-          <span className="block text-right">
-            <BillStatusBadge status={row.original.status} />
-          </span>
-        ),
-      },
-    ];
+    {
+      accessorKey: "billNumber",
+      header: "Bill #",
+      cell: ({ row }) => (
+        <span className="font-mono text-xs text-slate-600">
+          {row.original.billNumber}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "createdAt",
+      header: "Date",
+      cell: ({ row }) => (
+        <span className="whitespace-nowrap text-slate-500">
+          {row.original.createdAt.slice(0, 10)}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "customerName",
+      header: "Customer",
+      cell: ({ row }) =>
+        row.original.customerName || <span className="text-slate-300">—</span>,
+    },
+    {
+      accessorKey: "paymentMethod",
+      header: "Payment",
+      cell: ({ row }) => (
+        <span className="capitalize text-slate-500">
+          {row.original.paymentMethod}
+        </span>
+      ),
+    },
+    {
+      id: "netTotal",
+      header: "Net Total",
+      accessorFn: (row) => netBillTotal(row),
+      cell: ({ row }) => (
+        <span className="block text-right font-medium tabular-nums text-slate-800">
+          {netBillTotal(row.original).toFixed(2)}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "status",
+      header: "Status",
+      cell: ({ row }) => (
+        <span className="block text-right">
+          <BillStatusBadge status={row.original.status} />
+        </span>
+      ),
+    },
+  ];
 
   const paymentColumns: ColumnDef<CustomerPayment, unknown>[] = [
-      {
-        accessorKey: "createdAt",
-        header: "Date",
-        cell: ({ row }) => (
-          <span className="whitespace-nowrap text-slate-500">
-            {row.original.createdAt.slice(0, 10)}
-          </span>
-        ),
-      },
-      { accessorKey: "customerName", header: "Customer" },
-      {
-        accessorKey: "note",
-        header: "Note",
-        cell: ({ row }) =>
-          row.original.note || <span className="text-slate-300">—</span>,
-      },
-      {
-        accessorKey: "amount",
-        header: "Amount",
-        cell: ({ row }) => (
-          <span className="block text-right font-medium tabular-nums text-slate-800">
-            {row.original.amount.toFixed(2)}
-          </span>
-        ),
-      },
-    ];
+    {
+      accessorKey: "createdAt",
+      header: "Date",
+      cell: ({ row }) => (
+        <span className="whitespace-nowrap text-slate-500">
+          {row.original.createdAt.slice(0, 10)}
+        </span>
+      ),
+    },
+    { accessorKey: "customerName", header: "Customer" },
+    {
+      accessorKey: "note",
+      header: "Note",
+      cell: ({ row }) =>
+        row.original.note || <span className="text-slate-300">—</span>,
+    },
+    {
+      accessorKey: "amount",
+      header: "Amount",
+      cell: ({ row }) => (
+        <span className="block text-right font-medium tabular-nums text-slate-800">
+          {row.original.amount.toFixed(2)}
+        </span>
+      ),
+    },
+  ];
 
   const productColumns: ColumnDef<Product, unknown>[] = [
-      {
-        accessorKey: "name",
-        header: t("products.name"),
-        cell: ({ row }) => (
-          <span className="font-medium text-slate-800">
-            {row.original.name}
-          </span>
-        ),
-      },
-      { accessorKey: "category", header: t("products.category") },
-      {
-        accessorKey: "barcode",
-        header: t("products.barcode"),
-        cell: ({ row }) => (
-          <span className="font-mono text-xs text-slate-400">
-            {row.original.barcode}
-          </span>
-        ),
-      },
-      {
-        accessorKey: "quantityInStock",
-        header: t("products.qty"),
-        cell: ({ row }) => (
+    {
+      accessorKey: "name",
+      header: t("products.name"),
+      cell: ({ row }) => (
+        <span className="font-medium text-slate-800">{row.original.name}</span>
+      ),
+    },
+    { accessorKey: "category", header: t("products.category") },
+    {
+      accessorKey: "barcode",
+      header: t("products.barcode"),
+      cell: ({ row }) => (
+        <span className="font-mono text-xs text-slate-400">
+          {row.original.barcode}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "quantityInStock",
+      header: t("products.qty"),
+      cell: ({ row }) => (
+        <span
+          className={`block text-right tabular-nums ${row.original.quantityInStock <= 0 ? "font-semibold text-red-600" : "text-slate-700"}`}
+        >
+          {row.original.quantityInStock}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "sellPrice",
+      header: t("products.sell"),
+      cell: ({ row }) => (
+        <span className="block text-right font-medium tabular-nums text-slate-800">
+          {row.original.sellPrice.toFixed(2)}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "status",
+      header: t("products.status"),
+      cell: ({ row }) => (
+        <span className="block text-right">
           <span
-            className={`block text-right tabular-nums ${row.original.quantityInStock <= 0 ? "font-semibold text-red-600" : "text-slate-700"}`}
+            className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${row.original.status === "active" ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"}`}
           >
-            {row.original.quantityInStock}
+            {row.original.status}
           </span>
-        ),
-      },
-      {
-        accessorKey: "sellPrice",
-        header: t("products.sell"),
-        cell: ({ row }) => (
-          <span className="block text-right font-medium tabular-nums text-slate-800">
-            {row.original.sellPrice.toFixed(2)}
-          </span>
-        ),
-      },
-      {
-        accessorKey: "status",
-        header: t("products.status"),
-        cell: ({ row }) => (
-          <span className="block text-right">
-            <span
-              className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${row.original.status === "active" ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"}`}
-            >
-              {row.original.status}
-            </span>
-          </span>
-        ),
-      },
-    ];
+        </span>
+      ),
+    },
+  ];
 
   const movementColumns: ColumnDef<StockMovement, unknown>[] = [
-      {
-        accessorKey: "createdAt",
-        header: "Date",
-        cell: ({ row }) => (
-          <span className="whitespace-nowrap text-slate-500">
-            {row.original.createdAt.slice(0, 10)}
-          </span>
-        ),
-      },
-      {
-        accessorKey: "movementType",
-        header: "Type",
-        cell: ({ row }) => (
-          <span className="capitalize">{row.original.movementType}</span>
-        ),
-      },
-      { accessorKey: "referenceType", header: "Reference" },
-      {
-        accessorKey: "note",
-        header: "Note",
-        cell: ({ row }) =>
-          row.original.note || <span className="text-slate-300">—</span>,
-      },
-      {
-        accessorKey: "quantityChange",
-        header: "Qty",
-        cell: ({ row }) => (
-          <span
-            className={`block text-right font-medium tabular-nums ${row.original.quantityChange < 0 ? "text-red-600" : "text-green-700"}`}
-          >
-            {row.original.quantityChange}
-          </span>
-        ),
-      },
-    ];
+    {
+      accessorKey: "createdAt",
+      header: "Date",
+      cell: ({ row }) => (
+        <span className="whitespace-nowrap text-slate-500">
+          {row.original.createdAt.slice(0, 10)}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "movementType",
+      header: "Type",
+      cell: ({ row }) => (
+        <span className="capitalize">{row.original.movementType}</span>
+      ),
+    },
+    { accessorKey: "referenceType", header: "Reference" },
+    {
+      accessorKey: "note",
+      header: "Note",
+      cell: ({ row }) =>
+        row.original.note || <span className="text-slate-300">—</span>,
+    },
+    {
+      accessorKey: "quantityChange",
+      header: "Qty",
+      cell: ({ row }) => (
+        <span
+          className={`block text-right font-medium tabular-nums ${row.original.quantityChange < 0 ? "text-red-600" : "text-green-700"}`}
+        >
+          {row.original.quantityChange}
+        </span>
+      ),
+    },
+  ];
 
   const displayStatus = userDisplayStatus(profile);
 
@@ -681,7 +679,10 @@ export default function UserDetailPage() {
               tone={support.lastSyncAt ? undefined : "danger"}
             />
             <StatCard label={t("admin.cloudBills")} value={support.billCount} />
-            <StatCard label={t("admin.cloudProducts")} value={support.productCount} />
+            <StatCard
+              label={t("admin.cloudProducts")}
+              value={support.productCount}
+            />
             <StatCard
               label={t("admin.netSales")}
               value={support.totalRevenue.toFixed(2)}
@@ -723,7 +724,7 @@ export default function UserDetailPage() {
             </SectionCard>
 
             <SectionCard title={t("admin.backupCounts")}>
-            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="grid grid-cols-2 gap-3 text-sm">
                 <ReadRow
                   label={t("admin.billItems")}
                   value={String(
@@ -860,29 +861,29 @@ export default function UserDetailPage() {
   );
 }
 
-function BackLink() {
-  return (
-    <Link
-      href={"/admin/users" as Route}
-      className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 transition-colors"
-    >
-      <svg
-        className="w-4 h-4"
-        fill="none"
-        viewBox="0 0 24 24"
-        stroke="currentColor"
-      >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={2}
-          d="M15 19l-7-7 7-7"
-        />
-      </svg>
-      Back to Support Dashboard
-    </Link>
-  );
-}
+// function BackLink() {
+//   return (
+//     <Link
+//       href={"/admin/users" as Route}
+//       className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 transition-colors"
+//     >
+//       <svg
+//         className="w-4 h-4"
+//         fill="none"
+//         viewBox="0 0 24 24"
+//         stroke="currentColor"
+//       >
+//         <path
+//           strokeLinecap="round"
+//           strokeLinejoin="round"
+//           strokeWidth={2}
+//           d="M15 19l-7-7 7-7"
+//         />
+//       </svg>
+//       Back to Support Dashboard
+//     </Link>
+//   );
+// }
 
 function HealthBadge({ health }: { health: SupportHealth }) {
   return (
@@ -899,7 +900,6 @@ function healthLabel(health: SupportHealth) {
   if (health === "needs_attention") return "Needs attention";
   return "No backup";
 }
-
 
 function BillStatusBadge({ status }: { status: Bill["status"] }) {
   const cls =

@@ -32,11 +32,11 @@ import type { ColumnDef } from "@tanstack/react-table";
 
 type SummaryMap = Record<string, UserSummary>;
 
-const HEALTH_STYLES: Record<SupportHealth, string> = {
-  healthy: "bg-green-100 text-green-700",
-  needs_attention: "bg-amber-100 text-amber-700",
-  no_backup: "bg-red-100 text-red-600",
-};
+// const HEALTH_STYLES: Record<SupportHealth, string> = {
+//   healthy: "bg-green-100 text-green-700",
+//   needs_attention: "bg-amber-100 text-amber-700",
+//   no_backup: "bg-red-100 text-red-600",
+// };
 
 export default function AdminUsersPage() {
   const { isAdmin, user: currentUser } = useAuth();
@@ -168,11 +168,16 @@ export default function AdminUsersPage() {
               {u.name}
             </Link>
             {u.uid === currentUser?.uid && (
-              <span className="ms-2 text-xs text-slate-400">({t("common.self")})</span>
+              <span className="ms-2 text-xs text-slate-400">
+                ({t("common.self")})
+              </span>
             )}
             <div className="truncate text-xs text-slate-400">{u.email}</div>
             {u.phone && (
-              <a href={`tel:${u.phone}`} className="text-xs text-slate-400 hover:text-blue-500">
+              <a
+                href={`tel:${u.phone}`}
+                className="text-xs text-slate-400 hover:text-blue-500"
+              >
                 {u.phone}
               </a>
             )}
@@ -185,7 +190,11 @@ export default function AdminUsersPage() {
       id: "health",
       cell: ({ row }) => {
         const summary = summaries[row.original.uid];
-        return summary ? <HealthBadge health={summary.syncHealth} /> : <span className="text-xs text-slate-300">{t("common.loading")}</span>;
+        return summary ? (
+          <HealthBadge health={summary.syncHealth} />
+        ) : (
+          <span className="text-xs text-slate-300">{t("common.loading")}</span>
+        );
       },
     },
     {
@@ -193,7 +202,11 @@ export default function AdminUsersPage() {
       id: "backup",
       cell: ({ row }) => {
         const summary = summaries[row.original.uid];
-        return summary?.lastSyncAt ? relativeTime(summary.lastSyncAt) : <span className="text-slate-300">{t("admin.noBackup")}</span>;
+        return summary?.lastSyncAt ? (
+          relativeTime(summary.lastSyncAt)
+        ) : (
+          <span className="text-slate-300">{t("admin.noBackup")}</span>
+        );
       },
     },
     {
@@ -204,8 +217,13 @@ export default function AdminUsersPage() {
         if (!summary) return "—";
         return (
           <div className="whitespace-nowrap text-xs text-slate-500">
-            {summary.billCount} {t("bills.title")} / {summary.productCount} {t("products.title")}
-            {summary.creditDebt > 0 && <div className="text-amber-600">{t("admin.customerDebt")} {summary.creditDebt.toFixed(2)}</div>}
+            {summary.billCount} {t("bills.title")} / {summary.productCount}{" "}
+            {t("products.title")}
+            {summary.creditDebt > 0 && (
+              <div className="text-amber-600">
+                {t("admin.customerDebt")} {summary.creditDebt.toFixed(2)}
+              </div>
+            )}
           </div>
         );
       },
@@ -228,7 +246,10 @@ export default function AdminUsersPage() {
       enableSorting: false,
       cell: ({ row }) => {
         const u = row.original;
-        if (u.uid === currentUser?.uid) return <span className="text-xs text-slate-400">{t("common.self")}</span>;
+        if (u.uid === currentUser?.uid)
+          return (
+            <span className="text-xs text-slate-400">{t("common.self")}</span>
+          );
         return (
           <Button
             type="button"
@@ -266,13 +287,19 @@ export default function AdminUsersPage() {
       />
 
       <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
-        <SupportCard label={t("admin.totalUsers")} value={dashboard.totalUsers} />
+        <SupportCard
+          label={t("admin.totalUsers")}
+          value={dashboard.totalUsers}
+        />
         <SupportCard
           label={t("admin.pendingCount")}
           value={dashboard.pendingCount}
           tone={dashboard.pendingCount > 0 ? "amber" : undefined}
         />
-        <SupportCard label={t("admin.activeCount")} value={dashboard.activeCount} />
+        <SupportCard
+          label={t("admin.activeCount")}
+          value={dashboard.activeCount}
+        />
         <SupportCard
           label={t("admin.needsHelp")}
           value={dashboard.needsAttention}
@@ -526,7 +553,9 @@ function CreateUserForm({
         <FormField label="Role">
           <SearchableSelect
             value={role}
-            onValueChange={(value) => setRole((value as "admin" | "cashier") ?? "cashier")}
+            onValueChange={(value) =>
+              setRole((value as "admin" | "cashier") ?? "cashier")
+            }
             options={[
               { value: "cashier", label: "Cashier" },
               { value: "admin", label: "Admin" },
