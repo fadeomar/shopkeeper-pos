@@ -10,11 +10,15 @@ import { formatCurrency } from '@/lib/utils/money';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Select } from '@/components/ui/select';
+import { DataTable } from '@/components/ui/data-table';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 import { Modal } from '@/components/ui/modal';
 import { useToast } from '@/components/ui/toast';
 import { useLocale } from '@/components/providers/locale-context';
+import { PageShell } from '@/components/ui/page-shell';
+import { PageHeader } from '@/components/ui/page-header';
 import type { Product, StockMovement } from '@/types/domain';
+import type { ColumnDef } from '@tanstack/react-table';
 
 type InventoryModalMode = 'count' | null;
 
@@ -35,9 +39,6 @@ function formatDateTime(value: string): string {
   }).format(new Date(value));
 }
 
-function productLabel(product: Product): string {
-  return `${product.name} (${product.barcode})`;
-}
 
 export function InventoryWorkspace() {
   const { t } = useLocale();
@@ -141,25 +142,69 @@ export function InventoryWorkspace() {
     ? Number(quantity) - selectedProduct.quantityInStock
     : 0;
 
+  const movementColumns: ColumnDef<StockMovement>[] = [
+    {
+      header: t('inventory.date'),
+      accessorKey: 'createdAt',
+      cell: ({ row }) => <span className="whitespace-nowrap text-slate-500">{formatDateTime(row.original.createdAt)}</span>,
+    },
+    {
+      header: t('inventory.product'),
+      accessorKey: 'productId',
+      cell: ({ row }) => <span className="font-medium text-slate-800">{productsById.get(row.original.productId)?.name ?? t('inventory.unknownProduct')}</span>,
+    },
+    {
+      header: t('inventory.type'),
+      accessorKey: 'movementType',
+      cell: ({ row }) => <span className="capitalize text-slate-600">{row.original.movementType}</span>,
+    },
+    {
+      header: t('inventory.change'),
+      accessorKey: 'quantityChange',
+      cell: ({ row }) => {
+        const isPositive = row.original.quantityChange >= 0;
+        return (
+          <span className={`whitespace-nowrap font-semibold ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
+            {isPositive ? '+' : ''}{row.original.quantityChange}
+          </span>
+        );
+      },
+    },
+    {
+      header: t('inventory.note'),
+      accessorKey: 'note',
+      cell: ({ row }) => <span className="min-w-[220px] text-slate-500">{row.original.note || row.original.referenceType}</span>,
+    },
+  ];
+
+  const productOptions = activeProducts.map((product) => ({
+    value: product.id,
+    label: product.name,
+    description: [product.barcode, product.shelfLocation ? `${t('products.shelf')} ${product.shelfLocation}` : null]
+      .filter(Boolean)
+      .join(' • '),
+    meta: <span className="text-xs text-slate-500">{t('inventory.currentStock')}: {product.quantityInStock}</span>,
+  }));
+
   return (
-    <div className="flex flex-col gap-6">
-      <section className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-slate-900">{t('inventory.title')}</h2>
-          <p className="mt-1 max-w-2xl text-sm text-slate-500">{t('inventory.subtitle')}</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="secondary" onClick={() => openModal('count')}>
-            {t('inventory.stockCount')}
-          </Button>
-          <Link
-            href={"/purchases/new" as never}
-            className="inline-flex h-[42px] items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-700 active:bg-blue-800"
-          >
-            {t('purchases.newPurchase')}
-          </Link>
-        </div>
-      </section>
+    <PageShell>
+      <PageHeader
+        title={t('inventory.title')}
+        description={t('inventory.subtitle')}
+        actions={
+          <>
+            <Button type="button" variant="secondary" onClick={() => openModal('count')}>
+              {t('inventory.stockCount')}
+            </Button>
+            <Link
+              href={"/purchases/new" as never}
+              className="inline-flex h-[42px] items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-700 active:bg-blue-800"
+            >
+              {t('purchases.newPurchase')}
+            </Link>
+          </>
+        }
+      />
 
       <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label={t('inventory.lowStock')} value={lowStockProducts.length} />
@@ -197,44 +242,28 @@ export function InventoryWorkspace() {
         />
       </section>
 
-      <Card>
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
-          <div>
-            <h3 className="text-base font-semibold text-slate-900">{t('inventory.movementHistory')}</h3>
-            <p className="text-sm text-slate-500">{t('inventory.movementHistoryDesc')}</p>
-          </div>
-        </div>
-
-        <div className="mt-4 overflow-x-auto">
-          <table className="min-w-full divide-y divide-slate-100 text-sm">
-            <thead>
-              <tr className="text-start text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <th className="px-3 py-2 text-start">{t('inventory.date')}</th>
-                <th className="px-3 py-2 text-start">{t('inventory.product')}</th>
-                <th className="px-3 py-2 text-start">{t('inventory.type')}</th>
-                <th className="px-3 py-2 text-end">{t('inventory.change')}</th>
-                <th className="px-3 py-2 text-start">{t('inventory.note')}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {(movements ?? []).length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-3 py-6 text-center text-slate-400">
-                    {t('inventory.noMovements')}
-                  </td>
-                </tr>
-              )}
-              {(movements ?? []).map((movement) => (
-                <MovementRow
-                  key={movement.id}
-                  movement={movement}
-                  product={productsById.get(movement.productId)}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <DataTable
+        columns={movementColumns}
+        data={movements ?? []}
+        title={t('inventory.movementHistory')}
+        description={t('inventory.movementHistoryDesc')}
+        loading={!movements}
+        emptyTitle={t('inventory.noMovements')}
+        searchPlaceholder={t('dataTable.search')}
+        labels={{
+          searchPlaceholder: t('dataTable.search'),
+          loading: t('dataTable.loading'),
+          page: t('dataTable.page'),
+          of: t('dataTable.of'),
+          rowsPerPage: t('dataTable.rowsPerPage'),
+          first: t('dataTable.first'),
+          previous: t('dataTable.previous'),
+          next: t('dataTable.next'),
+          last: t('dataTable.last'),
+        }}
+        pageSize={10}
+        getRowId={(row) => row.id}
+        />
 
       <Modal
         open={mode !== null}
@@ -255,11 +284,15 @@ export function InventoryWorkspace() {
         <div className="flex flex-col gap-4">
           <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
             {t('inventory.product')}
-            <Select value={selectedProductId} onChange={(event) => setSelectedProductId(event.target.value)}>
-              {activeProducts.map((product) => (
-                <option key={product.id} value={product.id}>{productLabel(product)}</option>
-              ))}
-            </Select>
+            <SearchableSelect
+              value={selectedProductId}
+              onValueChange={(value) => setSelectedProductId(value ?? '')}
+              options={productOptions}
+              placeholder={t('inventory.product')}
+              searchPlaceholder={t('products.searchPlaceholder')}
+              emptyMessage={t('products.noProducts')}
+              disabled={!activeProducts.length}
+            />
           </label>
 
           {selectedProduct && (
@@ -290,7 +323,7 @@ export function InventoryWorkspace() {
           </label>
         </div>
       </Modal>
-    </div>
+    </PageShell>
   );
 }
 
@@ -340,22 +373,5 @@ function InventoryListCard({
       </div>
       {products.length > 8 && <p className="text-xs text-slate-400">+{products.length - 8} more</p>}
     </Card>
-  );
-}
-
-function MovementRow({ movement, product }: { movement: StockMovement; product?: Product }) {
-  const { t } = useLocale();
-  const isPositive = movement.quantityChange >= 0;
-
-  return (
-    <tr className="align-top">
-      <td className="whitespace-nowrap px-3 py-3 text-slate-500">{formatDateTime(movement.createdAt)}</td>
-      <td className="px-3 py-3 font-medium text-slate-800">{product?.name ?? t('inventory.unknownProduct')}</td>
-      <td className="px-3 py-3 capitalize text-slate-600">{movement.movementType}</td>
-      <td className={`whitespace-nowrap px-3 py-3 text-end font-semibold ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
-        {isPositive ? '+' : ''}{movement.quantityChange}
-      </td>
-      <td className="min-w-[220px] px-3 py-3 text-slate-500">{movement.note || movement.referenceType}</td>
-    </tr>
   );
 }

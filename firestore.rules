@@ -103,9 +103,21 @@ service cloud.firestore {
         // Only the owner can write, and only while active + approved.
         // Inactive / pending users are silently blocked at this layer.
         // Admins do not get write permission here — admin support is
-        // read-only on POS data. (Admin user-profile changes go through
-        // the /users/{uid} update rule above.)
+        // read-only on POS data (except settings, handled below).
         allow write: if isActiveOwner(uid);
+      }
+
+      // ───────────────────────────────────────────────────────────────
+      // /users/{uid}/settings/{docId}  — narrow admin write override
+      // Admins may update safe operational settings (store name, currency,
+      // etc.) from the support dashboard. They cannot write other POS data.
+      // ───────────────────────────────────────────────────────────────
+      match /settings/{settingsId} {
+        allow read: if isOwner(uid) || isActiveAdmin();
+        allow write: if isActiveOwner(uid)
+          || (isActiveAdmin()
+              && request.resource.data.diff(resource.data).affectedKeys()
+                   .hasOnly(['storeName', 'cashierName', 'currency', 'allowLossSale', 'lowStockHighlight', 'updatedAt']));
       }
     }
   }

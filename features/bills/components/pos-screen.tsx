@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { ColumnDef } from "@tanstack/react-table";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useLiveQuery } from "dexie-react-hooks";
@@ -19,7 +20,8 @@ import { formatCurrency } from "@/lib/utils/money";
 import { createFinalizedBill } from "@/lib/services/billing-service";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { DataTable, useDataTableLabels } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
@@ -83,6 +85,7 @@ function SummaryRow({
       </span>
       <span
         className={`text-sm tabular-nums ${highlight ? "font-bold text-slate-900" : "font-medium text-slate-700"}`}
+        dir="ltr"
       >
         {value}
       </span>
@@ -172,7 +175,8 @@ function SuccessPanel({
 }
 
 export function PosScreen() {
-  const { t } = useLocale();
+  const { t, dir } = useLocale();
+  const tableLabels = useDataTableLabels();
   const { user } = useAuth();
   const products = useLiveQuery(
     () => db.products.where("status").equals("active").sortBy("name"),
@@ -190,7 +194,9 @@ export function PosScreen() {
   // finalize button on small screens. Hitting Enter (or "Done" on Android,
   // shown via enterKeyHint below) blurs the field, which collapses the
   // keyboard and exposes the rest of the page again.
-  function dismissKeyboardOnEnter(event: React.KeyboardEvent<HTMLInputElement>) {
+  function dismissKeyboardOnEnter(
+    event: React.KeyboardEvent<HTMLInputElement>,
+  ) {
     if (event.key === "Enter") {
       event.preventDefault();
       event.currentTarget.blur();
@@ -210,6 +216,24 @@ export function PosScreen() {
     bill: Bill;
     items: BillItem[];
   } | null>(null);
+  const productOptions = useMemo(
+    () =>
+      (products ?? []).map((product) => ({
+        value: product.id,
+        label: product.name,
+        description: [product.barcode, product.brand, product.category]
+          .filter(Boolean)
+          .join(" • "),
+        meta: (
+          <span className="text-xs text-slate-500">
+            {formatCurrency(product.sellPrice, currency)} ·{" "}
+            {product.quantityInStock} {t("billing.stock").toLowerCase()}
+          </span>
+        ),
+      })),
+    [products, currency, t],
+  );
+
   const [lastAdded, setLastAdded] = useState<{
     name: string;
     qty: number;
@@ -659,6 +683,92 @@ export function PosScreen() {
     }
   }
 
+  const draftItemColumns: ColumnDef<BillDraftItem, unknown>[] = [
+    {
+      accessorKey: "name",
+      header: t("billing.product"),
+      cell: ({ row }) => (
+        <span className="font-medium text-slate-800">{row.original.name}</span>
+      ),
+    },
+    {
+      accessorKey: "availableStock",
+      header: t("billing.stock"),
+      cell: ({ row }) => (
+        <span className="tabular-nums text-slate-500">
+          {row.original.availableStock}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "quantity",
+      header: t("billing.qty"),
+      cell: ({ row }) => {
+        const item = row.original;
+        return (
+          <Input
+            type="number"
+            inputMode="numeric"
+            enterKeyHint="done"
+            min={1}
+            max={item.availableStock}
+            value={item.quantity}
+            onChange={(e) =>
+              updateQuantity(item.productId, Number(e.target.value))
+            }
+            onKeyDown={dismissKeyboardOnEnter}
+            className="w-20 text-center"
+          />
+        );
+      },
+    },
+    {
+      accessorKey: "unitSellPrice",
+      header: t("billing.sell"),
+      cell: ({ row }) => (
+        <span className="tabular-nums text-slate-700" dir="ltr">
+          {formatCurrency(row.original.unitSellPrice, currency)}
+        </span>
+      ),
+    },
+    {
+      id: "subtotal",
+      header: t("billing.subtotalCol"),
+      accessorFn: (row) =>
+        calculateLineSubtotal(row.quantity, row.unitSellPrice),
+      cell: ({ row }) => (
+        <span className="font-medium tabular-nums text-slate-800" dir="ltr">
+          {formatCurrency(
+            calculateLineSubtotal(
+              row.original.quantity,
+              row.original.unitSellPrice,
+            ),
+            currency,
+          )}
+        </span>
+      ),
+    },
+    {
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      cell: ({ row }) => (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() =>
+            setDraftItems((cur) =>
+              cur.filter((i) => i.productId !== row.original.productId),
+            )
+          }
+        >
+          {t("common.remove")}
+        </Button>
+      ),
+    },
+  ];
+
   if (!products) {
     return (
       <Card>
@@ -683,7 +793,7 @@ export function PosScreen() {
         >
           <span className="font-medium">{t("billing.noShiftOpenWarning")}</span>
           <span className="text-xs font-semibold uppercase tracking-wide">
-            {t("billing.openShift")} →
+            {t("billing.openShift")} {dir === 'rtl' ? '←' : '→'}
           </span>
         </Link>
       )}
@@ -782,19 +892,16 @@ export function PosScreen() {
 
           {/* Product select row */}
           <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">
-            <Select
+            <SearchableSelect
               value={productId}
-              onChange={(e) => setProductId(e.target.value)}
+              onValueChange={(value) => setProductId(value ?? "")}
+              options={productOptions}
+              placeholder={t("billing.selectProduct")}
+              searchPlaceholder={t("products.searchPlaceholder")}
+              emptyMessage={t("products.noProducts")}
+              disabled={!products?.length}
               className="flex-1"
-            >
-              <option value="">{t("billing.selectProduct")}</option>
-              {products.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({p.quantityInStock}{" "}
-                  {t("billing.stock").toLowerCase()})
-                </option>
-              ))}
-            </Select>
+            />
             <Button type="button" variant="secondary" onClick={addBySelection}>
               {t("billing.addItem")}
             </Button>
@@ -845,7 +952,7 @@ export function PosScreen() {
                       </div>
                       <div className="rounded-xl bg-slate-50 p-2">
                         <p className="text-slate-500">{t("billing.sell")}</p>
-                        <p className="font-bold text-slate-800 tabular-nums">
+                        <p className="font-bold text-slate-800 tabular-nums" dir="ltr">
                           {formatCurrency(item.unitSellPrice, currency)}
                         </p>
                       </div>
@@ -853,7 +960,7 @@ export function PosScreen() {
                         <p className="text-slate-500">
                           {t("billing.subtotalCol")}
                         </p>
-                        <p className="font-bold text-slate-800 tabular-nums">
+                        <p className="font-bold text-slate-800 tabular-nums" dir="ltr">
                           {formatCurrency(
                             calculateLineSubtotal(
                               item.quantity,
@@ -886,89 +993,15 @@ export function PosScreen() {
                 ))}
               </div>
 
-              <div className="hidden md:block overflow-x-auto rounded-xl border border-slate-100">
-                <table className="w-full text-sm min-w-[560px]">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200">
-                      {[
-                        t("billing.product"),
-                        t("billing.stock"),
-                        t("billing.qty"),
-                        t("billing.sell"),
-                        t("billing.subtotalCol"),
-                        "",
-                      ].map((h) => (
-                        <th
-                          key={h}
-                          className="px-3 py-2.5 text-start text-xs font-semibold text-slate-500 uppercase tracking-wide"
-                        >
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {draftItems.map((item) => (
-                      <tr
-                        key={item.productId}
-                        className="hover:bg-slate-50/50 transition-colors"
-                      >
-                        <td className="px-3 py-2.5 font-medium text-slate-800">
-                          {item.name}
-                        </td>
-                        <td className="px-3 py-2.5 text-slate-500 tabular-nums">
-                          {item.availableStock}
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <Input
-                            type="number"
-                            inputMode="numeric"
-                            enterKeyHint="done"
-                            min={1}
-                            max={item.availableStock}
-                            value={item.quantity}
-                            onChange={(e) =>
-                              updateQuantity(
-                                item.productId,
-                                Number(e.target.value),
-                              )
-                            }
-                            onKeyDown={dismissKeyboardOnEnter}
-                            className="w-20 text-center"
-                          />
-                        </td>
-                        <td className="px-3 py-2.5 tabular-nums text-slate-700">
-                          {formatCurrency(item.unitSellPrice, currency)}
-                        </td>
-                        <td className="px-3 py-2.5 tabular-nums font-medium text-slate-800">
-                          {formatCurrency(
-                            calculateLineSubtotal(
-                              item.quantity,
-                              item.unitSellPrice,
-                            ),
-                            currency,
-                          )}
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() =>
-                              setDraftItems((cur) =>
-                                cur.filter(
-                                  (i) => i.productId !== item.productId,
-                                ),
-                              )
-                            }
-                          >
-                            {t("common.remove")}
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="hidden md:block">
+                <DataTable
+                  columns={draftItemColumns}
+                  data={draftItems}
+                  enableGlobalSearch={false}
+                  emptyTitle={t("billing.addOneProduct")}
+                  pageSize={10}
+                  labels={tableLabels}
+                />
               </div>
             </>
           )}
@@ -1051,12 +1084,23 @@ export function PosScreen() {
                   )}
                 </div>
                 <FormField label={t("billing.paymentMethod")}>
-                  <Select {...form.register("paymentMethod")}>
-                    <option value="cash">{t("common.cash")}</option>
-                    <option value="card">{t("common.card")}</option>
-                    <option value="mixed">{t("common.mixed")}</option>
-                    <option value="credit">{t("common.credit")}</option>
-                  </Select>
+                  <SearchableSelect
+                    value={form.watch("paymentMethod")}
+                    onValueChange={(value) =>
+                      form.setValue(
+                        "paymentMethod",
+                        (value ?? "cash") as BillFormSchema["paymentMethod"],
+                      )
+                    }
+                    placeholder={t("billing.paymentMethod")}
+                    searchPlaceholder={t("common.search")}
+                    options={[
+                      { value: "cash", label: t("common.cash") },
+                      { value: "card", label: t("common.card") },
+                      { value: "mixed", label: t("common.mixed") },
+                      { value: "credit", label: t("common.credit") },
+                    ]}
+                  />
                 </FormField>
 
                 <div className="grid grid-cols-2 gap-3">
@@ -1317,7 +1361,7 @@ export function PosScreen() {
               <p className="text-xs font-medium text-slate-500">
                 {draftItems.length} {t("billing.items")}
               </p>
-              <p className="truncate text-lg font-black text-slate-900 tabular-nums">
+              <p className="truncate text-lg font-black text-slate-900 tabular-nums" dir="ltr">
                 {formatCurrency(billSummary.totalAmount, currency)}
               </p>
             </div>

@@ -4,7 +4,7 @@ import { createId } from '@/lib/utils/id';
 import { netSplitField, normalizeBillSplit } from '@/lib/utils/bill-split';
 import { roundMoney } from '@/lib/utils/money';
 import { buildSyncQueueItem } from '@/lib/services/sync-queue-service';
-import type { Bill, Purchase, Shift, SupplierPayment } from '@/types/domain';
+import type { Bill, CustomerPayment, Purchase, Shift, SupplierPayment } from '@/types/domain';
 
 function requestSync(): void {
   if (typeof window !== 'undefined') {
@@ -90,10 +90,12 @@ export function summarizeShiftCashOut(
     const p = normalizeBillSplit(raw as unknown as Bill) as unknown as Purchase;
     purchaseCashOut += netSplitField(p as unknown as Bill, p.cashAmount);
   }
-  const supplierPaymentCashOut = supplierPayments.reduce(
-    (sum, payment) => sum + (Number(payment.amount) || 0),
-    0,
-  );
+  // Only cash supplier payments leave the drawer. Card/bank payments are
+  // settled outside the cash drawer. Undefined paymentMethod is treated as
+  // cash for backwards compatibility with records created before this field.
+  const supplierPaymentCashOut = supplierPayments
+    .filter((p) => !p.paymentMethod || p.paymentMethod === 'cash')
+    .reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0);
   return {
     purchaseCashOut: roundMoney(purchaseCashOut),
     supplierPaymentCashOut: roundMoney(supplierPaymentCashOut),
@@ -106,6 +108,7 @@ export function summarizeShiftCashOut(
 /**
  * Expected cash for a shift:
  *   openingCash + cashCollected (from bills, net of returns)
+ *                + customerPaymentCashIn (cash debt payments from customers)
  *                − purchaseCashOut (cash leg of purchases, net of returns)
  *                − supplierPaymentCashOut (debt-settlement payments in cash)
  */
@@ -113,20 +116,28 @@ export async function computeExpectedCash(shift: Shift): Promise<{
   expectedCash: number;
   totals: ShiftTenderTotals;
   cashOut: ShiftCashOutTotals;
+  customerPaymentCashIn: number;
 }> {
-  const [bills, purchases, supplierPayments] = await Promise.all([
+  const [bills, purchases, supplierPayments, customerPayments] = await Promise.all([
     db.bills.where('shiftId').equals(shift.id).toArray(),
     db.purchases.where('shiftId').equals(shift.id).toArray(),
     db.supplierPayments.where('shiftId').equals(shift.id).toArray(),
+    db.customerPayments.where('shiftId').equals(shift.id).toArray(),
   ]);
   const totals = summarizeShiftBills(bills);
   const cashOut = summarizeShiftCashOut(purchases, supplierPayments);
+  const customerPaymentCashIn = roundMoney(
+    (customerPayments as CustomerPayment[])
+      .filter((p) => !p.paymentMethod || p.paymentMethod === 'cash')
+      .reduce((sum, p) => sum + (Number(p.amount) || 0), 0),
+  );
   return {
     expectedCash: roundMoney(
-      shift.openingCash + totals.cashCollected - cashOut.totalCashOut,
+      shift.openingCash + totals.cashCollected + customerPaymentCashIn - cashOut.totalCashOut,
     ),
     totals,
     cashOut,
+    customerPaymentCashIn,
   };
 }
 
@@ -184,21 +195,27 @@ export async function closeShift(input: {
 
   return db.transaction(
     'rw',
-    [db.shifts, db.bills, db.purchases, db.supplierPayments, db.syncQueue],
+    [db.shifts, db.bills, db.purchases, db.supplierPayments, db.customerPayments, db.syncQueue],
     async () => {
     const shift = await db.shifts.get(input.shiftId);
     if (!shift) throw new Error('Shift not found.');
     if (shift.status === 'closed') throw new Error('Shift is already closed.');
 
-    const [bills, purchases, supplierPayments] = await Promise.all([
+    const [bills, purchases, supplierPayments, customerPayments] = await Promise.all([
       db.bills.where('shiftId').equals(shift.id).toArray(),
       db.purchases.where('shiftId').equals(shift.id).toArray(),
       db.supplierPayments.where('shiftId').equals(shift.id).toArray(),
+      db.customerPayments.where('shiftId').equals(shift.id).toArray(),
     ]);
     const totals = summarizeShiftBills(bills);
     const cashOut = summarizeShiftCashOut(purchases, supplierPayments);
+    const customerPaymentCashIn = roundMoney(
+      (customerPayments as CustomerPayment[])
+        .filter((p) => !p.paymentMethod || p.paymentMethod === 'cash')
+        .reduce((sum, p) => sum + (Number(p.amount) || 0), 0),
+    );
     const expectedCash = roundMoney(
-      shift.openingCash + totals.cashCollected - cashOut.totalCashOut,
+      shift.openingCash + totals.cashCollected + customerPaymentCashIn - cashOut.totalCashOut,
     );
     const safeCounted = roundMoney(countedCash);
 

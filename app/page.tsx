@@ -8,6 +8,8 @@ import { seedDemoData } from '@/lib/db/seed';
 import { formatCurrency } from '@/lib/utils/money';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
+import { PageShell } from '@/components/ui/page-shell';
 import { useToast } from '@/components/ui/toast';
 import { useLocale } from '@/components/providers/locale-context';
 import { getBillNetTotal } from '@/features/bills/utils/bill-summary';
@@ -54,7 +56,8 @@ export default function DashboardPage() {
   ];
 
   return (
-    <div className="flex flex-col gap-6">
+    <PageShell>
+    <div className="flex flex-col gap-5">
       {/* Page header */}
       <section className="flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -64,9 +67,11 @@ export default function DashboardPage() {
           <p className="mt-1 text-sm text-slate-500 max-w-xl">{t('dashboard.tagline')}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="secondary" onClick={initializeDemo}>
-            {t('dashboard.initDemo')}
-          </Button>
+          {process.env.NODE_ENV === 'development' && (
+            <Button type="button" variant="secondary" onClick={initializeDemo}>
+              {t('dashboard.initDemo')}
+            </Button>
+          )}
           <Link
             href="/billing"
             className="inline-flex items-center justify-center gap-2 font-semibold rounded-xl transition-colors duration-150 px-4 py-2.5 text-sm min-h-[42px] bg-blue-600 text-white hover:bg-blue-700"
@@ -86,6 +91,30 @@ export default function DashboardPage() {
         ))}
       </section>
 
+      {/* New-user empty state */}
+      {(products ?? []).length === 0 && (bills ?? []).length === 0 && (
+        <Card>
+          <EmptyState
+            title={t('dashboard.emptyTitle')}
+            description={t('dashboard.emptyDesc')}
+          />
+          <div className="mt-4 flex gap-2 justify-center">
+            <Link
+              href="/products"
+              className="inline-flex items-center justify-center rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-200"
+            >
+              {t('dashboard.addFirstProduct')}
+            </Link>
+            <Link
+              href="/shift"
+              className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
+            >
+              {t('dashboard.openFirstShift')}
+            </Link>
+          </div>
+        </Card>
+      )}
+
       {/* Recent movements */}
       <Card>
         <h3 className="text-sm font-semibold text-slate-700 mb-4">
@@ -93,7 +122,7 @@ export default function DashboardPage() {
         </h3>
         <div className="flex flex-col divide-y divide-slate-100">
           {(stockMovements ?? []).length === 0 && (
-            <p className="text-sm text-slate-400 py-2">{t('db.loading')}</p>
+            <p className="text-sm text-slate-400 py-2">{t('dashboard.noMovements')}</p>
           )}
           {(stockMovements ?? []).map((mv) => (
             <div key={mv.id} className="flex items-center justify-between gap-3 py-3">
@@ -109,5 +138,6 @@ export default function DashboardPage() {
         </div>
       </Card>
     </div>
+    </PageShell>
   );
 }

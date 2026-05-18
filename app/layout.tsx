@@ -13,6 +13,10 @@ export const metadata: Metadata = {
   description: 'Offline-first supermarket POS and inventory management system.',
   applicationName: 'Shopkeeper POS',
   appleWebApp: { capable: true, statusBarStyle: 'default', title: 'Shopkeeper POS' },
+  icons: {
+    icon: '/favicon.ico',
+    apple: '/icons/icon-192.png',
+  },
 };
 
 export const viewport: Viewport = { themeColor: '#0f172a' };

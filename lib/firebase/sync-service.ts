@@ -485,9 +485,10 @@ export async function syncAllToCloud(uid: string): Promise<SyncMeta | null> {
     };
     await setDoc(doc(firestore, `users/${uid}/meta/sync`), meta);
 
-    await db.transaction('rw', [db.bills, db.products, db.stockMovements, db.customerPayments, db.customers, db.shifts, db.suppliers, db.purchases, db.supplierPayments, db.settings, db.syncQueue], async () => {
+    await db.transaction('rw', [db.bills, db.billItems, db.products, db.stockMovements, db.customerPayments, db.customers, db.shifts, db.suppliers, db.purchases, db.purchaseItems, db.supplierPayments, db.settings, db.syncQueue], async () => {
       await Promise.all([
         db.bills.toCollection().modify({ syncStatus: 'synced', syncedAt, lastSyncError: undefined }),
+        db.billItems.toCollection().modify({ syncStatus: 'synced', syncedAt, lastSyncError: undefined }),
         db.products.toCollection().modify({ syncStatus: 'synced', syncedAt, lastSyncError: undefined }),
         db.stockMovements.toCollection().modify({ syncStatus: 'synced', syncedAt, lastSyncError: undefined }),
         db.customerPayments.toCollection().modify({ syncStatus: 'synced', syncedAt, lastSyncError: undefined }),
@@ -495,6 +496,7 @@ export async function syncAllToCloud(uid: string): Promise<SyncMeta | null> {
         db.shifts.toCollection().modify({ syncStatus: 'synced', syncedAt, lastSyncError: undefined }),
         db.suppliers.toCollection().modify({ syncStatus: 'synced', syncedAt, lastSyncError: undefined }),
         db.purchases.toCollection().modify({ syncStatus: 'synced', syncedAt, lastSyncError: undefined }),
+        db.purchaseItems.toCollection().modify({ syncStatus: 'synced', syncedAt, lastSyncError: undefined }),
         db.supplierPayments.toCollection().modify({ syncStatus: 'synced', syncedAt, lastSyncError: undefined }),
         settings.length
           ? db.settings.bulkPut(settings.map((setting) => asSyncedRecord(setting, syncedAt)))

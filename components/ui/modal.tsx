@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { useEffect, type PropsWithChildren, type ReactNode } from 'react';
-import { Button } from '@/components/ui/button';
-import { useLocale } from '@/components/providers/locale-context';
+import { useEffect, type PropsWithChildren, type ReactNode } from "react";
+import { Button } from "@/components/ui/button";
+import { useLocale } from "@/components/providers/locale-context";
 
 interface ModalProps {
   open: boolean;
@@ -25,13 +25,13 @@ export function Modal({
   useEffect(() => {
     if (!open) return;
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
+      if (e.key === "Escape") onClose();
     }
-    document.body.style.overflow = 'hidden';
-    window.addEventListener('keydown', onKeyDown);
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKeyDown);
     return () => {
-      document.body.style.overflow = '';
-      window.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = "";
+      window.removeEventListener("keydown", onKeyDown);
     };
   }, [open, onClose]);
 
@@ -54,7 +54,10 @@ export function Modal({
         {/* Header */}
         <div className="flex items-start justify-between gap-4 px-5 py-4 border-b border-slate-100">
           <div className="min-w-0">
-            <h3 id="modal-title" className="text-base font-semibold text-slate-900">
+            <h3
+              id="modal-title"
+              className="text-base font-semibold text-slate-900"
+            >
               {title}
             </h3>
             {description && (
@@ -66,9 +69,9 @@ export function Modal({
             variant="ghost"
             size="sm"
             onClick={onClose}
-            aria-label={t('common.close')}
+            aria-label={t("common.close")}
           >
-            {t('common.close')}
+            {t("common.close")}
           </Button>
         </div>
 

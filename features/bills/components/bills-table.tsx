@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db/schema";
@@ -9,8 +9,11 @@ import { formatDateTime } from "@/lib/utils/date";
 import { formatCurrency } from "@/lib/utils/money";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Card } from "@/components/ui/card";
+import { DataTable } from "@/components/ui/data-table";
+import { Badge } from "@/components/ui/badge";
+import { PriceDisplay } from "@/components/pos/price-display";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Button } from "@/components/ui/button";
 import { useLocale } from "@/components/providers/locale-context";
 import {
@@ -22,7 +25,8 @@ import {
   type PaymentFilter,
 } from "@/features/bills/utils/bill-summary";
 import clsx from "clsx";
-import type { SyncStatus } from "@/types/domain";
+import type { SyncStatus, Bill } from "@/types/domain";
+import type { ColumnDef } from "@tanstack/react-table";
 
 function SyncBadge({ status }: { status?: SyncStatus }) {
   const { t } = useLocale();
@@ -85,6 +89,21 @@ export function BillsTable() {
   }, [bills, query, dateFilter, paymentFilter, customFrom, customTo]);
 
   const summary = useMemo(() => summarizeBills(filteredBills), [filteredBills]);
+  const [mobilePage, setMobilePage] = useState(0);
+  const mobilePageSize = 10;
+  const mobilePageCount = Math.max(
+    1,
+    Math.ceil(filteredBills.length / mobilePageSize),
+  );
+  const mobilePageIndex = Math.min(mobilePage, mobilePageCount - 1);
+  const mobileBills = filteredBills.slice(
+    mobilePageIndex * mobilePageSize,
+    mobilePageIndex * mobilePageSize + mobilePageSize,
+  );
+
+  useEffect(() => {
+    setMobilePage(0);
+  }, [query, dateFilter, paymentFilter, customFrom, customTo]);
 
   if (!bills)
     return (
@@ -101,18 +120,100 @@ export function BillsTable() {
     );
   }
 
-  const headers = [
-    t("bills.billNumber"),
-    t("bills.dateTime"),
-    t("bills.customer"),
-    t("bills.cashier"),
-    t("bills.itemCount"),
-    t("bills.total"),
-    t("bills.profit"),
-    t("bills.payment"),
-    t("bills.status"),
-    t("sync.status"),
-    t("bills.action"),
+  const columns: ColumnDef<Bill>[] = [
+    {
+      header: t("bills.billNumber"),
+      accessorKey: "billNumber",
+      cell: ({ row }) => (
+        <span className="font-medium text-slate-800 tabular-nums">
+          {row.original.billNumber}
+        </span>
+      ),
+    },
+    {
+      header: t("bills.dateTime"),
+      accessorKey: "createdAt",
+      cell: ({ row }) => formatDateTime(row.original.createdAt),
+    },
+    {
+      header: t("bills.customer"),
+      accessorKey: "customerName",
+      cell: ({ row }) => row.original.customerName || t("common.walkin"),
+    },
+    {
+      header: t("bills.cashier"),
+      accessorKey: "cashierName",
+      cell: ({ row }) => row.original.cashierName || "—",
+    },
+    { header: t("bills.itemCount"), accessorKey: "itemCount" },
+    {
+      header: t("bills.total"),
+      id: "total",
+      cell: ({ row }) => (
+        <PriceDisplay
+          value={getBillNetTotal(row.original)}
+          currency={currency}
+          size="sm"
+          emphasis
+        />
+      ),
+    },
+    {
+      header: t("bills.profit"),
+      id: "profit",
+      cell: ({ row }) => (
+        <PriceDisplay
+          value={getBillNetProfit(row.original)}
+          currency={currency}
+          size="sm"
+          className="text-green-700"
+        />
+      ),
+    },
+    {
+      header: t("bills.payment"),
+      accessorKey: "paymentMethod",
+      cell: ({ row }) => (
+        <Badge>
+          {t(`common.${row.original.paymentMethod}` as Parameters<typeof t>[0])}
+        </Badge>
+      ),
+    },
+    {
+      header: t("bills.status"),
+      accessorKey: "status",
+      cell: ({ row }) => (
+        <Badge
+          tone={
+            row.original.status === "finalized"
+              ? "success"
+              : row.original.status === "voided"
+                ? "danger"
+                : "warning"
+          }
+        >
+          {t(`common.${row.original.status}` as Parameters<typeof t>[0])}
+        </Badge>
+      ),
+    },
+    {
+      header: t("sync.status"),
+      accessorKey: "syncStatus",
+      cell: ({ row }) => <SyncBadge status={row.original.syncStatus} />,
+    },
+    {
+      header: t("bills.action"),
+      id: "action",
+      enableSorting: false,
+      cell: ({ row }) => (
+        <Link
+          href={`/bills/${row.original.id}`}
+          className="inline-flex items-center rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-blue-600 transition-colors hover:border-blue-200 hover:bg-blue-50"
+        >
+          {t("bills.viewDetails")}
+        </Link>
+      ),
+    },
   ];
 
   return (
@@ -166,33 +267,37 @@ export function BillsTable() {
             placeholder={t("bills.searchPlaceholder")}
             aria-label={t("bills.searchPlaceholder")}
           />
-          <Select
+          <SearchableSelect
             value={dateFilter}
-            onChange={(event) =>
-              setDateFilter(event.target.value as BillDateFilter)
+            onValueChange={(value) =>
+              setDateFilter((value ?? "all") as BillDateFilter)
             }
-            aria-label={t("bills.dateFilter")}
-          >
-            <option value="all">{t("bills.allDates")}</option>
-            <option value="today">{t("bills.today")}</option>
-            <option value="yesterday">{t("bills.yesterday")}</option>
-            <option value="week">{t("bills.thisWeek")}</option>
-            <option value="month">{t("bills.thisMonth")}</option>
-            <option value="custom">{t("bills.customRange")}</option>
-          </Select>
-          <Select
+            placeholder={t("bills.dateFilter")}
+            searchPlaceholder={t("common.search")}
+            options={[
+              { value: "all", label: t("bills.allDates") },
+              { value: "today", label: t("bills.today") },
+              { value: "yesterday", label: t("bills.yesterday") },
+              { value: "week", label: t("bills.thisWeek") },
+              { value: "month", label: t("bills.thisMonth") },
+              { value: "custom", label: t("bills.customRange") },
+            ]}
+          />
+          <SearchableSelect
             value={paymentFilter}
-            onChange={(event) =>
-              setPaymentFilter(event.target.value as PaymentFilter)
+            onValueChange={(value) =>
+              setPaymentFilter((value ?? "all") as PaymentFilter)
             }
-            aria-label={t("bills.paymentFilter")}
-          >
-            <option value="all">{t("bills.allPayments")}</option>
-            <option value="cash">{t("common.cash")}</option>
-            <option value="card">{t("common.card")}</option>
-            <option value="mixed">{t("common.mixed")}</option>
-            <option value="credit">{t("common.credit")}</option>
-          </Select>
+            placeholder={t("bills.paymentFilter")}
+            searchPlaceholder={t("common.search")}
+            options={[
+              { value: "all", label: t("bills.allPayments") },
+              { value: "cash", label: t("common.cash") },
+              { value: "card", label: t("common.card") },
+              { value: "mixed", label: t("common.mixed") },
+              { value: "credit", label: t("common.credit") },
+            ]}
+          />
           <Button
             type="button"
             variant="secondary"
@@ -233,107 +338,112 @@ export function BillsTable() {
         ) : (
           <>
             <div className="grid gap-3 md:hidden">
-              {filteredBills.map((bill) => (
-                <Link key={bill.id} href={`/bills/${bill.id}`} className="touch-card block rounded-2xl border border-slate-200 bg-white p-3 shadow-xs active:bg-slate-50">
+              {mobileBills.map((bill) => (
+                <Link
+                  key={bill.id}
+                  href={`/bills/${bill.id}`}
+                  className="touch-card block rounded-2xl border border-slate-200 bg-white p-3 shadow-xs active:bg-slate-50"
+                >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="font-semibold text-slate-900 tabular-nums">{bill.billNumber}</p>
-                      <p className="text-xs text-slate-500 tabular-nums">{formatDateTime(bill.createdAt)}</p>
+                      <p className="font-semibold text-slate-900 tabular-nums">
+                        {bill.billNumber}
+                      </p>
+                      <p className="text-xs text-slate-500 tabular-nums">
+                        {formatDateTime(bill.createdAt)}
+                      </p>
                     </div>
                     <SyncBadge status={bill.syncStatus} />
                   </div>
                   <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
-                    <div className="rounded-xl bg-slate-50 p-2"><p className="text-slate-500">{t('bills.total')}</p><p className="font-black text-slate-900 tabular-nums">{formatCurrency(getBillNetTotal(bill), currency)}</p></div>
-                    <div className="rounded-xl bg-slate-50 p-2"><p className="text-slate-500">{t('bills.profit')}</p><p className="font-bold text-green-700 tabular-nums">{formatCurrency(getBillNetProfit(bill), currency)}</p></div>
-                    <div className="rounded-xl bg-slate-50 p-2"><p className="text-slate-500">{t('bills.itemCount')}</p><p className="font-bold text-slate-800 tabular-nums">{bill.itemCount}</p></div>
+                    <div className="rounded-xl bg-slate-50 p-2">
+                      <p className="text-slate-500">{t("bills.total")}</p>
+                      <p className="font-black text-slate-900 tabular-nums">
+                        {formatCurrency(getBillNetTotal(bill), currency)}
+                      </p>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 p-2">
+                      <p className="text-slate-500">{t("bills.profit")}</p>
+                      <p className="font-bold text-green-700 tabular-nums">
+                        {formatCurrency(getBillNetProfit(bill), currency)}
+                      </p>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 p-2">
+                      <p className="text-slate-500">{t("bills.itemCount")}</p>
+                      <p className="font-bold text-slate-800 tabular-nums">
+                        {bill.itemCount}
+                      </p>
+                    </div>
                   </div>
                   <div className="mt-3 flex items-center justify-between gap-2 text-xs text-slate-600">
-                    <span className="truncate">{bill.customerName || t('common.walkin')}</span>
-                    <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700">{t(`common.${bill.paymentMethod}` as Parameters<typeof t>[0])}</span>
+                    <span className="truncate">
+                      {bill.customerName || t("common.walkin")}
+                    </span>
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
+                      {t(
+                        `common.${bill.paymentMethod}` as Parameters<
+                          typeof t
+                        >[0],
+                      )}
+                    </span>
                   </div>
                 </Link>
               ))}
+              {filteredBills.length > mobilePageSize && (
+                <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 md:hidden">
+                  <span>
+                    {mobilePageIndex + 1} / {mobilePageCount}
+                  </span>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setMobilePage((page) => Math.max(page - 1, 0))
+                      }
+                      disabled={mobilePageIndex === 0}
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setMobilePage((page) =>
+                          Math.min(page + 1, mobilePageCount - 1),
+                        )
+                      }
+                      disabled={mobilePageIndex >= mobilePageCount - 1}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
 
-            <div className="hidden md:block overflow-x-auto">
-            <table className="w-full text-sm min-w-[900px]">
-              <thead>
-                <tr className="border-b border-slate-200">
-                  {headers.map((h) => (
-                    <th
-                      key={h}
-                      className="px-3 py-3 text-start text-xs font-semibold text-slate-500 uppercase tracking-wide"
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredBills.map((bill) => (
-                  <tr
-                    key={bill.id}
-                    className="hover:bg-slate-50/60 transition-colors"
-                  >
-                    <td className="px-3 py-3 font-medium text-slate-800 tabular-nums">
-                      {bill.billNumber}
-                    </td>
-                    <td className="px-3 py-3 text-slate-600 tabular-nums whitespace-nowrap">
-                      {formatDateTime(bill.createdAt)}
-                    </td>
-                    <td className="px-3 py-3 text-slate-700">
-                      {bill.customerName || t("common.walkin")}
-                    </td>
-                    <td className="px-3 py-3 text-slate-700">
-                      {bill.cashierName || "—"}
-                    </td>
-                    <td className="px-3 py-3 text-slate-700 tabular-nums">
-                      {bill.itemCount}
-                    </td>
-                    <td className="px-3 py-3 font-semibold text-slate-800 tabular-nums">
-                      {formatCurrency(getBillNetTotal(bill), currency)}
-                    </td>
-                    <td className="px-3 py-3 text-green-600 font-medium tabular-nums">
-                      {formatCurrency(getBillNetProfit(bill), currency)}
-                    </td>
-                    <td className="px-3 py-3">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700 capitalize">
-                        {t(
-                          `common.${bill.paymentMethod}` as Parameters<
-                            typeof t
-                          >[0],
-                        )}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3">
-                      <span
-                        className={clsx(
-                          "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium capitalize",
-                          bill.status === "finalized"
-                            ? "bg-green-100 text-green-700"
-                            : bill.status === "voided"
-                              ? "bg-red-100 text-red-700"
-                              : "bg-amber-100 text-amber-700",
-                        )}
-                      >
-                        {t(`common.${bill.status}` as Parameters<typeof t>[0])}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3">
-                      <SyncBadge status={bill.syncStatus} />
-                    </td>
-                    <td className="px-3 py-3">
-                      <Link
-                        href={`/bills/${bill.id}`}
-                        className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-200 text-blue-600 hover:bg-blue-50 hover:border-blue-200 transition-colors"
-                      >
-                        {t("bills.viewDetails")}
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="hidden md:block">
+              <DataTable
+                columns={columns}
+                data={filteredBills}
+                enableGlobalSearch={false}
+                pageSize={25}
+                emptyTitle={t("bills.noFilteredBills")}
+                labels={{
+                  searchPlaceholder: t("dataTable.search"),
+                  loading: t("dataTable.loading"),
+                  page: t("dataTable.page"),
+                  of: t("dataTable.of"),
+                  rowsPerPage: t("dataTable.rowsPerPage"),
+                  first: t("dataTable.first"),
+                  previous: t("dataTable.previous"),
+                  next: t("dataTable.next"),
+                  last: t("dataTable.last"),
+                }}
+                getRowId={(bill) => String(bill.id)}
+              />
             </div>
           </>
         )}

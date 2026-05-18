@@ -2,11 +2,16 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { ColumnDef } from "@tanstack/react-table";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db/schema";
-import { customerRepo, settingsRepo, supplierRepo } from "@/lib/db/repositories";
+import {
+  customerRepo,
+  settingsRepo,
+  supplierRepo,
+} from "@/lib/db/repositories";
 import { normalizePhone } from "@/lib/utils/customer-key";
 import {
   purchaseFormSchema,
@@ -22,10 +27,13 @@ import { createFinalizedPurchase } from "@/lib/services/purchase-service";
 import { useAuth } from "@/components/providers/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { DataTable, useDataTableLabels } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
+import { BarcodeScannerModal } from "@/components/barcode/barcode-scanner-modal";
+import { normalizeBarcode } from "@/lib/utils/barcode";
 import { useLocale } from "@/components/providers/locale-context";
 import { Card } from "@/components/ui/card";
 import type {
@@ -161,7 +169,12 @@ function SuccessPanel({
         >
           {t("purchases.historyTitle")}
         </Link>
-        <Button ref={newRef} type="button" onClick={onDismiss} className="w-full">
+        <Button
+          ref={newRef}
+          type="button"
+          onClick={onDismiss}
+          className="w-full"
+        >
           {t("purchases.newPurchaseAction")}
         </Button>
       </div>
@@ -171,6 +184,7 @@ function SuccessPanel({
 
 export function PurchaseEntryScreen() {
   const { t } = useLocale();
+  const tableLabels = useDataTableLabels();
   const { user } = useAuth();
   const products = useLiveQuery(
     () => db.products.where("status").equals("active").sortBy("name"),
@@ -180,18 +194,40 @@ export function PurchaseEntryScreen() {
   const settings = useLiveQuery(() => settingsRepo.get(), []);
   const { push } = useToast();
   const currency = settings?.currency ?? "USD";
-  const draftKey = user?.uid ? `${PURCHASE_DRAFT_KEY_PREFIX}:${user.uid}` : null;
+  const draftKey = user?.uid
+    ? `${PURCHASE_DRAFT_KEY_PREFIX}:${user.uid}`
+    : null;
 
   const [draftItems, setDraftItems] = useState<PurchaseDraftItem[]>([]);
   const [productId, setProductId] = useState("");
   const [newLineCost, setNewLineCost] = useState("");
   const [newLineQty, setNewLineQty] = useState("1");
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [scannerOpen, setScannerOpen] = useState(false);
   const [isPaidAmountManuallyEdited, setIsPaidAmountManuallyEdited] =
     useState(false);
-  const [lastFinalized, setLastFinalized] = useState<
-    { purchase: Purchase; items: PurchaseItem[] } | null
-  >(null);
+  const [lastFinalized, setLastFinalized] = useState<{
+    purchase: Purchase;
+    items: PurchaseItem[];
+  } | null>(null);
+  const productOptions = useMemo(
+    () =>
+      (products ?? []).map((product) => ({
+        value: product.id,
+        label: product.name,
+        description: [product.barcode, product.brand, product.category]
+          .filter(Boolean)
+          .join(" • "),
+        meta: (
+          <span className="text-xs text-slate-500">
+            {formatCurrency(product.buyPrice, currency)} ·{" "}
+            {product.quantityInStock}
+          </span>
+        ),
+      })),
+    [products, currency],
+  );
+
   const [supplierFieldFocused, setSupplierFieldFocused] = useState(false);
 
   const form = useForm<PurchaseFormSchema>({
@@ -291,9 +327,7 @@ export function PurchaseEntryScreen() {
     () =>
       isMixedPurchase
         ? Math.abs(
-            watchedCashAmount +
-              watchedCardAmount -
-              purchaseSummary.totalAmount,
+            watchedCashAmount + watchedCardAmount - purchaseSummary.totalAmount,
           )
         : 0,
     [
@@ -367,7 +401,12 @@ export function PurchaseEntryScreen() {
       if (exact) return [];
     }
     return matches.slice(0, 5);
-  }, [suppliers, supplierFieldFocused, watchedSupplierName, watchedSupplierPhone]);
+  }, [
+    suppliers,
+    supplierFieldFocused,
+    watchedSupplierName,
+    watchedSupplierPhone,
+  ]);
 
   function selectSupplier(supplier: Supplier) {
     form.setValue("supplierName", supplier.name, { shouldDirty: true });
@@ -409,7 +448,43 @@ export function PurchaseEntryScreen() {
     if (lastFinalized) setLastFinalized(null);
   }
 
-  function updateLine(productIdToUpdate: string, patch: Partial<PurchaseDraftItem>) {
+  function handleScanForPurchase(barcode: string) {
+    const bc = normalizeBarcode(barcode);
+    const product = products?.find((p) => normalizeBarcode(p.barcode) === bc);
+    if (!product) {
+      push(t("billing.productNotFound", { barcode: bc }), "error");
+      return;
+    }
+    setDraftItems((cur) => {
+      const existing = cur.find((i) => i.productId === product.id);
+      if (existing) {
+        return cur.map((i) =>
+          i.productId === product.id
+            ? { ...i, quantity: i.quantity + 1 }
+            : i,
+        );
+      }
+      return [
+        ...cur,
+        {
+          productId: product.id,
+          barcode: product.barcode,
+          name: product.name,
+          category: product.category,
+          currentStock: product.quantityInStock,
+          quantity: 1,
+          unitCost: product.buyPrice,
+          unitSellPriceBefore: product.sellPrice,
+        },
+      ];
+    });
+    if (lastFinalized) setLastFinalized(null);
+  }
+
+  function updateLine(
+    productIdToUpdate: string,
+    patch: Partial<PurchaseDraftItem>,
+  ) {
     setDraftItems((cur) =>
       cur.map((i) => {
         if (i.productId !== productIdToUpdate) return i;
@@ -426,7 +501,9 @@ export function PurchaseEntryScreen() {
   }
 
   function removeLine(productIdToRemove: string) {
-    setDraftItems((cur) => cur.filter((i) => i.productId !== productIdToRemove));
+    setDraftItems((cur) =>
+      cur.filter((i) => i.productId !== productIdToRemove),
+    );
   }
 
   function clearDraft() {
@@ -473,6 +550,96 @@ export function PurchaseEntryScreen() {
     }
   }
 
+  const draftItemColumns: ColumnDef<PurchaseDraftItem, unknown>[] = [
+    {
+      accessorKey: "name",
+      header: t("purchases.item"),
+      cell: ({ row }) => (
+        <span className="font-medium text-slate-800">{row.original.name}</span>
+      ),
+    },
+    {
+      accessorKey: "currentStock",
+      header: t("purchases.currentStock"),
+      cell: ({ row }) => (
+        <span className="tabular-nums text-slate-500">
+          {row.original.currentStock}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "quantity",
+      header: t("purchases.qty"),
+      cell: ({ row }) => {
+        const item = row.original;
+        return (
+          <Input
+            type="number"
+            inputMode="numeric"
+            enterKeyHint="done"
+            min={1}
+            value={item.quantity}
+            onChange={(e) =>
+              updateLine(item.productId, { quantity: Number(e.target.value) })
+            }
+            onKeyDown={dismissKeyboardOnEnter}
+            className="w-20 text-center"
+          />
+        );
+      },
+    },
+    {
+      accessorKey: "unitCost",
+      header: t("purchases.cost"),
+      cell: ({ row }) => {
+        const item = row.original;
+        return (
+          <Input
+            type="number"
+            inputMode="decimal"
+            enterKeyHint="done"
+            step="0.01"
+            min={0}
+            value={item.unitCost}
+            onChange={(e) =>
+              updateLine(item.productId, { unitCost: Number(e.target.value) })
+            }
+            onKeyDown={dismissKeyboardOnEnter}
+            className="w-24 text-center"
+          />
+        );
+      },
+    },
+    {
+      id: "subtotal",
+      header: t("purchases.subtotal"),
+      accessorFn: (row) => calculateLineSubtotal(row.quantity, row.unitCost),
+      cell: ({ row }) => (
+        <span className="font-medium tabular-nums text-slate-800">
+          {formatCurrency(
+            calculateLineSubtotal(row.original.quantity, row.original.unitCost),
+            currency,
+          )}
+        </span>
+      ),
+    },
+    {
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      cell: ({ row }) => (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => removeLine(row.original.productId)}
+        >
+          ×
+        </Button>
+      ),
+    },
+  ];
+
   if (!products) {
     return (
       <Card>
@@ -484,7 +651,9 @@ export function PurchaseEntryScreen() {
   return (
     <>
       <div className="mb-4">
-        <h1 className="text-2xl font-bold text-slate-900">{t("purchases.title")}</h1>
+        <h1 className="text-2xl font-bold text-slate-900">
+          {t("purchases.title")}
+        </h1>
         <p className="mt-1 text-sm text-slate-500 max-w-2xl">
           {t("purchases.subtitle")}
         </p>
@@ -505,18 +674,16 @@ export function PurchaseEntryScreen() {
           </div>
 
           {/* Product + qty + cost entry */}
-          <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto_auto] gap-2">
-            <Select
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto_auto_auto] gap-2">
+            <SearchableSelect
               value={productId}
-              onChange={(e) => setProductId(e.target.value)}
-            >
-              <option value="">{t("purchases.selectProduct")}</option>
-              {products.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({p.quantityInStock})
-                </option>
-              ))}
-            </Select>
+              onValueChange={(value) => setProductId(value ?? "")}
+              options={productOptions}
+              placeholder={t("purchases.selectProduct")}
+              searchPlaceholder={t("products.searchPlaceholder")}
+              emptyMessage={t("products.noProducts")}
+              disabled={!products?.length}
+            />
             <Input
               type="number"
               inputMode="numeric"
@@ -548,6 +715,13 @@ export function PurchaseEntryScreen() {
             >
               {t("purchases.addItem")}
             </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setScannerOpen(true)}
+            >
+              {t("billing.scan")}
+            </Button>
           </div>
 
           {/* Items list */}
@@ -557,90 +731,57 @@ export function PurchaseEntryScreen() {
               description={t("purchases.subtitle")}
             />
           ) : (
-            <div className="overflow-x-auto rounded-xl border border-slate-100">
-              <table className="w-full text-sm min-w-[560px]">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200">
-                    {[
-                      t("purchases.item"),
-                      t("purchases.currentStock"),
-                      t("purchases.qty"),
-                      t("purchases.cost"),
-                      t("purchases.subtotal"),
-                      "",
-                    ].map((h) => (
-                      <th
-                        key={h}
-                        className="px-3 py-2.5 text-start text-xs font-semibold text-slate-500 uppercase tracking-wide"
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {draftItems.map((item) => (
-                    <tr key={item.productId} className="hover:bg-slate-50/50">
-                      <td className="px-3 py-2.5 font-medium text-slate-800">
+            <>
+              {/* Mobile touch-card layout */}
+              <div className="flex flex-col gap-2 md:hidden">
+                {draftItems.map((item) => (
+                  <div
+                    key={item.productId}
+                    className="flex items-center gap-3 rounded-xl border border-slate-200 px-3 py-2.5"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-slate-800 truncate">
                         {item.name}
-                      </td>
-                      <td className="px-3 py-2.5 text-slate-500 tabular-nums">
-                        {item.currentStock}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <Input
-                          type="number"
-                          inputMode="numeric"
-                          enterKeyHint="done"
-                          min={1}
-                          value={item.quantity}
-                          onChange={(e) =>
-                            updateLine(item.productId, {
-                              quantity: Number(e.target.value),
-                            })
-                          }
-                          onKeyDown={dismissKeyboardOnEnter}
-                          className="w-20 text-center"
-                        />
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <Input
-                          type="number"
-                          inputMode="decimal"
-                          enterKeyHint="done"
-                          step="0.01"
-                          min={0}
-                          value={item.unitCost}
-                          onChange={(e) =>
-                            updateLine(item.productId, {
-                              unitCost: Number(e.target.value),
-                            })
-                          }
-                          onKeyDown={dismissKeyboardOnEnter}
-                          className="w-24 text-center"
-                        />
-                      </td>
-                      <td className="px-3 py-2.5 tabular-nums font-medium text-slate-800">
-                        {formatCurrency(
-                          calculateLineSubtotal(item.quantity, item.unitCost),
-                          currency,
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeLine(item.productId)}
-                        >
-                          ×
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        <span dir="ltr">
+                          {formatCurrency(item.unitCost, currency)}
+                        </span>
+                        {" × "}
+                        {item.quantity}
+                      </p>
+                    </div>
+                    <span
+                      className="text-sm font-bold tabular-nums text-slate-900"
+                      dir="ltr"
+                    >
+                      {formatCurrency(
+                        calculateLineSubtotal(item.quantity, item.unitCost),
+                        currency,
+                      )}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => removeLine(item.productId)}
+                      className="text-slate-400 hover:text-red-500 transition-colors p-1 text-lg leading-none"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+              {/* Desktop table */}
+              <div className="hidden md:block">
+                <DataTable
+                  columns={draftItemColumns}
+                  data={draftItems}
+                  enableGlobalSearch={false}
+                  emptyTitle={t("purchases.addOneProduct")}
+                  pageSize={10}
+                  labels={tableLabels}
+                />
+              </div>
+            </>
           )}
         </Card>
 
@@ -670,7 +811,10 @@ export function PurchaseEntryScreen() {
                       {...form.register("supplierName")}
                       onFocus={() => setSupplierFieldFocused(true)}
                       onBlur={() => {
-                        window.setTimeout(() => setSupplierFieldFocused(false), 120);
+                        window.setTimeout(
+                          () => setSupplierFieldFocused(false),
+                          120,
+                        );
                       }}
                     />
                   </FormField>
@@ -679,7 +823,10 @@ export function PurchaseEntryScreen() {
                       {...form.register("supplierPhone")}
                       onFocus={() => setSupplierFieldFocused(true)}
                       onBlur={() => {
-                        window.setTimeout(() => setSupplierFieldFocused(false), 120);
+                        window.setTimeout(
+                          () => setSupplierFieldFocused(false),
+                          120,
+                        );
                       }}
                     />
                   </FormField>
@@ -709,12 +856,24 @@ export function PurchaseEntryScreen() {
                 </div>
 
                 <FormField label={t("purchases.paymentMethod")}>
-                  <Select {...form.register("paymentMethod")}>
-                    <option value="cash">{t("common.cash")}</option>
-                    <option value="card">{t("common.card")}</option>
-                    <option value="mixed">{t("common.mixed")}</option>
-                    <option value="credit">{t("common.credit")}</option>
-                  </Select>
+                  <SearchableSelect
+                    value={form.watch("paymentMethod")}
+                    onValueChange={(value) =>
+                      form.setValue(
+                        "paymentMethod",
+                        (value ??
+                          "cash") as PurchaseFormSchema["paymentMethod"],
+                      )
+                    }
+                    placeholder={t("purchases.paymentMethod")}
+                    searchPlaceholder={t("common.search")}
+                    options={[
+                      { value: "cash", label: t("common.cash") },
+                      { value: "card", label: t("common.card") },
+                      { value: "mixed", label: t("common.mixed") },
+                      { value: "credit", label: t("common.credit") },
+                    ]}
+                  />
                 </FormField>
 
                 <div className="grid grid-cols-2 gap-3">
@@ -725,7 +884,9 @@ export function PurchaseEntryScreen() {
                       enterKeyHint="done"
                       step="0.01"
                       onKeyDown={dismissKeyboardOnEnter}
-                      {...form.register("discountAmount", { valueAsNumber: true })}
+                      {...form.register("discountAmount", {
+                        valueAsNumber: true,
+                      })}
                     />
                   </FormField>
                   <FormField label={t("purchases.tax")}>
@@ -755,8 +916,13 @@ export function PurchaseEntryScreen() {
                           value={watchedCashAmount}
                           onKeyDown={dismissKeyboardOnEnter}
                           onChange={(e) => {
-                            const v = e.target.value === "" ? 0 : Number(e.target.value);
-                            const safe = Number.isFinite(v) ? Math.max(0, v) : 0;
+                            const v =
+                              e.target.value === ""
+                                ? 0
+                                : Number(e.target.value);
+                            const safe = Number.isFinite(v)
+                              ? Math.max(0, v)
+                              : 0;
                             form.setValue("cashAmount", safe, {
                               shouldDirty: true,
                               shouldValidate: true,
@@ -781,8 +947,13 @@ export function PurchaseEntryScreen() {
                           value={watchedCardAmount}
                           onKeyDown={dismissKeyboardOnEnter}
                           onChange={(e) => {
-                            const v = e.target.value === "" ? 0 : Number(e.target.value);
-                            const safe = Number.isFinite(v) ? Math.max(0, v) : 0;
+                            const v =
+                              e.target.value === ""
+                                ? 0
+                                : Number(e.target.value);
+                            const safe = Number.isFinite(v)
+                              ? Math.max(0, v)
+                              : 0;
                             form.setValue("cardAmount", safe, {
                               shouldDirty: true,
                               shouldValidate: true,
@@ -806,15 +977,22 @@ export function PurchaseEntryScreen() {
                         enterKeyHint="done"
                         step="0.01"
                         value={
-                          Number.isFinite(actualPaidAmount) ? actualPaidAmount : 0
+                          Number.isFinite(actualPaidAmount)
+                            ? actualPaidAmount
+                            : 0
                         }
                         onChange={(e) => {
                           setIsPaidAmountManuallyEdited(true);
-                          const v = e.target.value === "" ? 0 : Number(e.target.value);
-                          form.setValue("paidAmount", Number.isFinite(v) ? v : 0, {
-                            shouldDirty: true,
-                            shouldValidate: true,
-                          });
+                          const v =
+                            e.target.value === "" ? 0 : Number(e.target.value);
+                          form.setValue(
+                            "paidAmount",
+                            Number.isFinite(v) ? v : 0,
+                            {
+                              shouldDirty: true,
+                              shouldValidate: true,
+                            },
+                          );
                         }}
                         onKeyDown={dismissKeyboardOnEnter}
                         className="flex-1"
@@ -844,12 +1022,18 @@ export function PurchaseEntryScreen() {
                   />
                   <SummaryRow
                     label={t("purchases.total")}
-                    value={formatCurrency(purchaseSummary.totalAmount, currency)}
+                    value={formatCurrency(
+                      purchaseSummary.totalAmount,
+                      currency,
+                    )}
                     highlight
                   />
                   <SummaryRow
                     label={t("purchases.change")}
-                    value={formatCurrency(Math.max(0, actualChangeAmount), currency)}
+                    value={formatCurrency(
+                      Math.max(0, actualChangeAmount),
+                      currency,
+                    )}
                   />
                   {isCreditPurchase && amountDue > 0 && (
                     <SummaryRow
@@ -865,21 +1049,27 @@ export function PurchaseEntryScreen() {
                     {t("purchases.invalidTotal")}
                   </p>
                 )}
-                {isCreditPurchase && !hasCreditSupplier && draftItems.length > 0 && (
-                  <p className="text-xs text-red-600 font-medium">
-                    {t("purchases.creditSupplierRequired")}
-                  </p>
-                )}
-                {isMixedPurchase && !isMixedSplitValid && draftItems.length > 0 && (
-                  <p className="text-xs text-red-600 font-medium">
-                    {t("purchases.mixedSumMismatch")}
-                  </p>
-                )}
-                {hasValidTotal && !hasEnoughPayment && draftItems.length > 0 && (
-                  <p className="text-xs text-red-600 font-medium">
-                    {t("purchases.paidBelowTotal")}
-                  </p>
-                )}
+                {isCreditPurchase &&
+                  !hasCreditSupplier &&
+                  draftItems.length > 0 && (
+                    <p className="text-xs text-red-600 font-medium">
+                      {t("purchases.creditSupplierRequired")}
+                    </p>
+                  )}
+                {isMixedPurchase &&
+                  !isMixedSplitValid &&
+                  draftItems.length > 0 && (
+                    <p className="text-xs text-red-600 font-medium">
+                      {t("purchases.mixedSumMismatch")}
+                    </p>
+                  )}
+                {hasValidTotal &&
+                  !hasEnoughPayment &&
+                  draftItems.length > 0 && (
+                    <p className="text-xs text-red-600 font-medium">
+                      {t("purchases.paidBelowTotal")}
+                    </p>
+                  )}
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
                   <Button
@@ -904,6 +1094,13 @@ export function PurchaseEntryScreen() {
         </div>
       </div>
 
+      <BarcodeScannerModal
+        open={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        onDetected={handleScanForPurchase}
+        continuous
+      />
+
       <Modal
         open={confirmOpen}
         title={t("purchases.finalizePurchase")}
@@ -911,7 +1108,11 @@ export function PurchaseEntryScreen() {
         onClose={() => setConfirmOpen(false)}
         footer={
           <>
-            <Button type="button" variant="ghost" onClick={() => setConfirmOpen(false)}>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setConfirmOpen(false)}
+            >
               {t("common.cancel")}
             </Button>
             <Button type="button" onClick={form.handleSubmit(finalize)}>

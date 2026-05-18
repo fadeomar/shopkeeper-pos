@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { ColumnDef } from "@tanstack/react-table";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db/schema";
 import { settingsRepo } from "@/lib/db/repositories";
@@ -16,14 +17,24 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
+import { StatCard } from "@/components/ui/stat-card";
 import { Modal } from "@/components/ui/modal";
 import { EmptyState } from "@/components/ui/empty-state";
+import { DataTable, useDataTableLabels } from "@/components/ui/data-table";
 import { useToast } from "@/components/ui/toast";
 import { useLocale } from "@/components/providers/locale-context";
+import { PageShell } from "@/components/ui/page-shell";
+import { PageHeader } from "@/components/ui/page-header";
 import { formatCurrency } from "@/lib/utils/money";
 import { formatDateTime } from "@/lib/utils/date";
 import { ShiftReport } from "./shift-report";
-import type { Bill, Purchase, Shift, SupplierPayment } from "@/types/domain";
+import type {
+  Bill,
+  CustomerPayment,
+  Purchase,
+  Shift,
+  SupplierPayment,
+} from "@/types/domain";
 
 function dismissOnEnter(e: React.KeyboardEvent<HTMLInputElement>) {
   if (e.key === "Enter") {
@@ -32,36 +43,9 @@ function dismissOnEnter(e: React.KeyboardEvent<HTMLInputElement>) {
   }
 }
 
-function StatCard({
-  label,
-  value,
-  helper,
-  tone,
-}: {
-  label: string;
-  value: string;
-  helper?: string;
-  tone?: "neutral" | "positive" | "warning";
-}) {
-  const toneClasses =
-    tone === "positive"
-      ? "text-emerald-700"
-      : tone === "warning"
-        ? "text-red-700"
-        : "text-slate-900";
-  return (
-    <Card className="flex flex-col gap-1 p-4">
-      <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">
-        {label}
-      </p>
-      <p className={`text-2xl font-bold tabular-nums ${toneClasses}`}>{value}</p>
-      {helper && <p className="text-xs text-slate-500">{helper}</p>}
-    </Card>
-  );
-}
-
 export function ShiftWorkspace() {
-  const { t, dir } = useLocale();
+  const { t /* dir */ } = useLocale();
+  const tableLabels = useDataTableLabels();
   const { push } = useToast();
   const settings = useLiveQuery(() => settingsRepo.get(), []);
   const activeShift = useLiveQuery(() => getActiveShift(), []);
@@ -89,11 +73,24 @@ export function ShiftWorkspace() {
         : Promise.resolve<SupplierPayment[]>([]),
     [activeShift?.id],
   );
+  const activeShiftCustomerPayments = useLiveQuery<CustomerPayment[]>(
+    () =>
+      activeShift?.id
+        ? db.customerPayments.where("shiftId").equals(activeShift.id).toArray()
+        : Promise.resolve<CustomerPayment[]>([]),
+    [activeShift?.id],
+  );
   const currency = settings?.currency ?? "USD";
 
   const [openingCash, setOpeningCash] = useState("");
   const [openNotes, setOpenNotes] = useState("");
   const [cashierName, setCashierName] = useState("");
+  useEffect(() => {
+    if (settings?.cashierName && !cashierName) {
+      setCashierName(settings.cashierName);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings?.cashierName]);
   const [submittingOpen, setSubmittingOpen] = useState(false);
 
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
@@ -116,9 +113,16 @@ export function ShiftWorkspace() {
     [activeShiftPurchases, activeShiftSupplierPayments],
   );
 
+  const customerPaymentCashIn = useMemo(() => {
+    return (activeShiftCustomerPayments ?? [])
+      .filter((p) => !p.paymentMethod || p.paymentMethod === "cash")
+      .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+  }, [activeShiftCustomerPayments]);
+
   const expectedCash = activeShift
     ? (activeShift.openingCash ?? 0) +
-      totals.cashCollected -
+      totals.cashCollected +
+      customerPaymentCashIn -
       cashOut.totalCashOut
     : 0;
 
@@ -128,6 +132,93 @@ export function ShiftWorkspace() {
   const liveDifference = Number.isFinite(countedCashNumeric)
     ? countedCashNumeric - expectedCash
     : 0;
+
+  const closedShifts = useMemo(
+    () => (pastShifts ?? []).filter((shift) => shift.status === "closed"),
+    [pastShifts],
+  );
+
+  const shiftColumns = useMemo<ColumnDef<Shift, unknown>[]>(
+    () => [
+      {
+        accessorKey: "openedAt",
+        header: t("shift.openedAt"),
+        cell: ({ row }) => (
+          <span className="text-slate-700">
+            {formatDateTime(row.original.openedAt)}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "openedByCashierName",
+        header: t("shift.openedBy"),
+        cell: ({ row }) => (
+          <span className="text-slate-700">
+            {row.original.openedByCashierName}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "openingCash",
+        header: t("shift.openingCash"),
+        cell: ({ row }) => (
+          <span className="tabular-nums">
+            {formatCurrency(row.original.openingCash, currency)}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "expectedCash",
+        header: t("shift.expectedCash"),
+        cell: ({ row }) => (
+          <span className="tabular-nums">
+            {formatCurrency(row.original.expectedCash ?? 0, currency)}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "countedCash",
+        header: t("shift.countedCash"),
+        cell: ({ row }) => (
+          <span className="tabular-nums">
+            {formatCurrency(row.original.countedCash ?? 0, currency)}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "cashDifference",
+        header: t("shift.cashDifference"),
+        cell: ({ row }) => {
+          const diff = row.original.cashDifference ?? 0;
+          return (
+            <span
+              className={`font-semibold tabular-nums ${diff > 0.005 ? "text-emerald-700" : diff < -0.005 ? "text-red-700" : "text-slate-700"}`}
+            >
+              {formatCurrency(diff, currency)}
+            </span>
+          );
+        },
+      },
+      {
+        id: "actions",
+        header: "",
+        enableSorting: false,
+        cell: ({ row }) => (
+          <span className="block text-end">
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => setReportShift(row.original)}
+            >
+              {t("shift.viewReport")}
+            </Button>
+          </span>
+        ),
+      },
+    ],
+    [currency, t],
+  );
 
   async function handleOpenShift() {
     if (submittingOpen) return;
@@ -177,13 +268,8 @@ export function ShiftWorkspace() {
   }
 
   return (
-    <div className="space-y-5" dir={dir}>
-      <section>
-        <h1 className="text-2xl font-bold text-slate-900">{t("shift.title")}</h1>
-        <p className="mt-1 max-w-2xl text-sm text-slate-500">
-          {t("shift.subtitle")}
-        </p>
-      </section>
+    <PageShell>
+      <PageHeader title={t("shift.title")} description={t("shift.subtitle")} />
 
       {activeShift === undefined ? null : activeShift === null ? (
         // ── No active shift: show the open-shift form ──────────────────
@@ -358,83 +444,20 @@ export function ShiftWorkspace() {
           </div>
         </div>
 
-        {!pastShifts || pastShifts.length === 0 ? (
+        {closedShifts.length === 0 ? (
           <EmptyState
             title={t("shift.noPastShifts")}
             description={t("shift.history")}
           />
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-slate-100">
-            <table className="min-w-[720px] w-full text-sm">
-              <thead className="bg-slate-50 border-b border-slate-200">
-                <tr>
-                  {[
-                    t("shift.openedAt"),
-                    t("shift.openedBy"),
-                    t("shift.openingCash"),
-                    t("shift.expectedCash"),
-                    t("shift.countedCash"),
-                    t("shift.cashDifference"),
-                    "",
-                  ].map((h) => (
-                    <th
-                      key={h}
-                      className="px-3 py-2.5 text-start text-xs font-semibold text-slate-500 uppercase tracking-wide"
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {pastShifts
-                  .filter((s) => s.status === "closed")
-                  .map((shift) => {
-                    const diff = shift.cashDifference ?? 0;
-                    return (
-                      <tr key={shift.id} className="hover:bg-slate-50/60">
-                        <td className="px-3 py-3 text-slate-700">
-                          {formatDateTime(shift.openedAt)}
-                        </td>
-                        <td className="px-3 py-3 text-slate-700">
-                          {shift.openedByCashierName}
-                        </td>
-                        <td className="px-3 py-3 tabular-nums">
-                          {formatCurrency(shift.openingCash, currency)}
-                        </td>
-                        <td className="px-3 py-3 tabular-nums">
-                          {formatCurrency(shift.expectedCash ?? 0, currency)}
-                        </td>
-                        <td className="px-3 py-3 tabular-nums">
-                          {formatCurrency(shift.countedCash ?? 0, currency)}
-                        </td>
-                        <td
-                          className={`px-3 py-3 tabular-nums font-semibold ${
-                            diff > 0.005
-                              ? "text-emerald-700"
-                              : diff < -0.005
-                                ? "text-red-700"
-                                : "text-slate-700"
-                          }`}
-                        >
-                          {formatCurrency(diff, currency)}
-                        </td>
-                        <td className="px-3 py-3 text-end">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="secondary"
-                            onClick={() => setReportShift(shift)}
-                          >
-                            {t("shift.viewReport")}
-                          </Button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            columns={shiftColumns}
+            data={closedShifts}
+            enableGlobalSearch
+            emptyTitle={t("shift.noPastShifts")}
+            pageSize={10}
+            labels={tableLabels}
+          />
         )}
       </Card>
 
@@ -531,7 +554,7 @@ export function ShiftWorkspace() {
       >
         {reportShift && <ShiftReport shift={reportShift} settings={settings} />}
       </Modal>
-    </div>
+    </PageShell>
   );
 }
 

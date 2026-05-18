@@ -6,6 +6,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { settingsRepo } from '@/lib/db/repositories';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { FormField } from '@/components/ui/form-field';
 import { Card } from '@/components/ui/card';
 import { useToast } from '@/components/ui/toast';
 import { useLocale } from '@/components/providers/locale-context';
@@ -19,6 +20,8 @@ import type { Locale } from '@/lib/i18n';
 import { db } from '@/lib/db/schema';
 import { createLocalBackupSnapshot, downloadJsonFile } from '@/lib/utils/backup';
 import clsx from 'clsx';
+import { PageShell } from '@/components/ui/page-shell';
+import { PageHeader } from '@/components/ui/page-header';
 
 interface SettingsFormValues {
   storeName: string;
@@ -78,11 +81,11 @@ export default function SettingsPage() {
   ];
 
   return (
-    <div className="flex flex-col gap-5">
-      <section>
-        <h2 className="text-xl font-bold text-slate-900">{t('settings.title')}</h2>
-        <p className="mt-1 text-sm text-slate-500">{t('settings.subtitle')}</p>
-      </section>
+    <PageShell>
+      <PageHeader
+        title={t('settings.title')}
+        description={t('settings.subtitle')}
+      />
 
       {/* Language switcher */}
       <Card>
@@ -111,18 +114,15 @@ export default function SettingsPage() {
       <form onSubmit={form.handleSubmit(onSubmit)}>
         <Card className="flex flex-col gap-5">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <label className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium text-slate-700">{t('settings.storeName')}</span>
+            <FormField label={t('settings.storeName')}>
               <Input {...form.register('storeName')} />
-            </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium text-slate-700">{t('settings.cashierName')}</span>
+            </FormField>
+            <FormField label={t('settings.cashierName')}>
               <Input {...form.register('cashierName')} />
-            </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium text-slate-700">{t('settings.currency')}</span>
-              <Input {...form.register('currency')} />
-            </label>
+            </FormField>
+            <FormField label={t('settings.currency')} hint={t('settings.currencyHint')}>
+              <Input {...form.register('currency')} autoCapitalize="characters" maxLength={3} />
+            </FormField>
           </div>
 
           <div className="flex flex-col gap-3">
@@ -166,7 +166,7 @@ export default function SettingsPage() {
           </span>
         </div>
       </Card>
-    </div>
+    </PageShell>
   );
 }
 

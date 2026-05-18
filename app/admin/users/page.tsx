@@ -1,28 +1,51 @@
-'use client';
+"use client";
 
-import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
-import type { Route } from 'next';
-import { useAuth } from '@/components/providers/auth-context';
-import { fetchAllUsers, updateUserStatus, rejectUser, createAppUser } from '@/lib/firebase/auth-service';
-import { fetchUserSummary, type SupportHealth, type UserSummary } from '@/lib/firebase/admin-service';
-import type { AppUser } from '@/types/domain';
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import type { Route } from "next";
+import { useAuth } from "@/components/providers/auth-context";
+import { useLocale } from "@/components/providers/locale-context";
+import {
+  fetchAllUsers,
+  updateUserStatus,
+  rejectUser,
+  createAppUser,
+} from "@/lib/firebase/auth-service";
+import {
+  fetchUserSummary,
+  type SupportHealth,
+  type UserSummary,
+} from "@/lib/firebase/admin-service";
+import type { AppUser } from "@/types/domain";
+import { PageShell } from "@/components/ui/page-shell";
+import { PageHeader } from "@/components/ui/page-header";
+import { SectionCard } from "@/components/ui/section-card";
+import { FormField } from "@/components/ui/form-field";
+import { Input } from "@/components/ui/input";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { DataTable } from "@/components/ui/data-table";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
+import { LoadingState } from "@/components/ui/loading-state";
+import type { ColumnDef } from "@tanstack/react-table";
 
 type SummaryMap = Record<string, UserSummary>;
 
-const HEALTH_STYLES: Record<SupportHealth, string> = {
-  healthy: 'bg-green-100 text-green-700',
-  needs_attention: 'bg-amber-100 text-amber-700',
-  no_backup: 'bg-red-100 text-red-600',
-};
+// const HEALTH_STYLES: Record<SupportHealth, string> = {
+//   healthy: "bg-green-100 text-green-700",
+//   needs_attention: "bg-amber-100 text-amber-700",
+//   no_backup: "bg-red-100 text-red-600",
+// };
 
 export default function AdminUsersPage() {
   const { isAdmin, user: currentUser } = useAuth();
+  const { t } = useLocale();
   const [users, setUsers] = useState<AppUser[]>([]);
   const [summaries, setSummaries] = useState<SummaryMap>({});
   const [loading, setLoading] = useState(true);
   const [loadingHealth, setLoadingHealth] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [showCreate, setShowCreate] = useState(false);
 
   async function loadUsers() {
@@ -30,13 +53,14 @@ export default function AdminUsersPage() {
       setLoading(true);
       const list = await fetchAllUsers();
       const sorted = list.sort((a, b) => {
-        const rank = (u: AppUser) => u.pendingApproval ? 0 : u.isActive ? 1 : 2;
+        const rank = (u: AppUser) =>
+          u.pendingApproval ? 0 : u.isActive ? 1 : 2;
         return rank(a) - rank(b) || a.name.localeCompare(b.name);
       });
       setUsers(sorted);
       void loadSupportHealth(sorted);
     } catch {
-      setError('Failed to load users. Check your connection.');
+      setError("Failed to load users. Check your connection.");
     } finally {
       setLoading(false);
     }
@@ -51,39 +75,55 @@ export default function AdminUsersPage() {
       );
       setSummaries(Object.fromEntries(entries));
     } catch {
-      setError('Users loaded, but support health could not be refreshed.');
+      setError("Users loaded, but support health could not be refreshed.");
     } finally {
       setLoadingHealth(false);
     }
   }
 
-  useEffect(() => { void loadUsers(); }, []);
+  useEffect(() => {
+    void loadUsers();
+  }, []);
 
   async function approve(uid: string) {
     try {
       await updateUserStatus(uid, true);
-      setUsers((prev) => prev.map((u) =>
-        u.uid === uid ? { ...u, isActive: true, pendingApproval: false } : u,
-      ));
-    } catch { setError('Failed to update user.'); }
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.uid === uid ? { ...u, isActive: true, pendingApproval: false } : u,
+        ),
+      );
+    } catch {
+      setError("Failed to update user.");
+    }
   }
 
   async function reject(uid: string) {
     try {
       await rejectUser(uid);
-      setUsers((prev) => prev.map((u) =>
-        u.uid === uid ? { ...u, isActive: false, pendingApproval: false } : u,
-      ));
-    } catch { setError('Failed to update user.'); }
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.uid === uid ? { ...u, isActive: false, pendingApproval: false } : u,
+        ),
+      );
+    } catch {
+      setError("Failed to update user.");
+    }
   }
 
   async function toggleActive(uid: string, current: boolean) {
     try {
       await updateUserStatus(uid, !current);
-      setUsers((prev) => prev.map((u) =>
-        u.uid === uid ? { ...u, isActive: !current, pendingApproval: false } : u,
-      ));
-    } catch { setError('Failed to update user.'); }
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.uid === uid
+            ? { ...u, isActive: !current, pendingApproval: false }
+            : u,
+        ),
+      );
+    } catch {
+      setError("Failed to update user.");
+    }
   }
 
   const dashboard = useMemo(() => {
@@ -92,7 +132,8 @@ export default function AdminUsersPage() {
       totalUsers: users.length,
       pendingCount: users.filter((u) => u.pendingApproval).length,
       activeCount: users.filter((u) => !u.pendingApproval && u.isActive).length,
-      needsAttention: summaryList.filter((s) => s.syncHealth !== 'healthy').length,
+      needsAttention: summaryList.filter((s) => s.syncHealth !== "healthy")
+        .length,
       totalRevenue: summaryList.reduce((sum, s) => sum + s.totalRevenue, 0),
       totalDebt: summaryList.reduce((sum, s) => sum + s.creditDebt, 0),
     };
@@ -107,41 +148,172 @@ export default function AdminUsersPage() {
     );
   }
 
-  const pending  = users.filter((u) => u.pendingApproval);
-  const active   = users.filter((u) => !u.pendingApproval && u.isActive);
+  const pending = users.filter((u) => u.pendingApproval);
+  const active = users.filter((u) => !u.pendingApproval && u.isActive);
   const inactive = users.filter((u) => !u.pendingApproval && !u.isActive);
+  const managedUsers = [...active, ...inactive];
+
+  const userColumns: ColumnDef<AppUser>[] = [
+    {
+      header: t("products.name"),
+      accessorKey: "name",
+      cell: ({ row }) => {
+        const u = row.original;
+        return (
+          <div className="min-w-[220px]">
+            <Link
+              href={`/admin/users/${u.uid}` as Route}
+              className="font-medium text-slate-800 transition-colors hover:text-blue-600"
+            >
+              {u.name}
+            </Link>
+            {u.uid === currentUser?.uid && (
+              <span className="ms-2 text-xs text-slate-400">
+                ({t("common.self")})
+              </span>
+            )}
+            <div className="truncate text-xs text-slate-400">{u.email}</div>
+            {u.phone && (
+              <a
+                href={`tel:${u.phone}`}
+                className="text-xs text-slate-400 hover:text-blue-500"
+              >
+                {u.phone}
+              </a>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      header: t("admin.backupHealth"),
+      id: "health",
+      cell: ({ row }) => {
+        const summary = summaries[row.original.uid];
+        return summary ? (
+          <HealthBadge health={summary.syncHealth} />
+        ) : (
+          <span className="text-xs text-slate-300">{t("common.loading")}</span>
+        );
+      },
+    },
+    {
+      header: t("settings.cloudBackup"),
+      id: "backup",
+      cell: ({ row }) => {
+        const summary = summaries[row.original.uid];
+        return summary?.lastSyncAt ? (
+          relativeTime(summary.lastSyncAt)
+        ) : (
+          <span className="text-slate-300">{t("admin.noBackup")}</span>
+        );
+      },
+    },
+    {
+      header: t("admin.cloudStats"),
+      id: "data",
+      cell: ({ row }) => {
+        const summary = summaries[row.original.uid];
+        if (!summary) return "—";
+        return (
+          <div className="whitespace-nowrap text-xs text-slate-500">
+            {summary.billCount} {t("bills.title")} / {summary.productCount}{" "}
+            {t("products.title")}
+            {summary.creditDebt > 0 && (
+              <div className="text-amber-600">
+                {t("admin.customerDebt")} {summary.creditDebt.toFixed(2)}
+              </div>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      header: t("bills.status"),
+      accessorKey: "isActive",
+      cell: ({ row }) => (
+        <div className="flex flex-wrap gap-1">
+          <Badge tone={row.original.isActive ? "success" : "danger"}>
+            {row.original.isActive ? t("common.active") : t("common.inactive")}
+          </Badge>
+          <Badge>{row.original.role}</Badge>
+        </div>
+      ),
+    },
+    {
+      header: t("bills.actions"),
+      id: "actions",
+      enableSorting: false,
+      cell: ({ row }) => {
+        const u = row.original;
+        if (u.uid === currentUser?.uid)
+          return (
+            <span className="text-xs text-slate-400">{t("common.self")}</span>
+          );
+        return (
+          <Button
+            type="button"
+            size="sm"
+            variant={u.isActive ? "danger" : "success"}
+            onClick={() => void toggleActive(u.uid, u.isActive)}
+          >
+            {u.isActive ? t("admin.deactivate") : t("admin.reactivate")}
+          </Button>
+        );
+      },
+    },
+  ];
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-xl font-bold text-slate-800">Admin Support Dashboard</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Approve users, check backup health, and support seller data.</p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => void loadSupportHealth()}
-            disabled={loadingHealth || users.length === 0}
-            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 disabled:opacity-60 text-slate-700 text-sm font-medium rounded-xl transition-colors"
-          >
-            {loadingHealth ? 'Refreshing…' : 'Refresh health'}
-          </button>
-          <button
-            onClick={() => setShowCreate(true)}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-xl transition-colors"
-          >
-            Add User
-          </button>
-        </div>
-      </div>
+    <PageShell size="wide">
+      <PageHeader
+        title={t("admin.usersTitle")}
+        description={t("admin.usersSubtitle")}
+        actions={
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void loadSupportHealth()}
+              disabled={loadingHealth || users.length === 0}
+            >
+              {loadingHealth ? t("common.loading") : t("admin.refreshHealth")}
+            </Button>
+            <Button type="button" onClick={() => setShowCreate(true)}>
+              {t("admin.newUser")}
+            </Button>
+          </>
+        }
+      />
 
       <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
-        <SupportCard label="Users" value={dashboard.totalUsers} />
-        <SupportCard label="Pending" value={dashboard.pendingCount} tone={dashboard.pendingCount > 0 ? 'amber' : undefined} />
-        <SupportCard label="Active" value={dashboard.activeCount} />
-        <SupportCard label="Needs help" value={dashboard.needsAttention} tone={dashboard.needsAttention > 0 ? 'red' : undefined} />
-        <SupportCard label="Cloud sales" value={dashboard.totalRevenue.toFixed(2)} />
-        <SupportCard label="Customer debt" value={dashboard.totalDebt.toFixed(2)} tone={dashboard.totalDebt > 0 ? 'amber' : undefined} />
+        <SupportCard
+          label={t("admin.totalUsers")}
+          value={dashboard.totalUsers}
+        />
+        <SupportCard
+          label={t("admin.pendingCount")}
+          value={dashboard.pendingCount}
+          tone={dashboard.pendingCount > 0 ? "amber" : undefined}
+        />
+        <SupportCard
+          label={t("admin.activeCount")}
+          value={dashboard.activeCount}
+        />
+        <SupportCard
+          label={t("admin.needsHelp")}
+          value={dashboard.needsAttention}
+          tone={dashboard.needsAttention > 0 ? "red" : undefined}
+        />
+        <SupportCard
+          label={t("admin.netSales")}
+          value={dashboard.totalRevenue.toFixed(2)}
+        />
+        <SupportCard
+          label={t("admin.customerDebt")}
+          value={dashboard.totalDebt.toFixed(2)}
+          tone={dashboard.totalDebt > 0 ? "amber" : undefined}
+        />
       </div>
 
       {error && (
@@ -150,15 +322,14 @@ export default function AdminUsersPage() {
         </p>
       )}
 
-      {loading && (
-        <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center text-sm text-slate-400">
-          Loading users…
-        </div>
-      )}
+      {loading && <LoadingState title="Loading users…" />}
 
       {showCreate && (
         <CreateUserForm
-          onCreated={() => { setShowCreate(false); void loadUsers(); }}
+          onCreated={() => {
+            setShowCreate(false);
+            void loadUsers();
+          }}
           onCancel={() => setShowCreate(false)}
         />
       )}
@@ -173,28 +344,37 @@ export default function AdminUsersPage() {
             {pending.map((u) => (
               <div key={u.uid} className="flex items-center gap-3 px-5 py-4">
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium text-slate-800 text-sm truncate">{u.name}</p>
+                  <p className="font-medium text-slate-800 text-sm truncate">
+                    {u.name}
+                  </p>
                   <p className="text-xs text-slate-500 truncate">{u.email}</p>
                   {u.phone && (
-                    <a href={`tel:${u.phone}`} className="text-xs text-blue-500 hover:underline">{u.phone}</a>
+                    <a
+                      href={`tel:${u.phone}`}
+                      className="text-xs text-blue-500 hover:underline"
+                    >
+                      {u.phone}
+                    </a>
                   )}
                 </div>
-                <span className="hidden sm:inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
-                  {u.role}
-                </span>
+                <Badge className="hidden sm:inline-flex">{u.role}</Badge>
                 <div className="flex gap-2">
-                  <button
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="success"
                     onClick={() => void approve(u.uid)}
-                    className="text-xs font-medium px-3 py-1.5 rounded-lg bg-green-50 text-green-700 hover:bg-green-100 transition-colors"
                   >
                     Approve
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="danger"
                     onClick={() => void reject(u.uid)}
-                    className="text-xs font-medium px-3 py-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
                   >
                     Reject
-                  </button>
+                  </Button>
                 </div>
               </div>
             ))}
@@ -203,109 +383,71 @@ export default function AdminUsersPage() {
       )}
 
       {(active.length > 0 || inactive.length > 0) && (
-        <section>
-          {pending.length > 0 && (
-            <h2 className="text-sm font-semibold text-slate-500 mb-2">All Users</h2>
-          )}
-          <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-100">
-                    <th className="text-left px-5 py-3 font-medium text-slate-500">Name</th>
-                    <th className="text-left px-5 py-3 font-medium text-slate-500 hidden md:table-cell">Health</th>
-                    <th className="text-left px-5 py-3 font-medium text-slate-500 hidden lg:table-cell">Backup</th>
-                    <th className="text-left px-5 py-3 font-medium text-slate-500 hidden sm:table-cell">Data</th>
-                    <th className="text-left px-5 py-3 font-medium text-slate-500">Status</th>
-                    <th className="px-5 py-3" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50">
-                  {[...active, ...inactive].map((u) => {
-                    const summary = summaries[u.uid];
-                    return (
-                      <tr key={u.uid} className="hover:bg-slate-50 transition-colors">
-                        <td className="px-5 py-3.5">
-                          <Link
-                            href={`/admin/users/${u.uid}` as Route}
-                            className="font-medium text-slate-800 hover:text-blue-600 transition-colors"
-                          >
-                            {u.name}
-                          </Link>
-                          {u.uid === currentUser?.uid && (
-                            <span className="ml-2 text-xs text-slate-400">(you)</span>
-                          )}
-                          <div className="text-xs text-slate-400 truncate max-w-[220px]">{u.email}</div>
-                          {u.phone && (
-                            <div>
-                              <a href={`tel:${u.phone}`} className="text-xs text-slate-400 hover:text-blue-500">{u.phone}</a>
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-5 py-3.5 hidden md:table-cell">
-                          {summary ? <HealthBadge health={summary.syncHealth} /> : <span className="text-xs text-slate-300">Loading…</span>}
-                        </td>
-                        <td className="px-5 py-3.5 text-slate-500 hidden lg:table-cell whitespace-nowrap">
-                          {summary?.lastSyncAt ? relativeTime(summary.lastSyncAt) : <span className="text-slate-300">No backup</span>}
-                        </td>
-                        <td className="px-5 py-3.5 text-xs text-slate-500 hidden sm:table-cell whitespace-nowrap">
-                          {summary ? `${summary.billCount} bills / ${summary.productCount} products` : '—'}
-                          {summary && summary.creditDebt > 0 && (
-                            <div className="text-amber-600">Debt {summary.creditDebt.toFixed(2)}</div>
-                          )}
-                        </td>
-                        <td className="px-5 py-3.5">
-                          <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
-                            u.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'
-                          }`}>
-                            {u.isActive ? 'Active' : 'Inactive'}
-                          </span>
-                          <span className={`ml-1 hidden sm:inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
-                            u.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-600'
-                          }`}>
-                            {u.role}
-                          </span>
-                        </td>
-                        <td className="px-5 py-3.5 text-right">
-                          {u.uid !== currentUser?.uid && (
-                            <button
-                              onClick={() => void toggleActive(u.uid, u.isActive)}
-                              className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${
-                                u.isActive
-                                  ? 'bg-red-50 text-red-600 hover:bg-red-100'
-                                  : 'bg-green-50 text-green-700 hover:bg-green-100'
-                              }`}
-                            >
-                              {u.isActive ? 'Deactivate' : 'Reactivate'}
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </section>
+        <DataTable
+          columns={userColumns}
+          data={managedUsers}
+          title={pending.length > 0 ? "All Users" : "Users"}
+          description="Search, review backup health, and manage account status."
+          emptyTitle="No users found."
+          searchPlaceholder="Search users…"
+          labels={{
+            searchPlaceholder: "Search users…",
+            loading: t("dataTable.loading"),
+            page: t("dataTable.page"),
+            of: t("dataTable.of"),
+            rowsPerPage: t("dataTable.rowsPerPage"),
+            first: t("dataTable.first"),
+            previous: t("dataTable.previous"),
+            next: t("dataTable.next"),
+            last: t("dataTable.last"),
+          }}
+          pageSize={10}
+          getRowId={(row) => row.uid}
+        />
       )}
 
-      {!loading && users.length === 0 && (
-        <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center text-sm text-slate-400">
-          No users yet.
-        </div>
-      )}
-    </div>
+      {!loading && users.length === 0 && <EmptyState title="No users yet." />}
+    </PageShell>
   );
 }
 
 function HealthBadge({ health }: { health: SupportHealth }) {
-  const label = health === 'healthy' ? 'Healthy' : health === 'needs_attention' ? 'Needs attention' : 'No backup';
-  return <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${HEALTH_STYLES[health]}`}>{label}</span>;
+  const label =
+    health === "healthy"
+      ? "Healthy"
+      : health === "needs_attention"
+        ? "Needs attention"
+        : "No backup";
+  return (
+    <Badge
+      tone={
+        health === "healthy"
+          ? "success"
+          : health === "needs_attention"
+            ? "warning"
+            : "danger"
+      }
+    >
+      {label}
+    </Badge>
+  );
 }
 
-function SupportCard({ label, value, tone }: { label: string; value: string | number; tone?: 'amber' | 'red' }) {
-  const toneClass = tone === 'red' ? 'text-red-600' : tone === 'amber' ? 'text-amber-600' : 'text-slate-800';
+function SupportCard({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string | number;
+  tone?: "amber" | "red";
+}) {
+  const toneClass =
+    tone === "red"
+      ? "text-red-600"
+      : tone === "amber"
+        ? "text-amber-600"
+        : "text-slate-800";
   return (
     <div className="bg-white border border-slate-200 rounded-2xl px-4 py-3">
       <p className="text-xs text-slate-500 mb-1">{label}</p>
@@ -316,10 +458,10 @@ function SupportCard({ label, value, tone }: { label: string; value: string | nu
 
 function relativeTime(value: string) {
   const time = new Date(value).getTime();
-  if (!Number.isFinite(time)) return 'Unknown';
+  if (!Number.isFinite(time)) return "Unknown";
   const diffMs = Date.now() - time;
   const minutes = Math.floor(diffMs / 60_000);
-  if (minutes < 1) return 'Just now';
+  if (minutes < 1) return "Just now";
   if (minutes < 60) return `${minutes}m ago`;
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
@@ -327,84 +469,116 @@ function relativeTime(value: string) {
   return `${days}d ago`;
 }
 
-function CreateUserForm({ onCreated, onCancel }: { onCreated: () => void; onCancel: () => void }) {
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
-  const [password, setPassword] = useState('');
-  const [role, setRole] = useState<'admin' | 'cashier'>('cashier');
+function CreateUserForm({
+  onCreated,
+  onCancel,
+}: {
+  onCreated: () => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
+  const [role, setRole] = useState<"admin" | "cashier">("cashier");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError('');
+    setError("");
     setLoading(true);
     try {
       await createAppUser(email, password, name, role, phone || undefined);
       onCreated();
     } catch (err: unknown) {
-      const code = (err as { code?: string }).code ?? '';
-      if (code === 'auth/email-already-in-use') setError('That email is already registered.');
-      else if (code === 'auth/weak-password') setError('Password must be at least 6 characters.');
-      else setError('Failed to create user. Check your connection.');
+      const code = (err as { code?: string }).code ?? "";
+      if (code === "auth/email-already-in-use")
+        setError("That email is already registered.");
+      else if (code === "auth/weak-password")
+        setError("Password must be at least 6 characters.");
+      else setError("Failed to create user. Check your connection.");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl p-5">
-      <h2 className="font-semibold text-slate-800 mb-4">New User</h2>
-      <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">Full Name</label>
-          <input required value={name} onChange={(e) => setName(e.target.value)}
-            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="Jane Smith" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">Email</label>
-          <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
-            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="jane@example.com" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">Phone <span className="text-slate-400">(optional)</span></label>
-          <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
-            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="+1 555 0123" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">Password</label>
-          <input type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)}
-            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="Min 6 characters" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">Role</label>
-          <select value={role} onChange={(e) => setRole(e.target.value as 'admin' | 'cashier')}
-            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-            <option value="cashier">Cashier</option>
-            <option value="admin">Admin</option>
-          </select>
-        </div>
+    <SectionCard title="New User">
+      <form
+        onSubmit={handleSubmit}
+        className="grid grid-cols-1 sm:grid-cols-2 gap-4"
+      >
+        <FormField label="Full Name">
+          <Input
+            required
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Jane Smith"
+          />
+        </FormField>
+        <FormField label="Email">
+          <Input
+            type="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="jane@example.com"
+          />
+        </FormField>
+        <FormField
+          label={
+            <span>
+              Phone <span className="text-slate-400">(optional)</span>
+            </span>
+          }
+        >
+          <Input
+            type="tel"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="+1 555 0123"
+          />
+        </FormField>
+        <FormField label="Password">
+          <Input
+            type="password"
+            required
+            minLength={6}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Min 6 characters"
+          />
+        </FormField>
+        <FormField label="Role">
+          <SearchableSelect
+            value={role}
+            onValueChange={(value) =>
+              setRole((value as "admin" | "cashier") ?? "cashier")
+            }
+            options={[
+              { value: "cashier", label: "Cashier" },
+              { value: "admin", label: "Admin" },
+            ]}
+            placeholder="Select role"
+            searchPlaceholder="Search roles…"
+            emptyMessage="No roles found"
+          />
+        </FormField>
         {error && (
           <p className="sm:col-span-2 text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
             {error}
           </p>
         )}
         <div className="sm:col-span-2 flex gap-2 justify-end">
-          <button type="button" onClick={onCancel}
-            className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">
+          <Button type="button" variant="outline" onClick={onCancel}>
             Cancel
-          </button>
-          <button type="submit" disabled={loading}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm font-medium rounded-xl transition-colors">
-            {loading ? 'Creating…' : 'Create User'}
-          </button>
+          </Button>
+          <Button type="submit" loading={loading}>
+            {loading ? "Creating…" : "Create User"}
+          </Button>
         </div>
       </form>
-    </div>
+    </SectionCard>
   );
 }

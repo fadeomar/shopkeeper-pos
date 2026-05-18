@@ -1,7 +1,7 @@
 import { collection, doc, getDoc, getDocs, limit, orderBy, query, setDoc } from 'firebase/firestore';
 import { firestore } from './config';
 import { netSplitField, normalizeBillSplit } from '@/lib/utils/bill-split';
-import type { Bill, BillItem, Customer, CustomerPayment, Product, Settings, StockMovement } from '@/types/domain';
+import type { Bill, BillItem, Customer, CustomerPayment, Product, Purchase, PurchaseItem, Settings, Shift, StockMovement, Supplier, SupplierPayment, SyncConflict } from '@/types/domain';
 
 export interface CloudSyncMeta {
   lastSyncedAt: string;
@@ -11,6 +11,12 @@ export interface CloudSyncMeta {
     products?: number;
     stockMovements?: number;
     customerPayments?: number;
+    customers?: number;
+    shifts?: number;
+    suppliers?: number;
+    purchases?: number;
+    purchaseItems?: number;
+    supplierPayments?: number;
   };
 }
 
@@ -110,6 +116,42 @@ export async function fetchUserCustomerPayments(uid: string): Promise<CustomerPa
     query(collection(firestore, `users/${uid}/customerPayments`), orderBy('createdAt', 'desc')),
   );
   return snap.docs.map((d) => d.data() as CustomerPayment);
+}
+
+export async function fetchUserSuppliers(uid: string): Promise<Supplier[]> {
+  const snap = await getDocs(collection(firestore, `users/${uid}/suppliers`));
+  return snap.docs.map((d) => d.data() as Supplier);
+}
+
+export async function fetchUserPurchases(uid: string, maxRows = 2000): Promise<Purchase[]> {
+  const snap = await getDocs(
+    query(collection(firestore, `users/${uid}/purchases`), orderBy('createdAt', 'desc'), limit(maxRows)),
+  );
+  return snap.docs.map((d) => d.data() as Purchase);
+}
+
+export async function fetchUserPurchaseItems(uid: string): Promise<PurchaseItem[]> {
+  const snap = await getDocs(collection(firestore, `users/${uid}/purchaseItems`));
+  return snap.docs.map((d) => d.data() as PurchaseItem);
+}
+
+export async function fetchUserSupplierPayments(uid: string): Promise<SupplierPayment[]> {
+  const snap = await getDocs(
+    query(collection(firestore, `users/${uid}/supplierPayments`), orderBy('createdAt', 'desc')),
+  );
+  return snap.docs.map((d) => d.data() as SupplierPayment);
+}
+
+export async function fetchUserShifts(uid: string, maxRows = 500): Promise<Shift[]> {
+  const snap = await getDocs(
+    query(collection(firestore, `users/${uid}/shifts`), orderBy('openedAt', 'desc'), limit(maxRows)),
+  );
+  return snap.docs.map((d) => d.data() as Shift);
+}
+
+export async function fetchUserSyncConflicts(uid: string): Promise<SyncConflict[]> {
+  const snap = await getDocs(collection(firestore, `users/${uid}/syncConflicts`));
+  return snap.docs.map((d) => d.data() as SyncConflict);
 }
 
 export async function fetchUserSyncMeta(uid: string): Promise<CloudSyncMeta | null> {
@@ -256,10 +298,18 @@ export function buildAdminBackupExport(data: {
   uid: string;
   exportedAt: string;
   bills: Bill[];
+  billItems: BillItem[];
   products: Product[];
   settings: Settings | null;
+  customers: Customer[];
   customerPayments: CustomerPayment[];
   stockMovements: StockMovement[];
+  suppliers: Supplier[];
+  purchases: Purchase[];
+  purchaseItems: PurchaseItem[];
+  supplierPayments: SupplierPayment[];
+  shifts: Shift[];
+  syncConflicts: SyncConflict[];
   syncMeta: CloudSyncMeta | null;
 }) {
   return data;

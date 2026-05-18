@@ -59,7 +59,7 @@ export interface AuthCacheEntry extends AppUser {
 export type BillStatus = 'finalized' | 'voided' | 'partially_returned' | 'returned';
 export type PaymentMethod = 'cash' | 'card' | 'mixed' | 'credit';
 export type StockMovementType = 'purchase' | 'sale' | 'adjustment' | 'return' | 'damaged' | 'initial';
-export type ReferenceType = 'product' | 'bill' | 'adjustment' | 'seed';
+export type ReferenceType = 'product' | 'bill' | 'purchase' | 'adjustment' | 'seed';
 
 export interface Product {
   id: string;
@@ -147,6 +147,9 @@ export interface BillItem {
   lineProfit: number;
   quantityReturned?: number;
   createdAt: string;
+  syncStatus?: SyncStatus;
+  syncedAt?: string;
+  lastSyncError?: string;
 }
 
 export type ShiftStatus = 'open' | 'closed';
@@ -265,6 +268,9 @@ export interface PurchaseItem {
   lineSubtotal: number;
   quantityReturned?: number;
   createdAt: string;
+  syncStatus?: SyncStatus;
+  syncedAt?: string;
+  lastSyncError?: string;
 }
 
 /**
@@ -281,6 +287,7 @@ export interface SupplierPayment {
   supplierPhone?: string;
   amount: number;
   note?: string;
+  paymentMethod?: 'cash' | 'card' | 'bank' | 'other';
   createdAt: string;
   shiftId?: string;
   syncStatus?: SyncStatus;
@@ -295,6 +302,8 @@ export interface CustomerPayment {
   customerPhone?: string;
   amount: number;
   note?: string;
+  paymentMethod?: 'cash' | 'card' | 'bank' | 'other';
+  shiftId?: string;
   createdAt: string;
   syncStatus?: SyncStatus;
   syncedAt?: string;

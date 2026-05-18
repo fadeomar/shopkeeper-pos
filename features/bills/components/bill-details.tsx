@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import type { ColumnDef } from "@tanstack/react-table";
 import { useLiveQuery } from "dexie-react-hooks";
 import clsx from "clsx";
 import { db } from "@/lib/db/schema";
@@ -12,6 +13,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
+import { DataTable, useDataTableLabels } from "@/components/ui/data-table";
 import { useToast } from "@/components/ui/toast";
 import { useLocale } from "@/components/providers/locale-context";
 import { returnBillItem, voidBill } from "@/lib/services/billing-service";
@@ -22,13 +24,13 @@ import {
 import { ReceiptView } from "@/features/bills/components/receipt-view";
 import type { BillItem } from "@/types/domain";
 
-function DetailField({ label, value }: { label: string; value: string }) {
+function DetailField({ label, value, dir }: { label: string; value: string; dir?: string }) {
   return (
     <div className="flex flex-col gap-1">
       <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">
         {label}
       </span>
-      <span className="text-sm font-semibold text-slate-800">{value}</span>
+      <span className="text-sm font-semibold text-slate-800" dir={dir}>{value}</span>
     </div>
   );
 }
@@ -51,6 +53,7 @@ function SummaryRow({
       </span>
       <span
         className={`text-sm tabular-nums ${highlight ? "font-bold text-slate-900" : "font-medium text-slate-700"}`}
+        dir="ltr"
       >
         {value}
       </span>
@@ -64,6 +67,7 @@ function remainingQuantity(item: BillItem) {
 
 export function BillDetails({ billId }: { billId: string }) {
   const { t } = useLocale();
+  const tableLabels = useDataTableLabels();
   const toast = useToast();
   const bill = useLiveQuery(() => db.bills.get(billId), [billId]);
   const items = useLiveQuery(
@@ -101,6 +105,105 @@ export function BillDetails({ billId }: { billId: string }) {
   const canVoid = bill.status === "finalized";
   const canReturn = bill.status !== "voided";
   const selectedRemaining = returnItem ? remainingQuantity(returnItem) : 0;
+
+  const itemColumns: ColumnDef<BillItem, unknown>[] = [
+    {
+      accessorKey: "barcodeAtSale",
+      header: t("bills.barcodeAtSale"),
+      cell: ({ row }) => (
+        <span className="font-mono text-xs tabular-nums text-slate-600">
+          {row.original.barcodeAtSale}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "productNameAtSale",
+      header: t("bills.productAtSale"),
+      cell: ({ row }) => (
+        <span className="font-medium text-slate-800">
+          {row.original.productNameAtSale}
+        </span>
+      ),
+    },
+    { accessorKey: "categoryAtSale", header: t("bills.categoryAtSale") },
+    {
+      accessorKey: "quantitySold",
+      header: t("billing.qty"),
+      cell: ({ row }) => (
+        <span className="tabular-nums text-slate-700">
+          {row.original.quantitySold}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "quantityReturned",
+      header: t("bills.returnedQty"),
+      cell: ({ row }) => (
+        <span className="tabular-nums text-slate-700">
+          {row.original.quantityReturned ?? 0}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "unitBuyPriceAtSale",
+      header: t("bills.buy"),
+      cell: ({ row }) => (
+        <span className="tabular-nums text-slate-600" dir="ltr">
+          {formatCurrency(row.original.unitBuyPriceAtSale, currency)}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "unitSellPriceAtSale",
+      header: t("bills.sell"),
+      cell: ({ row }) => (
+        <span className="tabular-nums text-slate-700" dir="ltr">
+          {formatCurrency(row.original.unitSellPriceAtSale, currency)}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "lineSubtotal",
+      header: t("bills.lineTotal"),
+      cell: ({ row }) => (
+        <span className="font-semibold tabular-nums text-slate-800" dir="ltr">
+          {formatCurrency(row.original.lineSubtotal, currency)}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "lineProfit",
+      header: t("bills.lineProfit"),
+      cell: ({ row }) => (
+        <span className="font-medium tabular-nums text-green-600" dir="ltr">
+          {formatCurrency(row.original.lineProfit, currency)}
+        </span>
+      ),
+    },
+    {
+      id: "actions",
+      header: t("bills.action"),
+      enableSorting: false,
+      cell: ({ row }) => {
+        const item = row.original;
+        const remaining = remainingQuantity(item);
+        return (
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            disabled={!canReturn || remaining <= 0}
+            onClick={() => {
+              setReturnItem(item);
+              setReturnQuantity(String(remaining));
+            }}
+          >
+            {t("bills.returnItem")}
+          </Button>
+        );
+      },
+    },
+  ];
 
   async function handleVoid() {
     try {
@@ -198,6 +301,7 @@ export function BillDetails({ billId }: { billId: string }) {
           <DetailField
             label={t("bills.netTotal")}
             value={formatCurrency(netTotal, currency)}
+            dir="ltr"
           />
         </div>
       </Card>
@@ -228,88 +332,15 @@ export function BillDetails({ billId }: { billId: string }) {
         )}
       </Card>
 
-      <Card padding="sm">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[780px]">
-            <thead>
-              <tr className="border-b border-slate-200">
-                {[
-                  t("bills.barcodeAtSale"),
-                  t("bills.productAtSale"),
-                  t("bills.categoryAtSale"),
-                  t("billing.qty"),
-                  t("bills.returnedQty"),
-                  t("bills.buy"),
-                  t("bills.sell"),
-                  t("bills.lineTotal"),
-                  t("bills.lineProfit"),
-                  t("bills.action"),
-                ].map((h) => (
-                  <th
-                    key={h}
-                    className="px-3 py-3 text-start text-xs font-semibold text-slate-500 uppercase tracking-wide"
-                  >
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {items.map((item) => {
-                const remaining = remainingQuantity(item);
-                return (
-                  <tr
-                    key={item.id}
-                    className="hover:bg-slate-50/50 transition-colors"
-                  >
-                    <td className="px-3 py-2.5 text-slate-600 tabular-nums font-mono text-xs">
-                      {item.barcodeAtSale}
-                    </td>
-                    <td className="px-3 py-2.5 font-medium text-slate-800">
-                      {item.productNameAtSale}
-                    </td>
-                    <td className="px-3 py-2.5 text-slate-600">
-                      {item.categoryAtSale}
-                    </td>
-                    <td className="px-3 py-2.5 tabular-nums text-slate-700">
-                      {item.quantitySold}
-                    </td>
-                    <td className="px-3 py-2.5 tabular-nums text-slate-700">
-                      {item.quantityReturned ?? 0}
-                    </td>
-                    <td className="px-3 py-2.5 tabular-nums text-slate-600">
-                      {formatCurrency(item.unitBuyPriceAtSale, currency)}
-                    </td>
-                    <td className="px-3 py-2.5 tabular-nums text-slate-700">
-                      {formatCurrency(item.unitSellPriceAtSale, currency)}
-                    </td>
-                    <td className="px-3 py-2.5 tabular-nums font-semibold text-slate-800">
-                      {formatCurrency(item.lineSubtotal, currency)}
-                    </td>
-                    <td className="px-3 py-2.5 tabular-nums text-green-600 font-medium">
-                      {formatCurrency(item.lineProfit, currency)}
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        disabled={!canReturn || remaining <= 0}
-                        onClick={() => {
-                          setReturnItem(item);
-                          setReturnQuantity(String(remaining));
-                        }}
-                      >
-                        {t("bills.returnItem")}
-                      </Button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <DataTable
+        columns={itemColumns}
+        data={items}
+        title={t("bills.items")}
+        emptyTitle={t("common.noResults")}
+        enableGlobalSearch={false}
+        pageSize={10}
+        labels={tableLabels}
+      />
 
       <Card>
         <div className="max-w-xs ms-auto">
