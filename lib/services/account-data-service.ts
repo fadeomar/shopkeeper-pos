@@ -8,6 +8,7 @@ const DEVICE_ID_KEY = 'shopkeeper_device_id';
 
 export interface LocalDataSummary {
   products: number; bills: number; billItems: number; stockMovements: number; customerPayments: number; settings: number;
+  customers: number; suppliers: number; purchases: number; purchaseItems: number; supplierPayments: number; shifts: number;
   pending: number; failed: number; syncing: number; blocked: number; conflicts: number; hasBusinessData: boolean; hasUnsyncedWork: boolean;
 }
 
@@ -37,14 +38,28 @@ export function setActiveUid(uid: string): void { if (typeof window === 'undefin
 
 export async function getLocalDataSummary(): Promise<LocalDataSummary> {
   if (!db.isOpen()) { try { await db.open(); } catch {} }
-  const [products,bills,billItems,stockMovements,customerPayments,settings,pending,failed,syncing,blocked,conflicts] = await Promise.all([
+  const [
+    products,bills,billItems,stockMovements,customerPayments,settings,
+    customers,suppliers,purchases,purchaseItems,supplierPayments,shifts,
+    pending,failed,syncing,blocked,conflicts,
+  ] = await Promise.all([
     db.products.count(), db.bills.count(), db.billItems.count(), db.stockMovements.count(), db.customerPayments.count(), db.settings.count(),
+    db.customers.count(), db.suppliers.count(), db.purchases.count(), db.purchaseItems.count(), db.supplierPayments.count(), db.shifts.count(),
     db.syncQueue.where('status').equals('pending').count(), db.syncQueue.where('status').equals('failed').count(), db.syncQueue.where('status').equals('syncing').count(), db.syncQueue.where('status').equals('blocked').count(),
     db.syncConflicts.where('status').equals('open').count().catch(() => 0),
   ]);
-  const hasBusinessData = products + bills + billItems + stockMovements + customerPayments > 0;
+  // hasBusinessData covers every persistable table so a user with only
+  // purchases/suppliers/customers/shifts (and no bills yet) is still detected
+  // as having local work — important for the safe sign-out + restore prompts.
+  const hasBusinessData =
+    products + bills + billItems + stockMovements + customerPayments +
+    customers + suppliers + purchases + purchaseItems + supplierPayments + shifts > 0;
   const hasUnsyncedWork = pending + failed + syncing + blocked + conflicts > 0;
-  return { products,bills,billItems,stockMovements,customerPayments,settings,pending,failed,syncing,blocked,conflicts,hasBusinessData,hasUnsyncedWork };
+  return {
+    products,bills,billItems,stockMovements,customerPayments,settings,
+    customers,suppliers,purchases,purchaseItems,supplierPayments,shifts,
+    pending,failed,syncing,blocked,conflicts,hasBusinessData,hasUnsyncedWork,
+  };
 }
 
 async function clearRuntimeDb(): Promise<void> { await Promise.all([db.products.clear(),db.bills.clear(),db.billItems.clear(),db.stockMovements.clear(),db.customerPayments.clear(),db.customers.clear(),db.shifts.clear(),db.suppliers.clear(),db.purchases.clear(),db.purchaseItems.clear(),db.supplierPayments.clear(),db.settings.clear(),db.authCache.clear(),db.syncQueue.clear(),db.syncConflicts.clear().catch(()=>undefined)]); }

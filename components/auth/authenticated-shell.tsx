@@ -382,7 +382,7 @@ function RestoreModal({
       <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-xl p-6">
         <button
           type="button"
-          aria-label="Close restore prompt"
+          aria-label={t("auth.closeRestorePrompt")}
           onClick={onSkip}
           disabled={restoring}
           className="absolute end-3 top-3 rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 disabled:opacity-40"
@@ -414,20 +414,17 @@ function RestoreModal({
         </div>
 
         <h2 className="text-base font-bold text-slate-800 text-center mb-1">
-          Use your existing data?
+          {t("auth.useExistingTitle")}
         </h2>
         <p className="text-sm text-slate-500 text-center mb-4">
-          We found data for this account in the cloud from{" "}
-          <span className="font-medium text-slate-700">{date}</span>. Sync it to
-          this device, or start with an empty local workspace. Starting empty
-          will not delete your cloud data.
+          {t("auth.useExistingDesc", { date })}
         </p>
 
         {/* Counts */}
         <div className="flex justify-center gap-4 mb-5">
-          <Stat value={bills} label="bills" />
-          <Stat value={products} label="products" />
-          <Stat value={stockMovements} label="movements" />
+          <Stat value={bills} label={t("auth.restoreStatBills")} />
+          <Stat value={products} label={t("auth.restoreStatProducts")} />
+          <Stat value={stockMovements} label={t("auth.restoreStatMovements")} />
         </div>
 
         {/* Progress / error */}
@@ -448,7 +445,7 @@ function RestoreModal({
               }}
               className="mt-2 font-medium text-red-700 underline underline-offset-2"
             >
-              Copy error
+              {t("auth.copyError")}
             </button>
           </div>
         )}
@@ -467,7 +464,7 @@ function RestoreModal({
             disabled={restoring}
             className="w-full py-2 text-slate-500 hover:text-slate-700 text-sm transition-colors disabled:opacity-40"
           >
-            Start empty on this device
+            {t("auth.startEmpty")}
           </button>
         </div>
       </div>
@@ -487,11 +484,12 @@ function Stat({ value, label }: { value: number; label: string }) {
 // ─── Loading / gate screens ───────────────────────────────────────────────────
 
 function LoadingScreen() {
+  const { t } = useLocale();
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50">
       <div className="p-8 bg-white rounded-2xl shadow-sm border border-slate-200 text-center">
         <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-        <p className="text-sm text-slate-500">Loading Shopkeeper POS…</p>
+        <p className="text-sm text-slate-500">{t("auth.appLoading")}</p>
       </div>
     </div>
   );
@@ -531,16 +529,11 @@ function PendingScreen({ onLogout }: { onLogout: () => void }) {
           </svg>
         </div>
         <h2 className="font-semibold text-slate-800 mb-2">{t("auth.pendingTitle")}</h2>
-        <p className="text-sm text-slate-500 mb-2">
-          Your account request was received. An admin must approve it before you
-          can access the app.
-        </p>
-        <p className="text-xs text-slate-400 mb-6">
-          Contact your admin if this takes too long.
-        </p>
+        <p className="text-sm text-slate-500 mb-2">{t("auth.pendingDesc")}</p>
+        <p className="text-xs text-slate-400 mb-6">{t("auth.pendingContactAdmin")}</p>
         {checked && (
           <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 mb-4">
-            Still waiting — your admin hasn&apos;t approved yet.
+            {t("auth.pendingStillWaiting")}
           </p>
         )}
         <div className="flex flex-col gap-2">
@@ -593,10 +586,7 @@ function InactiveScreen({ onLogout }: { onLogout: () => void }) {
           </svg>
         </div>
         <h2 className="font-semibold text-slate-800 mb-2">{t("auth.inactiveTitle")}</h2>
-        <p className="text-sm text-slate-500 mb-6">
-          Your account has been deactivated. Contact your admin to restore
-          access.
-        </p>
+        <p className="text-sm text-slate-500 mb-6">{t("auth.inactiveDesc")}</p>
         <div className="flex flex-col gap-2">
           <button
             onClick={handleCheck}
@@ -963,10 +953,7 @@ function SafeSignOutButton({ className }: { className?: string }) {
       >
         {summary && (
           <div className="space-y-3 text-sm text-slate-600">
-            <p>
-              Data on this browser is preserved per account. Other accounts on
-              this browser will not see this account&apos;s local data.
-            </p>
+            <p>{t("auth.signOutDataNote")}</p>
             <div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-50 p-3 text-xs">
               <div>
                 <span className="font-semibold text-slate-800">
@@ -982,9 +969,45 @@ function SafeSignOutButton({ className }: { className?: string }) {
               </div>
               <div>
                 <span className="font-semibold text-slate-800">
+                  {summary.customers}
+                </span>{" "}
+                {t("auth.signOutStatCustomers")}
+              </div>
+              <div>
+                <span className="font-semibold text-slate-800">
+                  {summary.suppliers}
+                </span>{" "}
+                {t("auth.signOutStatSuppliers")}
+              </div>
+              <div>
+                <span className="font-semibold text-slate-800">
+                  {summary.purchases}
+                </span>{" "}
+                {t("auth.signOutStatPurchases")}
+              </div>
+              <div>
+                <span className="font-semibold text-slate-800">
+                  {summary.shifts}
+                </span>{" "}
+                {t("auth.signOutStatShifts")}
+              </div>
+              <div>
+                <span className="font-semibold text-slate-800">
                   {summary.stockMovements}
                 </span>{" "}
                 {t("auth.signOutStatMovements")}
+              </div>
+              <div>
+                <span className="font-semibold text-slate-800">
+                  {summary.customerPayments}
+                </span>{" "}
+                {t("auth.signOutStatPayments")}
+              </div>
+              <div>
+                <span className="font-semibold text-slate-800">
+                  {summary.supplierPayments}
+                </span>{" "}
+                {t("auth.signOutStatSupplierPayments")}
               </div>
               <div>
                 <span className="font-semibold text-slate-800">
@@ -998,17 +1021,10 @@ function SafeSignOutButton({ className }: { className?: string }) {
                 </span>{" "}
                 {t("auth.signOutStatConflicts")}
               </div>
-              <div>
-                <span className="font-semibold text-slate-800">
-                  {summary.customerPayments}
-                </span>{" "}
-                {t("auth.signOutStatPayments")}
-              </div>
             </div>
             {summary.conflicts > 0 && (
               <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
-                Resolve conflicts before expecting every change to sync cleanly
-                to the cloud.
+                {t("auth.signOutConflictsWarning")}
               </p>
             )}
           </div>

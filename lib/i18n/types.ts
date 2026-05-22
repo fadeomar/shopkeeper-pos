@@ -77,6 +77,21 @@ export interface TranslationDict {
     next: string;
     last: string;
   };
+  searchableSelect: {
+    select: string;
+    search: string;
+    noOptions: string;
+  };
+  errorPage: {
+    pageTitle: string;
+    pageDesc: string;
+    tryAgain: string;
+    clearAndReload: string;
+    copyDetails: string;
+    copied: string;
+    globalTitle: string;
+    globalDesc: string;
+  };
   sidebar: { title: string; subtitle: string };
   pwa: {
     online: string;
@@ -529,6 +544,13 @@ export interface TranslationDict {
     noFailedSyncJobs: string;
     clearCacheReload: string;
     cacheCleared: string;
+    clearCacheConfirmTitle: string;
+    clearCacheConfirmDesc: string;
+    clearCacheOfflineWarning: string;
+    clearCacheUnsyncedWarning: string;
+    clearCacheConflictsWarning: string;
+    clearCacheConfirmButton: string;
+    clearCacheDataNote: string;
   };
   scanner: {
     requesting: string;
@@ -588,11 +610,31 @@ export interface TranslationDict {
     signOutStatPending: string;
     signOutStatConflicts: string;
     signOutStatPayments: string;
+    signOutStatCustomers: string;
+    signOutStatSuppliers: string;
+    signOutStatPurchases: string;
+    signOutStatShifts: string;
+    signOutStatSupplierPayments: string;
+    signOutDataNote: string;
+    signOutConflictsWarning: string;
     checkApproval: string;
     checkStatus: string;
     checking: string;
     pendingTitle: string;
+    pendingDesc: string;
+    pendingContactAdmin: string;
+    pendingStillWaiting: string;
     inactiveTitle: string;
+    inactiveDesc: string;
+    useExistingTitle: string;
+    useExistingDesc: string;
+    startEmpty: string;
+    copyError: string;
+    closeRestorePrompt: string;
+    appLoading: string;
+    restoreStatBills: string;
+    restoreStatProducts: string;
+    restoreStatMovements: string;
   };
   sync: {
     status: string;
@@ -605,6 +647,20 @@ export interface TranslationDict {
     pendingBadge: string;
     safeLocal: string;
     waitingCloud: string;
+    conflictReviewTitle: string;
+    conflictReviewDesc: string;
+    conflictNoSilentOverwrite: string;
+    conflictEntitySuffix: string;
+    needsReview: string;
+    keepCloud: string;
+    keepLocal: string;
+    markReviewed: string;
+    badgeBlocked: string;
+    badgeConflicts: string;
+    badgeOffline: string;
+    badgeOfflineSaved: string;
+    badgeWaitingToSync: string;
+    badgeSyncedLocally: string;
   };
   purchases: {
     newPurchase: string;

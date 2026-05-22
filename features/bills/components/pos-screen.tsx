@@ -326,6 +326,14 @@ export function PosScreen() {
         removedCount += 1;
         return acc; // drop the item
       }
+      // Out-of-stock: drop the item entirely. Keeping it at qty=1 with stock=0
+      // would show a "1 / 0 in stock" line that the user can't act on and the
+      // service rejects on submit. Better to surface it now and let them rescan
+      // when the product is restocked.
+      if (live.quantityInStock <= 0) {
+        removedCount += 1;
+        return acc;
+      }
       const priceChanged =
         live.sellPrice !== item.unitSellPrice || live.buyPrice !== item.unitBuyPrice;
       if (priceChanged) priceCount += 1;

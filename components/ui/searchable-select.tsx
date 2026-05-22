@@ -35,9 +35,9 @@ export function SearchableSelect({
   options,
   value,
   onValueChange,
-  placeholder = "Select…",
-  searchPlaceholder = "Search…",
-  emptyMessage = "No options found",
+  placeholder,
+  searchPlaceholder,
+  emptyMessage,
   disabled,
   loading,
   clearable,
@@ -47,6 +47,11 @@ export function SearchableSelect({
   id,
 }: SearchableSelectProps) {
   const { t } = useLocale();
+  // Defaults pulled from the locale dict so the component can never leak
+  // English into Arabic UI even if a caller forgets to pass a prop.
+  const resolvedPlaceholder = placeholder ?? t("searchableSelect.select");
+  const resolvedSearchPlaceholder = searchPlaceholder ?? t("searchableSelect.search");
+  const resolvedEmptyMessage = emptyMessage ?? t("searchableSelect.noOptions");
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [highlightedIndex, setHighlightedIndex] = useState(0);
@@ -109,7 +114,7 @@ export function SearchableSelect({
         onClick={() => setOpen((current) => !current)}
       >
         <span className="min-w-0 truncate">
-          {selected?.label ?? placeholder}
+          {selected?.label ?? resolvedPlaceholder}
         </span>
         <span aria-hidden="true" className="text-slate-400">
           ⌄
@@ -121,7 +126,7 @@ export function SearchableSelect({
           <Input
             ref={inputRef}
             value={query}
-            placeholder={searchPlaceholder}
+            placeholder={resolvedSearchPlaceholder}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Escape") setOpen(false);
@@ -150,7 +155,7 @@ export function SearchableSelect({
                 {t("common.loading")}
               </div>
             ) : filtered.length === 0 ? (
-              <EmptyState title={emptyMessage} compact />
+              <EmptyState title={resolvedEmptyMessage} compact />
             ) : (
               filtered.map((option, index) => (
                 <button

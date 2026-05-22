@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { FormField } from '@/components/ui/form-field';
 import { Card } from '@/components/ui/card';
+import { Modal } from '@/components/ui/modal';
 import { useToast } from '@/components/ui/toast';
 import { useLocale } from '@/components/providers/locale-context';
 import { useAuth } from '@/components/providers/auth-context';
@@ -270,6 +271,7 @@ function DeviceHealthCard() {
   const [loading, setLoading] = useState(true);
   const [repairing, setRepairing] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   const [stats, setStats] = useState<{
     products: number;
     bills: number;
@@ -338,8 +340,9 @@ function DeviceHealthCard() {
     }
   }
 
-  async function handleClearCaches() {
+  async function performClearCaches() {
     const browserWindow = window as Window & typeof globalThis;
+    setClearConfirmOpen(false);
     if (!browserWindow.caches) {
       browserWindow.location.reload();
       return;
@@ -394,11 +397,79 @@ function DeviceHealthCard() {
         <Button type="button" variant="secondary" onClick={handleRetryFailed} disabled={repairing}>
           {repairing ? t('sync.syncing') : t('settings.retryFailedSync')}
         </Button>
-        <Button type="button" variant="secondary" onClick={handleClearCaches}>
+        <Button type="button" variant="secondary" onClick={() => setClearConfirmOpen(true)}>
           {t('settings.clearCacheReload')}
         </Button>
       </div>
+
+      <ClearCacheConfirmModal
+        open={clearConfirmOpen}
+        onClose={() => setClearConfirmOpen(false)}
+        onConfirm={performClearCaches}
+        waitingCount={waiting}
+        conflictCount={stats?.conflict ?? 0}
+      />
     </Card>
+  );
+}
+
+function ClearCacheConfirmModal({
+  open,
+  onClose,
+  onConfirm,
+  waitingCount,
+  conflictCount,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  waitingCount: number;
+  conflictCount: number;
+}) {
+  const { t } = useLocale();
+  const offline =
+    typeof navigator !== 'undefined' && !navigator.onLine;
+  // Block confirm only on the hardest warning (unresolved conflicts).
+  // Offline and unsynced are informational — local data is safe in IndexedDB.
+  const blocked = conflictCount > 0;
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={t('settings.clearCacheConfirmTitle')}
+      description={t('settings.clearCacheConfirmDesc')}
+      footer={
+        <>
+          <Button type="button" variant="ghost" onClick={onClose}>
+            {t('common.cancel')}
+          </Button>
+          <Button type="button" variant="secondary" onClick={onConfirm} disabled={blocked}>
+            {t('settings.clearCacheConfirmButton')}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3 text-sm text-slate-600">
+        <p className="rounded-xl bg-emerald-50 border border-emerald-100 px-3 py-2 text-emerald-800">
+          {t('settings.clearCacheDataNote')}
+        </p>
+        {conflictCount > 0 && (
+          <p className="rounded-xl bg-red-50 border border-red-200 px-3 py-2 text-red-800">
+            {t('settings.clearCacheConflictsWarning', { count: conflictCount })}
+          </p>
+        )}
+        {offline && (
+          <p className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-amber-800">
+            {t('settings.clearCacheOfflineWarning')}
+          </p>
+        )}
+        {waitingCount > 0 && (
+          <p className="rounded-xl bg-blue-50 border border-blue-200 px-3 py-2 text-blue-800">
+            {t('settings.clearCacheUnsyncedWarning', { count: waitingCount })}
+          </p>
+        )}
+      </div>
+    </Modal>
   );
 }
 

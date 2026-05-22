@@ -3,22 +3,24 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import clsx from 'clsx';
 import { getLocalDataSummary } from '@/lib/services/account-data-service';
+import { useLocale } from '@/components/providers/locale-context';
 
 export function SyncStatusBadge({ compact = false }: { compact?: boolean }) {
+  const { t } = useLocale();
   const summary = useLiveQuery(() => getLocalDataSummary(), [], undefined);
   if (!summary) return null;
 
   const offline = typeof navigator !== 'undefined' && !navigator.onLine;
   const waiting = summary.pending + summary.failed + summary.syncing + summary.blocked;
   const label = summary.blocked > 0
-    ? `${summary.blocked} sync job${summary.blocked > 1 ? 's' : ''} blocked — open Settings`
+    ? t('sync.badgeBlocked', { count: summary.blocked })
     : summary.conflicts > 0
-      ? `${summary.conflicts} conflicts need review`
+      ? t('sync.badgeConflicts', { count: summary.conflicts })
       : offline
-        ? waiting > 0 ? `${waiting} saved on this device` : 'Offline'
+        ? waiting > 0 ? t('sync.badgeOfflineSaved', { count: waiting }) : t('sync.badgeOffline')
         : summary.hasUnsyncedWork
-          ? `${waiting} waiting to sync`
-          : 'Synced locally';
+          ? t('sync.badgeWaitingToSync', { count: waiting })
+          : t('sync.badgeSyncedLocally');
 
   return (
     <div
