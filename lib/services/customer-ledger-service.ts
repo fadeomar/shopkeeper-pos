@@ -1,11 +1,12 @@
-import { AppError, AppErrorCode } from '@/lib/errors/app-error';
-import { db } from '@/lib/db/schema';
-import { nowIso } from '@/lib/utils/date';
-import { createId } from '@/lib/utils/id';
-import { buildSyncQueueItem } from '@/lib/services/sync-queue-service';
-import { normalizeCustomerKey as sharedNormalizeCustomerKey } from '@/lib/utils/customer-key';
-import { netSplitField, normalizeBillSplit } from '@/lib/utils/bill-split';
-import type { Bill, Customer, CustomerPayment } from '@/types/domain';
+import { AppError, AppErrorCode } from "@/lib/errors/app-error";
+import { db } from "@/lib/db/schema";
+import { nowIso } from "@/lib/utils/date";
+import { createId } from "@/lib/utils/id";
+import { buildSyncQueueItem } from "@/lib/services/sync-queue-service";
+import { logAudit } from "@/lib/services/audit-service";
+import { normalizeCustomerKey as sharedNormalizeCustomerKey } from "@/lib/utils/customer-key";
+import { netSplitField, normalizeBillSplit } from "@/lib/utils/bill-split";
+import type { Bill, Customer, CustomerPayment } from "@/types/domain";
 
 export interface CustomerLedgerRow {
   key: string;
@@ -35,10 +36,15 @@ export const normalizeCustomerKey = sharedNormalizeCustomerKey;
  * This mapping lets every ledger reader resolve those legacy keys to the
  * unified Customer.id at query time without rewriting the underlying rows.
  */
-function buildLegacyKeyToCustomerId(customers: Customer[]): Map<string, string> {
+function buildLegacyKeyToCustomerId(
+  customers: Customer[],
+): Map<string, string> {
   const map = new Map<string, string>();
   for (const customer of customers) {
-    const key = normalizeCustomerKey({ name: customer.name, phone: customer.phone });
+    const key = normalizeCustomerKey({
+      name: customer.name,
+      phone: customer.phone,
+    });
     if (key) map.set(key, customer.id);
   }
   return map;
@@ -50,21 +56,33 @@ function buildLegacyKeyToCustomerId(customers: Customer[]): Map<string, string> 
  * normalized key if the bill predates the customer table and no matching
  * Customer row exists yet.
  */
-function canonicalBillKey(bill: Bill, legacyToCustomerId: Map<string, string>): string {
+function canonicalBillKey(
+  bill: Bill,
+  legacyToCustomerId: Map<string, string>,
+): string {
   if (bill.customerId) return bill.customerId;
-  const legacy = normalizeCustomerKey({ name: bill.customerName, phone: bill.customerPhone });
-  if (!legacy) return '';
+  const legacy = normalizeCustomerKey({
+    name: bill.customerName,
+    phone: bill.customerPhone,
+  });
+  if (!legacy) return "";
   return legacyToCustomerId.get(legacy) ?? legacy;
 }
 
-function canonicalPaymentKey(payment: CustomerPayment, legacyToCustomerId: Map<string, string>): string {
+function canonicalPaymentKey(
+  payment: CustomerPayment,
+  legacyToCustomerId: Map<string, string>,
+): string {
   // New payments authored after Bβ6 will store the customerId directly. Old
   // payments stored a `phone:...` or `name:...` legacy key — resolve those
   // through the mapping when possible so they line up with their bills.
   return legacyToCustomerId.get(payment.customerKey) ?? payment.customerKey;
 }
 
-function updateRowFromBill(row: CustomerLedgerRow, bill: Bill): CustomerLedgerRow {
+function updateRowFromBill(
+  row: CustomerLedgerRow,
+  bill: Bill,
+): CustomerLedgerRow {
   const withSplit = normalizeBillSplit(bill) as Bill;
   // Net credit (after returns) is the bill's contribution to outstanding debt.
   // Net paid (cash + card, after returns) is what the customer already paid
@@ -80,21 +98,32 @@ function updateRowFromBill(row: CustomerLedgerRow, bill: Bill): CustomerLedgerRo
     creditSales: row.creditSales + netCredit + netPaid,
     paidOnBills: row.paidOnBills + netPaid,
     billCount: row.billCount + 1,
-    lastActivityAt: bill.createdAt > row.lastActivityAt ? bill.createdAt : row.lastActivityAt,
+    lastActivityAt:
+      bill.createdAt > row.lastActivityAt ? bill.createdAt : row.lastActivityAt,
   };
 }
 
-function updateRowFromPayment(row: CustomerLedgerRow, payment: CustomerPayment): CustomerLedgerRow {
+function updateRowFromPayment(
+  row: CustomerLedgerRow,
+  payment: CustomerPayment,
+): CustomerLedgerRow {
   return {
     ...row,
     name: payment.customerName || row.name,
     phone: payment.customerPhone || row.phone,
     payments: row.payments + payment.amount,
-    lastActivityAt: payment.createdAt > row.lastActivityAt ? payment.createdAt : row.lastActivityAt,
+    lastActivityAt:
+      payment.createdAt > row.lastActivityAt
+        ? payment.createdAt
+        : row.lastActivityAt,
   };
 }
 
-function createEmptyRow(key: string, name = 'Unknown customer', phone?: string): CustomerLedgerRow {
+function createEmptyRow(
+  key: string,
+  name = "Unknown customer",
+  phone?: string,
+): CustomerLedgerRow {
   return {
     key,
     name,
@@ -104,7 +133,7 @@ function createEmptyRow(key: string, name = 'Unknown customer', phone?: string):
     payments: 0,
     balanceDue: 0,
     billCount: 0,
-    lastActivityAt: '',
+    lastActivityAt: "",
   };
 }
 
@@ -127,31 +156,35 @@ function buildCustomerLedger(
       payments: 0,
       balanceDue: 0,
       billCount: 0,
-      lastActivityAt: customer.updatedAt || customer.createdAt || '',
+      lastActivityAt: customer.updatedAt || customer.createdAt || "",
     });
   }
 
   for (const bill of bills) {
-    if (bill.status === 'voided') continue;
+    if (bill.status === "voided") continue;
     const key = canonicalBillKey(bill, legacyToCustomerId);
     if (!key) continue;
     const customer = customersById.get(key);
-    const row = rows.get(key) ?? createEmptyRow(
-      key,
-      customer?.name || bill.customerName || 'Credit customer',
-      customer?.phone || bill.customerPhone,
-    );
+    const row =
+      rows.get(key) ??
+      createEmptyRow(
+        key,
+        customer?.name || bill.customerName || "Credit customer",
+        customer?.phone || bill.customerPhone,
+      );
     rows.set(key, updateRowFromBill(row, bill));
   }
 
   for (const payment of payments) {
     const key = canonicalPaymentKey(payment, legacyToCustomerId);
     const customer = customersById.get(key);
-    const row = rows.get(key) ?? createEmptyRow(
-      key,
-      customer?.name || payment.customerName,
-      customer?.phone || payment.customerPhone,
-    );
+    const row =
+      rows.get(key) ??
+      createEmptyRow(
+        key,
+        customer?.name || payment.customerName,
+        customer?.phone || payment.customerPhone,
+      );
     rows.set(key, updateRowFromPayment(row, payment));
   }
 
@@ -160,21 +193,31 @@ function buildCustomerLedger(
       ...row,
       balanceDue: row.creditSales - row.paidOnBills - row.payments,
     }))
-    .sort((a, b) => b.balanceDue - a.balanceDue || b.lastActivityAt.localeCompare(a.lastActivityAt));
+    .sort(
+      (a, b) =>
+        b.balanceDue - a.balanceDue ||
+        b.lastActivityAt.localeCompare(a.lastActivityAt),
+    );
 }
 
 export async function getCustomerLedger(): Promise<CustomerLedgerRow[]> {
   const [bills, payments, customers] = await Promise.all([
-    db.bills.toArray().then(all => all.filter(b => (b.creditAmount ?? 0) > 0)),
+    db.bills
+      .toArray()
+      .then((all) => all.filter((b) => (b.creditAmount ?? 0) > 0)),
     db.customerPayments.toArray(),
     db.customers.toArray(),
   ]);
   return buildCustomerLedger(bills, payments, customers);
 }
 
-export async function getCustomerLedgerDetails(customerKey: string): Promise<CustomerLedgerDetails | null> {
+export async function getCustomerLedgerDetails(
+  customerKey: string,
+): Promise<CustomerLedgerDetails | null> {
   const [bills, payments, customers] = await Promise.all([
-    db.bills.toArray().then(all => all.filter(b => (b.creditAmount ?? 0) > 0)),
+    db.bills
+      .toArray()
+      .then((all) => all.filter((b) => (b.creditAmount ?? 0) > 0)),
     db.customerPayments.toArray(),
     db.customers.toArray(),
   ]);
@@ -186,12 +229,17 @@ export async function getCustomerLedgerDetails(customerKey: string): Promise<Cus
   const legacyToCustomerId = buildLegacyKeyToCustomerId(customers);
 
   const customerBills = bills
-    .filter((bill) => bill.status !== 'voided')
-    .filter((bill) => canonicalBillKey(bill, legacyToCustomerId) === customerKey)
+    .filter((bill) => bill.status !== "voided")
+    .filter(
+      (bill) => canonicalBillKey(bill, legacyToCustomerId) === customerKey,
+    )
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
   const customerPayments = payments
-    .filter((payment) => canonicalPaymentKey(payment, legacyToCustomerId) === customerKey)
+    .filter(
+      (payment) =>
+        canonicalPaymentKey(payment, legacyToCustomerId) === customerKey,
+    )
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
   return { ...row, bills: customerBills, paymentRows: customerPayments };
@@ -203,39 +251,52 @@ export async function recordCustomerPayment(input: {
   customerPhone?: string;
   amount: number;
   note?: string;
-  paymentMethod?: CustomerPayment['paymentMethod'];
+  paymentMethod?: CustomerPayment["paymentMethod"];
   shiftId?: string;
 }): Promise<CustomerPayment> {
   const amount = Number(input.amount);
   if (!input.customerKey) throw new AppError(AppErrorCode.CUSTOMER_REQUIRED);
-  if (!Number.isFinite(amount) || amount <= 0) throw new AppError(AppErrorCode.PAYMENT_AMOUNT_INVALID);
+  if (!Number.isFinite(amount) || amount <= 0)
+    throw new AppError(AppErrorCode.PAYMENT_AMOUNT_INVALID);
 
   const now = nowIso();
   const payment: CustomerPayment = {
-    id: createId('cust_pay'),
+    id: createId("cust_pay"),
     customerKey: input.customerKey,
-    customerName: input.customerName.trim() || 'Customer',
+    customerName: input.customerName.trim() || "Customer",
     customerPhone: input.customerPhone?.trim() || undefined,
     amount,
     note: input.note?.trim() || undefined,
-    paymentMethod: input.paymentMethod ?? 'cash',
+    paymentMethod: input.paymentMethod ?? "cash",
     shiftId: input.shiftId,
     createdAt: now,
-    syncStatus: 'pending',
+    syncStatus: "pending",
   };
 
-  await db.transaction('rw', [db.customerPayments, db.syncQueue], async () => {
+  await db.transaction("rw", [db.customerPayments, db.syncQueue], async () => {
     await db.customerPayments.add(payment);
-    await db.syncQueue.put(buildSyncQueueItem({
-      entity: 'customerPayment',
-      entityId: payment.id,
-      operation: 'create',
-    }));
+    await db.syncQueue.put(
+      buildSyncQueueItem({
+        entity: "customerPayment",
+        entityId: payment.id,
+        operation: "create",
+      }),
+    );
   });
 
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new Event('shopkeeper:sync-requested'));
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("shopkeeper:sync-requested"));
   }
+
+  void logAudit({
+    category: "customer",
+    action: "payment",
+    entityId: input.customerKey,
+    entityLabel: payment.customerName,
+    summary: `${amount} (${payment.paymentMethod})`,
+    reason: payment.note,
+    shiftId: payment.shiftId,
+  });
 
   return payment;
 }

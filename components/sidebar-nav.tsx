@@ -18,6 +18,9 @@ const routes = [
   { href: '/customers', key: 'nav.customers',   shortKey: 'navShort.customers' },
   { href: '/suppliers', key: 'nav.suppliers',   shortKey: 'navShort.suppliers' },
   { href: '/shift',     key: 'nav.shift',       shortKey: 'navShort.shift' },
+  { href: '/cash',      key: 'nav.cash',        shortKey: 'navShort.cash' },
+  { href: '/expenses',  key: 'nav.expenses',    shortKey: 'navShort.expenses' },
+  { href: '/audit',     key: 'nav.audit',       shortKey: 'navShort.audit' },
   { href: '/settings',  key: 'nav.settings',    shortKey: 'navShort.settings' },
 ] as const;
 

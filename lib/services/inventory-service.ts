@@ -3,6 +3,7 @@ import { db } from '@/lib/db/schema';
 import { createId } from '@/lib/utils/id';
 import { nowIso } from '@/lib/utils/date';
 import { buildSyncQueueItem } from '@/lib/services/sync-queue-service';
+import { logAudit } from '@/lib/services/audit-service';
 import type { Product, StockMovement, StockMovementType } from '@/types/domain';
 
 function requestSync(): void {
@@ -76,11 +77,15 @@ export async function adjustProductStock(
 
   const createdAt = nowIso();
 
+  // Captured inside the transaction for the post-commit audit log entry.
+  let auditProductName = '';
+
   await db.transaction('rw', db.products, db.stockMovements, db.syncQueue, async () => {
     const liveProduct = await db.products.get(product.id);
     if (!liveProduct) {
       throw new AppError(AppErrorCode.PRODUCT_NOT_FOUND);
     }
+    auditProductName = liveProduct.name;
 
     const nextQuantity = liveProduct.quantityInStock + quantityChange;
     if (nextQuantity < 0) {
@@ -113,6 +118,14 @@ export async function adjustProductStock(
     ]);
   });
   requestSync();
+  void logAudit({
+    category: 'inventory',
+    action: 'stock_adjust',
+    entityId: product.id,
+    entityLabel: auditProductName,
+    summary: `${quantityChange > 0 ? '+' : ''}${quantityChange}`,
+    reason: note,
+  });
 }
 
 
@@ -129,11 +142,14 @@ export async function receiveProductStock(
 
   const createdAt = nowIso();
 
+  let auditProductName = '';
+
   await db.transaction('rw', db.products, db.stockMovements, db.syncQueue, async () => {
     const liveProduct = await db.products.get(product.id);
     if (!liveProduct) {
       throw new AppError(AppErrorCode.PRODUCT_NOT_FOUND);
     }
+    auditProductName = liveProduct.name;
 
     const changes: Partial<Product> = {
       quantityInStock: liveProduct.quantityInStock + quantityReceived,
@@ -169,6 +185,14 @@ export async function receiveProductStock(
     ]);
   });
   requestSync();
+  void logAudit({
+    category: 'inventory',
+    action: 'stock_adjust',
+    entityId: product.id,
+    entityLabel: auditProductName,
+    summary: `+${quantityReceived} (received)`,
+    reason: note.trim() || undefined,
+  });
 }
 
 export async function countProductStock(
@@ -181,17 +205,21 @@ export async function countProductStock(
   }
 
   const createdAt = nowIso();
+  let auditDelta = 0;
+  let auditProductName = product.name;
 
   await db.transaction('rw', db.products, db.stockMovements, db.syncQueue, async () => {
     const liveProduct = await db.products.get(product.id);
     if (!liveProduct) {
       throw new AppError(AppErrorCode.PRODUCT_NOT_FOUND);
     }
+    auditProductName = liveProduct.name;
 
     const quantityChange = countedQuantity - liveProduct.quantityInStock;
     if (quantityChange === 0) {
       return;
     }
+    auditDelta = quantityChange;
 
     const movement: StockMovement = {
       id: createId('move'),
@@ -218,4 +246,14 @@ export async function countProductStock(
     ]);
   });
   requestSync();
+  if (auditDelta !== 0) {
+    void logAudit({
+      category: 'inventory',
+      action: 'stock_adjust',
+      entityId: product.id,
+      entityLabel: auditProductName,
+      summary: `counted: ${countedQuantity} (${auditDelta > 0 ? '+' : ''}${auditDelta})`,
+      reason: note.trim() || undefined,
+    });
+  }
 }

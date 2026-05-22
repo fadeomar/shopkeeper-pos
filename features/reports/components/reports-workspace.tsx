@@ -198,6 +198,14 @@ export function ReportsWorkspace() {
         actions={
           <>
             <Link
+              // typed-routes hasn't been regenerated yet for the new /reports/z page;
+              // the route exists at app/reports/z/page.tsx so the cast is safe.
+              href={"/reports/z" as never}
+              className="inline-flex min-h-[42px] items-center justify-center rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-700"
+            >
+              {t("reports.openZReport")}
+            </Link>
+            <Link
               href="/bills"
               className="inline-flex min-h-[42px] items-center justify-center rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-200"
             >

@@ -4,7 +4,7 @@ import { db } from '@/lib/db/schema';
 import { saveConflict } from '@/lib/services/sync-conflict-service';
 import { buildSyncQueueItem, getSyncQueueId } from '@/lib/services/sync-queue-service';
 import { normalizeBillSplit } from '@/lib/utils/bill-split';
-import type { Bill, BillItem, Customer, CustomerPayment, Product, Purchase, PurchaseItem, Settings, Shift, StockMovement, Supplier, SupplierPayment, SyncEntity, SyncQueueItem } from '@/types/domain';
+import type { AuditEvent, Bill, BillItem, CashMovement, Customer, CustomerPayment, Expense, Product, Purchase, PurchaseItem, Settings, Shift, StockMovement, Supplier, SupplierPayment, SyncEntity, SyncQueueItem } from '@/types/domain';
 
 const PRODUCT_FIELDS: Array<keyof Product> = [
   'barcode', 'name', 'category', 'brand', 'unit', 'quantityInStock', 'buyPrice', 'sellPrice',
@@ -43,9 +43,32 @@ function laterIso(a?: string, b?: string): string | undefined {
   return bTime > aTime ? b : a;
 }
 
-async function pullCollection<T>(uid: string, name: string): Promise<T[]> {
+/**
+ * Pulls a Firestore subcollection and guarantees every returned row has an
+ * `id` field set to the Firestore document ID.
+ *
+ * Older devices wrote the entity's id INTO the document body, but newer
+ * devices (and any record reconstructed from a partial migration) may not.
+ * Without this fallback, `docSnap.data().id` is undefined and Dexie's primary
+ * key write either rejects the row or — worse — silently writes multiple
+ * "id: undefined" rows that collide and overwrite each other. That's why
+ * an existing cloud account can sign in and see nothing land locally.
+ *
+ * Mirror of `withDocId` in restore-service.ts so both paths produce
+ * identically-shaped rows.
+ */
+async function pullCollection<T extends { id?: string }>(
+  uid: string,
+  name: string,
+): Promise<Array<T & { id: string }>> {
   const snap = await getDocs(collection(firestore, `users/${uid}/${name}`));
-  return snap.docs.map((docSnap) => docSnap.data() as T);
+  return snap.docs.map((docSnap) => {
+    const data = docSnap.data() as T;
+    return {
+      ...data,
+      id: typeof data.id === 'string' && data.id.trim() ? data.id : docSnap.id,
+    } as T & { id: string };
+  });
 }
 
 function isActiveLocalJob(job: SyncQueueItem | undefined): job is SyncQueueItem {
@@ -322,6 +345,23 @@ async function pullShifts(uid: string): Promise<void> {
   });
 }
 
+/**
+ * Pull append-only history tables that have no merge conflicts and no
+ * pending-job interactions: each cloud row is either already local (skip)
+ * or new (insert). Used for audit events, cash movements, and expenses.
+ */
+async function pullSimpleAppendOnly<
+  TName extends 'auditEvents' | 'cashMovements' | 'expenses',
+  TRow extends { id: string } & Record<string, unknown>,
+>(uid: string, name: TName, table: { get(id: string): Promise<TRow | undefined>; put(row: TRow): Promise<unknown> }): Promise<void> {
+  const cloudRows = await pullCollection<TRow>(uid, name);
+  for (const row of cloudRows) {
+    const local = await table.get(row.id);
+    if (local) continue;
+    await table.put({ ...row, syncStatus: 'synced', lastSyncError: undefined } as TRow);
+  }
+}
+
 export async function pullCloudChangesBeforePush(uid: string): Promise<void> {
   await pullAppendOnlyCollections(uid);
   await pullCustomers(uid);
@@ -329,4 +369,10 @@ export async function pullCloudChangesBeforePush(uid: string): Promise<void> {
   await pullShifts(uid);
   await pullProducts(uid);
   await pullSettings(uid);
+  // History-only tables added in sprint v12–v14. Append-only and never
+  // mutated after creation, so a simple "insert if missing" loop is enough —
+  // no conflict detection or pending-job interaction needed.
+  await pullSimpleAppendOnly<'auditEvents', AuditEvent & Record<string, unknown>>(uid, 'auditEvents', db.auditEvents as unknown as { get(id: string): Promise<(AuditEvent & Record<string, unknown>) | undefined>; put(row: AuditEvent & Record<string, unknown>): Promise<unknown> });
+  await pullSimpleAppendOnly<'cashMovements', CashMovement & Record<string, unknown>>(uid, 'cashMovements', db.cashMovements as unknown as { get(id: string): Promise<(CashMovement & Record<string, unknown>) | undefined>; put(row: CashMovement & Record<string, unknown>): Promise<unknown> });
+  await pullSimpleAppendOnly<'expenses', Expense & Record<string, unknown>>(uid, 'expenses', db.expenses as unknown as { get(id: string): Promise<(Expense & Record<string, unknown>) | undefined>; put(row: Expense & Record<string, unknown>): Promise<unknown> });
 }

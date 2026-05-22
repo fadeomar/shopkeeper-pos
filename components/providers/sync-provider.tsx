@@ -4,9 +4,12 @@ import { useEffect, useRef } from 'react';
 import { db } from '@/lib/db/schema';
 import {
   applyStockMovementDeltasToCloudProducts,
+  syncAuditEventsToCloud,
   syncBillSequenceToCloud,
   syncBillToCloud,
+  syncCashMovementsToCloud,
   syncCustomersToCloud,
+  syncExpensesToCloud,
   syncProductsToCloud,
   syncPurchaseToCloud,
   syncSettingsToCloud,
@@ -29,6 +32,7 @@ import { useAuth } from './auth-context';
 import { autoDismissFalseOfflineSaleConflicts, getOpenConflicts } from '@/lib/services/sync-conflict-service';
 import { detectProductCloudConflict, prepareSettingsForCloudSync } from '@/lib/firebase/cloud-merge-service';
 import { pullCloudChangesBeforePush } from '@/lib/firebase/cloud-pull-service';
+import { isSyncBlocked } from '@/lib/services/sync-gate';
 import type { Product, Settings, StockMovement, SyncQueueItem, SyncStatus } from '@/types/domain';
 
 const MAX_RETRIES = 5;
@@ -101,8 +105,15 @@ function jobPriority(job: SyncQueueItem): number {
       return isBillSequenceJob(job) ? 8 : 10;
     case 'product':
       return 11;
+    // Append-only history with no foreign-key dependencies — last.
+    case 'auditEvent':
+      return 13;
+    case 'cashMovement':
+      return 14;
+    case 'expense':
+      return 15;
     default:
-      return 12;
+      return 99;
   }
 }
 
@@ -175,6 +186,12 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
         await db.supplierPayments.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
       } else if (job.entity === 'settings') {
         await db.settings.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
+      } else if (job.entity === 'auditEvent') {
+        await db.auditEvents.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
+      } else if (job.entity === 'cashMovement') {
+        await db.cashMovements.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
+      } else if (job.entity === 'expense') {
+        await db.expenses.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
       }
     }
     return;
@@ -341,6 +358,38 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
           lastSyncError: undefined,
         });
       }
+    } else if (job.entity === 'auditEvent') {
+      // Audit events are append-only. If the local row has been wiped before
+      // we got to sync it (rare — only via clearRuntimeDb), drop the job.
+      const event = await db.auditEvents.get(job.entityId);
+      if (!event) {
+        await markSynced(job.id);
+        return;
+      }
+      const syncedAt = await syncAuditEventsToCloud(uid, [event]);
+      if (syncedAt) {
+        await db.auditEvents.update(job.entityId, { syncStatus: 'synced', syncedAt, lastSyncError: undefined });
+      }
+    } else if (job.entity === 'cashMovement') {
+      const movement = await db.cashMovements.get(job.entityId);
+      if (!movement) {
+        await markSynced(job.id);
+        return;
+      }
+      const syncedAt = await syncCashMovementsToCloud(uid, [movement]);
+      if (syncedAt) {
+        await db.cashMovements.update(job.entityId, { syncStatus: 'synced', syncedAt, lastSyncError: undefined });
+      }
+    } else if (job.entity === 'expense') {
+      const expense = await db.expenses.get(job.entityId);
+      if (!expense) {
+        await markSynced(job.id);
+        return;
+      }
+      const syncedAt = await syncExpensesToCloud(uid, [expense]);
+      if (syncedAt) {
+        await db.expenses.update(job.entityId, { syncStatus: 'synced', syncedAt, lastSyncError: undefined });
+      }
     }
 
     await markSynced(job.id);
@@ -367,6 +416,12 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
       await db.supplierPayments.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
     } else if (job.entity === 'settings') {
       await db.settings.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
+    } else if (job.entity === 'auditEvent') {
+      await db.auditEvents.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
+    } else if (job.entity === 'cashMovement') {
+      await db.cashMovements.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
+    } else if (job.entity === 'expense') {
+      await db.expenses.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
     }
   }
 }
@@ -385,6 +440,14 @@ async function processJobs(uid: string, jobs: SyncQueueItem[]): Promise<void> {
 
 export async function runSync(uid: string): Promise<void> {
   if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+
+  // Skip this tick if a restore is running or the CashierShell hasn't yet
+  // decided whether to offer a restore. See lib/services/sync-gate.ts for
+  // the reasoning — short version: we don't want pullCloudChangesBeforePush
+  // interleaving rows into a Dexie clear+bulkPut that restore is doing, and
+  // we don't want to silently pull cloud state into a fresh device before
+  // the user has been asked whether to restore.
+  if (isSyncBlocked()) return;
 
   await autoDismissFalseOfflineSaleConflicts();
   const openConflicts = await getOpenConflicts();
@@ -425,9 +488,26 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     const requestSync = () => {
       if (runningRef.current) return;
       runningRef.current = true;
-      void runSync(uid).finally(() => {
-        runningRef.current = false;
-      });
+      // Silent failures used to mean the user just saw "nothing happened" —
+      // no toast, no badge change, no console trace — when a Firestore read
+      // failed (permission denied, network blip, duplicate key, etc.). Log
+      // the error and broadcast it as a CustomEvent so SyncStatusBadge / the
+      // Settings device-health card can surface it without us tightly
+      // coupling them to this provider.
+      void runSync(uid)
+        .catch((error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error);
+          // eslint-disable-next-line no-console
+          console.error('[sync] runSync failed', error);
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(
+              new CustomEvent('shopkeeper:sync-error', { detail: message }),
+            );
+          }
+        })
+        .finally(() => {
+          runningRef.current = false;
+        });
     };
 
     requestSync();

@@ -3,6 +3,7 @@ import { db } from '@/lib/db/schema';
 import { nowIso } from '@/lib/utils/date';
 import { createId } from '@/lib/utils/id';
 import { buildSyncQueueItem } from '@/lib/services/sync-queue-service';
+import { logAudit } from '@/lib/services/audit-service';
 import { normalizeSupplierKey } from '@/lib/utils/supplier-key';
 import { netSplitField, normalizeBillSplit } from '@/lib/utils/bill-split';
 import type { Purchase, Supplier, SupplierPayment } from '@/types/domain';
@@ -248,6 +249,16 @@ export async function recordSupplierPayment(input: {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event('shopkeeper:sync-requested'));
   }
+
+  void logAudit({
+    category: 'supplier',
+    action: 'payment',
+    entityId: input.supplierKey,
+    entityLabel: payment.supplierName,
+    summary: `${amount} (${payment.paymentMethod})`,
+    reason: payment.note,
+    shiftId: payment.shiftId,
+  });
 
   return payment;
 }

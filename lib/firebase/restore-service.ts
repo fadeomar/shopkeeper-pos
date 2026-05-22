@@ -10,10 +10,11 @@ import {
 } from 'firebase/firestore';
 import { firestore } from './config';
 import { db } from '@/lib/db/schema';
+import { setRestoreInProgress } from '@/lib/services/sync-gate';
 import { createBillNumber } from '@/lib/utils/id';
 import { normalizeBillSplit } from '@/lib/utils/bill-split';
 import { normalizePhone } from '@/lib/utils/customer-key';
-import type { Bill, BillItem, Customer, Product, Purchase, PurchaseItem, Settings, Shift, StockMovement, Supplier, SupplierPayment, CustomerPayment } from '@/types/domain';
+import type { AuditEvent, Bill, BillItem, CashMovement, Customer, Expense, Product, Purchase, PurchaseItem, Settings, Shift, StockMovement, Supplier, SupplierPayment, CustomerPayment } from '@/types/domain';
 import type { SyncMeta } from './sync-service';
 
 const SETTINGS_ID = 'app-settings';
@@ -192,6 +193,40 @@ function normalizeCustomerPayment(snapshot: QueryDocumentSnapshot<DocumentData>,
     createdAt: payment.createdAt || syncedAt,
     ...syncedMeta(syncedAt),
   } as CustomerPayment;
+}
+
+function normalizeAuditEvent(snapshot: QueryDocumentSnapshot<DocumentData>, syncedAt: string): AuditEvent {
+  const event = withDocId<AuditEvent>(snapshot) as Partial<AuditEvent> & { id: string };
+  return {
+    ...event,
+    category: event.category ?? 'sync',
+    action: event.action ?? 'update',
+    createdAt: event.createdAt || syncedAt,
+    ...syncedMeta(syncedAt),
+  } as AuditEvent;
+}
+
+function normalizeCashMovement(snapshot: QueryDocumentSnapshot<DocumentData>, syncedAt: string): CashMovement {
+  const movement = withDocId<CashMovement>(snapshot) as Partial<CashMovement> & { id: string };
+  return {
+    ...movement,
+    type: movement.type ?? 'cash_in',
+    amount: finiteNumber(movement.amount),
+    createdAt: movement.createdAt || syncedAt,
+    ...syncedMeta(syncedAt),
+  } as CashMovement;
+}
+
+function normalizeExpense(snapshot: QueryDocumentSnapshot<DocumentData>, syncedAt: string): Expense {
+  const expense = withDocId<Expense>(snapshot) as Partial<Expense> & { id: string };
+  return {
+    ...expense,
+    category: expense.category ?? 'other',
+    paymentMethod: expense.paymentMethod ?? 'cash',
+    amount: Math.max(0, finiteNumber(expense.amount)),
+    createdAt: expense.createdAt || syncedAt,
+    ...syncedMeta(syncedAt),
+  } as Expense;
 }
 
 function normalizeShift(snapshot: QueryDocumentSnapshot<DocumentData>, syncedAt: string): Shift {
@@ -596,17 +631,32 @@ export async function fetchSyncMeta(uid: string): Promise<SyncMeta | null> {
 }
 
 /**
- * Returns true if the local DB has no bills and no products.
- * Used to detect a fresh/empty device before offering a restore.
+ * Returns true if the local DB has no business data in ANY table —
+ * not just bills and products. We can't gate restore on bills/products
+ * alone because accounts can have data in customers, suppliers, purchases,
+ * shifts, cash movements, expenses, or payments without ever touching the
+ * sell-side. Checking every business table prevents the restore prompt
+ * from being skipped on those accounts.
  */
 export async function isLocalDbEmpty(): Promise<boolean> {
   try {
     if (!db.isOpen()) await db.open();
-    const [billCount, productCount] = await Promise.all([
+    const counts = await Promise.all([
       db.bills.count(),
       db.products.count(),
+      db.customers.count(),
+      db.suppliers.count(),
+      db.purchases.count(),
+      db.purchaseItems.count(),
+      db.supplierPayments.count(),
+      db.customerPayments.count(),
+      db.stockMovements.count(),
+      db.shifts.count(),
+      db.cashMovements.count().catch(() => 0),
+      db.expenses.count().catch(() => 0),
+      db.auditEvents.count().catch(() => 0),
     ]);
-    return billCount === 0 && productCount === 0;
+    return counts.every((c) => c === 0);
   } catch {
     return false; // if DB is broken, don't offer restore
   }
@@ -625,6 +675,22 @@ export async function restoreFromCloud(
 ): Promise<void> {
   if (!db.isOpen()) await db.open();
 
+  // Block the background sync loop for the entire fetch + clear + bulkPut
+  // sequence. Without this, a tick of pullCloudChangesBeforePush could
+  // insert rows DURING our clear, leaving the local DB in a half-state.
+  // The flag is released in the outer try/finally below.
+  setRestoreInProgress(true);
+  try {
+    await doRestoreFromCloud(uid, onProgress);
+  } finally {
+    setRestoreInProgress(false);
+  }
+}
+
+async function doRestoreFromCloud(
+  uid: string,
+  onProgress?: (step: string) => void,
+): Promise<void> {
   const restoredAt = new Date().toISOString();
 
   onProgress?.('Fetching bills…');
@@ -660,6 +726,17 @@ export async function restoreFromCloud(
   onProgress?.('Fetching supplier payments…');
   const supplierPayments = await readUserCollection(uid, 'supplierPayments', (snapshot) => normalizeSupplierPayment(snapshot, restoredAt));
 
+  // History-only collections added in sprint v12–v14. Append-only and
+  // never mutated after create, so a single fetch + bulkPut is enough.
+  onProgress?.('Fetching audit log…');
+  const auditEvents = await readUserCollection(uid, 'auditEvents', (snapshot) => normalizeAuditEvent(snapshot, restoredAt));
+
+  onProgress?.('Fetching cash drawer movements…');
+  const cashMovements = await readUserCollection(uid, 'cashMovements', (snapshot) => normalizeCashMovement(snapshot, restoredAt));
+
+  onProgress?.('Fetching expenses…');
+  const expenses = await readUserCollection(uid, 'expenses', (snapshot) => normalizeExpense(snapshot, restoredAt));
+
   const productRepair = repairDuplicateProductBarcodes({
     products: cloudProducts,
     billItems: cloudBillItems,
@@ -692,6 +769,10 @@ export async function restoreFromCloud(
       purchases: purchases.length,
       purchaseItems: purchaseItems.length,
       supplierPayments: supplierPayments.length,
+      auditEvents: auditEvents.length,
+      cashMovements: cashMovements.length,
+      expenses: expenses.length,
+      settings: settings.length,
     },
   };
 
@@ -699,7 +780,7 @@ export async function restoreFromCloud(
   try {
     await db.transaction(
       'rw',
-      [db.bills, db.billItems, db.products, db.stockMovements, db.customerPayments, db.customers, db.shifts, db.suppliers, db.purchases, db.purchaseItems, db.supplierPayments, db.settings, db.syncQueue, db.syncConflicts],
+      [db.bills, db.billItems, db.products, db.stockMovements, db.customerPayments, db.customers, db.shifts, db.suppliers, db.purchases, db.purchaseItems, db.supplierPayments, db.auditEvents, db.cashMovements, db.expenses, db.settings, db.syncQueue, db.syncConflicts],
       async () => {
         // Clear first so stale local rows that no longer exist in the cloud are removed.
         // This is still safe because fetch/normalization already succeeded and Dexie
@@ -716,6 +797,9 @@ export async function restoreFromCloud(
           db.purchases.clear(),
           db.purchaseItems.clear(),
           db.supplierPayments.clear(),
+          db.auditEvents.clear(),
+          db.cashMovements.clear(),
+          db.expenses.clear(),
           db.settings.clear(),
           db.syncQueue.clear(),
           db.syncConflicts.clear(),
@@ -731,6 +815,9 @@ export async function restoreFromCloud(
         if (purchases.length) await db.purchases.bulkPut(purchases);
         if (purchaseItems.length) await db.purchaseItems.bulkPut(purchaseItems);
         if (supplierPayments.length) await db.supplierPayments.bulkPut(supplierPayments);
+        if (auditEvents.length) await db.auditEvents.bulkPut(auditEvents);
+        if (cashMovements.length) await db.cashMovements.bulkPut(cashMovements);
+        if (expenses.length) await db.expenses.bulkPut(expenses);
         if (settings.length) await db.settings.bulkPut(settings);
       },
     );

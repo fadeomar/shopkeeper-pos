@@ -2,7 +2,7 @@ export type EntityStatus = 'active' | 'inactive';
 export type UserRole = 'admin' | 'cashier';
 
 export type SyncStatus = 'pending' | 'syncing' | 'synced' | 'failed' | 'conflict' | 'blocked';
-export type SyncEntity = 'bill' | 'product' | 'settings' | 'stockMovement' | 'customerPayment' | 'customer' | 'shift' | 'supplier' | 'purchase' | 'supplierPayment';
+export type SyncEntity = 'bill' | 'product' | 'settings' | 'stockMovement' | 'customerPayment' | 'customer' | 'shift' | 'supplier' | 'purchase' | 'supplierPayment' | 'auditEvent' | 'cashMovement' | 'expense';
 export type SyncOperation = 'create' | 'update' | 'delete' | 'upsert';
 
 export interface SyncQueueItem {
@@ -335,6 +335,162 @@ export interface Settings {
   lowStockHighlight: boolean;
   createdAt: string;
   updatedAt: string;
+  syncStatus?: SyncStatus;
+  syncedAt?: string;
+  lastSyncError?: string;
+}
+
+/**
+ * Audit log — append-only history of business-meaningful actions. Used by
+ * the /audit page so an owner can see who voided a bill, when stock was
+ * adjusted, when settings changed, who resolved a sync conflict, etc.
+ *
+ * Events are append-only — never edited or deleted from this device. Sync
+ * is one-way (push to cloud) so audit history survives across devices.
+ */
+export type AuditCategory =
+  | 'product'
+  | 'inventory'
+  | 'bill'
+  | 'purchase'
+  | 'customer'
+  | 'supplier'
+  | 'settings'
+  | 'shift'
+  | 'user'
+  | 'sync';
+
+export type AuditAction =
+  | 'create'
+  | 'update'
+  | 'delete'
+  | 'void'
+  | 'return'
+  | 'payment'
+  | 'stock_adjust'
+  | 'open'
+  | 'close'
+  | 'approve'
+  | 'reject'
+  | 'deactivate'
+  | 'reactivate'
+  | 'reset_link'
+  | 'resolve_conflict'
+  | 'price_change';
+
+/**
+ * Manual cash drawer event — anything that moves cash in or out of the
+ * register that isn't a sale, purchase, or customer/supplier payment.
+ *
+ *   cash_in           — positive: owner top-up, change reserve, refund float, etc.
+ *   cash_out          — negative: misc payout the cashier doesn't want to
+ *                       classify further.
+ *   owner_withdrawal  — negative: owner takes cash from the drawer.
+ *   bank_deposit      — negative: cash transferred to bank.
+ *   petty_cash        — negative: small expense paid from the drawer (rent
+ *                       collector, taxi, snack run). The expenses module
+ *                       (sprint follow-up) will replace most of these with
+ *                       categorized Expense rows, but petty_cash stays as a
+ *                       quick "don't care to classify" option.
+ *   drawer_correction — signed: positive if cashier found more cash than
+ *                       expected, negative if less. Used during the day
+ *                       (mid-shift) to reconcile without forcing a close.
+ *
+ * Stored with a signed `amount` so summing the column directly gives the
+ * net effect on the drawer. UI surfaces present positive numbers and a
+ * "money in" / "money out" toggle for clarity.
+ */
+export type CashMovementType =
+  | 'cash_in'
+  | 'cash_out'
+  | 'owner_withdrawal'
+  | 'bank_deposit'
+  | 'petty_cash'
+  | 'drawer_correction';
+
+export interface CashMovement {
+  id: string;
+  type: CashMovementType;
+  /** Signed amount. Positive = into drawer, negative = out of drawer. */
+  amount: number;
+  reason?: string;
+  /** Reference label captured at the time (e.g. "Owner: Ali", "Bank slip 4421"). */
+  referenceLabel?: string;
+  shiftId?: string;
+  cashierName?: string;
+  createdAt: string;
+  syncStatus?: SyncStatus;
+  syncedAt?: string;
+  lastSyncError?: string;
+}
+
+/**
+ * Operational expense — anything the store pays for that isn't a Purchase
+ * (which is inventory-affecting). Lives in its own table so reports can
+ * distinguish "money spent on stock to sell" from "money spent to keep the
+ * lights on".
+ *
+ * Note on cash-drawer interaction: a 'cash' expense recorded while a shift
+ * is open is included by closeShift in the cash-out calculation, alongside
+ * supplier payments and cash CashMovements. We do NOT create a separate
+ * CashMovement row for it — that would double-count the drawer impact.
+ */
+export type ExpenseCategory =
+  | 'rent'
+  | 'utilities'      // electricity, water, gas
+  | 'internet'
+  | 'salaries'
+  | 'packaging'
+  | 'delivery'
+  | 'maintenance'
+  | 'marketing'
+  | 'transport'
+  | 'cleaning'
+  | 'office'
+  | 'tax'
+  | 'fees'           // bank fees, license fees
+  | 'other';
+
+export type ExpensePaymentMethod = 'cash' | 'card' | 'bank' | 'credit';
+
+export interface Expense {
+  id: string;
+  category: ExpenseCategory;
+  amount: number;
+  paymentMethod: ExpensePaymentMethod;
+  /** Optional payee — supplier-like label for who got paid (e.g. "PalTel", "Landlord"). */
+  payee?: string;
+  note?: string;
+  shiftId?: string;
+  cashierName?: string;
+  /** Optional date the expense applies to (e.g. rent for which month). Defaults to createdAt's date. */
+  expenseDate?: string;
+  createdAt: string;
+  syncStatus?: SyncStatus;
+  syncedAt?: string;
+  lastSyncError?: string;
+}
+
+export interface AuditEvent {
+  id: string;
+  category: AuditCategory;
+  action: AuditAction;
+  /** ID of the affected entity (bill id, product id, etc.). Optional for global actions like settings save. */
+  entityId?: string;
+  /** Human-readable label (bill number, product name) — captured at event time so the log survives entity deletion. */
+  entityLabel?: string;
+  /** UID of the user who triggered the action (when available). */
+  actorUid?: string;
+  /** Display name of the actor at action time. */
+  actorName?: string;
+  /** Optional reason supplied by the user (void reason, return reason, etc.). */
+  reason?: string;
+  /** Compact human-readable summary of the change ("price 5.00 → 6.50", "stock −3"). Avoid full record dumps. */
+  summary?: string;
+  /** Free-form metadata, kept small. Use sparingly. */
+  metadata?: Record<string, string | number | boolean | null>;
+  shiftId?: string;
+  createdAt: string;
   syncStatus?: SyncStatus;
   syncedAt?: string;
   lastSyncError?: string;

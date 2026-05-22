@@ -1,5 +1,6 @@
 import { AppError, AppErrorCode } from "@/lib/errors/app-error";
 import { db } from "@/lib/db/schema";
+import { logAudit } from "@/lib/services/audit-service";
 import { SETTINGS_ID, customerRepo } from "@/lib/db/repositories";
 import {
   calculateBillItemNetContribution,
@@ -9,7 +10,7 @@ import {
   calculateLineSubtotal,
 } from "@/lib/utils/calculations";
 import { nowIso } from "@/lib/utils/date";
-import { MONEY_EPSILON, addMoney, roundMoney, subtractMoney } from "@/lib/utils/money";
+import { MONEY_EPSILON, addMoney, roundMoney } from "@/lib/utils/money";
 import type { BillSplit } from "@/lib/utils/bill-split";
 import { createBillNumber, createId } from "@/lib/utils/id";
 import { buildSyncQueueItem, getSyncQueueId } from "@/lib/services/sync-queue-service";
@@ -424,6 +425,10 @@ export async function voidBill(input: {
   const reason = input.reason.trim();
   if (!reason) throw new AppError(AppErrorCode.VOID_REASON_REQUIRED);
 
+  // Captured inside the transaction for the post-commit audit log entry.
+  let auditBillNumber = '';
+  let auditShiftId: string | undefined;
+
   await db.transaction(
     "rw",
     [db.bills, db.billItems, db.products, db.stockMovements, db.syncQueue],
@@ -433,6 +438,8 @@ export async function voidBill(input: {
       if (bill.status === "voided") throw new AppError(AppErrorCode.BILL_ALREADY_VOIDED);
       if (bill.status !== "finalized")
         throw new AppError(AppErrorCode.BILL_NOT_FINALIZED);
+      auditBillNumber = bill.billNumber;
+      auditShiftId = bill.shiftId;
 
       const items = await db.billItems
         .where("billId")
@@ -518,6 +525,14 @@ export async function voidBill(input: {
     },
   );
   requestSync();
+  void logAudit({
+    category: 'bill',
+    action: 'void',
+    entityId: input.billId,
+    entityLabel: auditBillNumber,
+    reason,
+    shiftId: auditShiftId,
+  });
 }
 
 export async function returnBillItem(input: {
@@ -531,6 +546,10 @@ export async function returnBillItem(input: {
   if (!reason) throw new AppError(AppErrorCode.RETURN_REASON_REQUIRED);
   if (!Number.isInteger(quantity) || quantity <= 0)
     throw new AppError(AppErrorCode.RETURN_QTY_INVALID);
+
+  let auditBillNumber = '';
+  let auditProductName = '';
+  let auditShiftId: string | undefined;
 
   await db.transaction(
     "rw",
@@ -553,6 +572,9 @@ export async function returnBillItem(input: {
 
       const product = await db.products.get(item.originalProductId);
       if (!product) throw new AppError(AppErrorCode.PRODUCT_NOT_FOUND);
+      auditBillNumber = bill.billNumber;
+      auditProductName = item.productNameAtSale;
+      auditShiftId = bill.shiftId;
 
       const now = nowIso();
       const returnedValues = calculateReturnedLineValue(bill, item, quantity);
@@ -628,4 +650,13 @@ export async function returnBillItem(input: {
     },
   );
   requestSync();
+  void logAudit({
+    category: 'bill',
+    action: 'return',
+    entityId: input.billId,
+    entityLabel: auditBillNumber,
+    reason,
+    summary: `${quantity} × ${auditProductName}`,
+    shiftId: auditShiftId,
+  });
 }

@@ -1,4 +1,4 @@
-import type { Bill, PaymentMethod } from '@/types/domain';
+import type { PaymentMethod } from '@/types/domain';
 
 export interface BillSplit {
   cashAmount: number;

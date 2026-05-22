@@ -33,6 +33,7 @@ import {
   getLocalDataSummary,
   saveCurrentAccountSnapshot,
 } from "@/lib/services/account-data-service";
+import { setRestoreDecisionPending } from "@/lib/services/sync-gate";
 import { SyncStatusBadge } from "@/components/sync/sync-status-badge";
 import { ConflictResolverModal } from "@/components/sync/conflict-resolver-modal";
 
@@ -142,11 +143,16 @@ function CashierShell({ children }: { children: React.ReactNode }) {
   const [restoreError, setRestoreError] = useState("");
   const checkRan = useRef<string | null>(null);
 
-  // One-time new-device detection per uid (resets if uid ever changes)
+  // One-time new-device detection per uid (resets if uid ever changes).
+  // While the check runs, we close the sync-gate so background runSync ticks
+  // don't pull cloud rows into a still-being-decided local DB. The gate
+  // reopens in every branch of runRestoreCheck (success, skip, no-meta, or
+  // error) via the finally.
   useEffect(() => {
     if (!uid || checkRan.current === uid) return;
     checkRan.current = uid;
-    void runRestoreCheck(uid);
+    setRestoreDecisionPending(true);
+    void runRestoreCheck(uid).finally(() => setRestoreDecisionPending(false));
   }, [uid]);
 
   async function runRestoreCheck(userId: string) {
@@ -154,10 +160,17 @@ function CashierShell({ children }: { children: React.ReactNode }) {
       const empty = await isLocalDbEmpty();
       if (empty) {
         const meta = await fetchSyncMeta(userId);
-        if (
-          meta &&
-          (meta.recordCounts.bills > 0 || meta.recordCounts.products > 0)
-        ) {
+        // Restore is worth offering if ANY business collection has data on
+        // the cloud — not just bills/products. Accounts that started in
+        // purchases (buy-side first), did supplier-only setup, recorded
+        // shifts or cash drawer events before any sales, or only tracked
+        // expenses would all be skipped by the old bills-or-products check.
+        const hasCloudData =
+          !!meta &&
+          Object.values(meta.recordCounts).some(
+            (count) => typeof count === 'number' && count > 0,
+          );
+        if (hasCloudData && meta) {
           const skippedBackup = readSkippedRestoreMeta(userId);
           if (skippedBackup === meta.lastSyncedAt) {
             setRestoreSkipped(true);

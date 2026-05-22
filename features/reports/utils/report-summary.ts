@@ -1,4 +1,4 @@
-import type { Bill, BillItem, PaymentMethod, Product, Purchase, SupplierPayment } from '@/types/domain';
+import type { Bill, BillItem, CashMovement, Expense, ExpenseCategory, PaymentMethod, Product, Purchase, SupplierPayment } from '@/types/domain';
 import { getBillNetProfit, getBillNetTotal } from '@/features/bills/utils/bill-summary';
 import { calculateBillItemNetContribution, calculateLineProfit, calculateLineSubtotal } from '@/lib/utils/calculations';
 import { roundMoney } from '@/lib/utils/money';
@@ -274,4 +274,58 @@ export function buildDailyTrend(bills: Bill[], days = 7): TrendRow[] {
   });
 
   return Array.from(buckets.values());
+}
+
+/**
+ * Operational expenses summary.
+ *
+ *   total           — gross expense total across all categories + methods.
+ *   cashPaidOut     — only the cash-tendered expenses (drawer-affecting).
+ *   byCategory      — total per category, sorted descending. Used by Z-report
+ *                     and the by-category panel on the reports page.
+ *   byMethod        — total per payment method.
+ *   expenseCount    — number of expense rows in range.
+ */
+export function summarizeReportExpenses(expenses: Expense[]) {
+  const byCategory = new Map<ExpenseCategory, number>();
+  const byMethod = { cash: 0, card: 0, bank: 0, credit: 0 } as Record<Expense['paymentMethod'], number>;
+  let total = 0;
+  let cashPaidOut = 0;
+  for (const e of expenses) {
+    const amount = Number(e.amount) || 0;
+    total += amount;
+    if (e.paymentMethod === 'cash') cashPaidOut += amount;
+    byCategory.set(e.category, (byCategory.get(e.category) ?? 0) + amount);
+    byMethod[e.paymentMethod] = roundMoney((byMethod[e.paymentMethod] ?? 0) + amount);
+  }
+  return {
+    total: roundMoney(total),
+    cashPaidOut: roundMoney(cashPaidOut),
+    expenseCount: expenses.length,
+    byCategory: Array.from(byCategory.entries())
+      .map(([category, amount]) => ({ category, amount: roundMoney(amount) }))
+      .sort((a, b) => b.amount - a.amount),
+    byMethod,
+  };
+}
+
+/**
+ * Manual cash drawer movements summary. CashMovement.amount is already
+ * signed (+ in, − out), so we sum directly and split positive/negative for
+ * the Z-report display.
+ */
+export function summarizeReportCashMovements(movements: CashMovement[]) {
+  let cashIn = 0;
+  let cashOut = 0;
+  for (const m of movements) {
+    const amount = Number(m.amount) || 0;
+    if (amount >= 0) cashIn += amount;
+    else cashOut += amount; // negative
+  }
+  return {
+    cashIn: roundMoney(cashIn),
+    cashOut: roundMoney(Math.abs(cashOut)),
+    net: roundMoney(cashIn + cashOut),
+    count: movements.length,
+  };
 }

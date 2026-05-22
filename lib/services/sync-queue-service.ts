@@ -66,6 +66,14 @@ const SYNC_ENTITY_PRIORITY: Record<SyncEntity, number> = {
   stockMovement: 7,
   product: 8,
   settings: 9,
+  // Audit events are append-only history with no foreign-key dependencies in
+  // either direction, so they can sync last without blocking anything else.
+  auditEvent: 10,
+  // Cash movements attach to a shift but don't drive any cascade — they can
+  // sync after shifts are reconciled.
+  cashMovement: 11,
+  // Operational expenses — same story, no downstream dependencies.
+  expense: 12,
 };
 
 export async function getPendingSyncJobs(): Promise<SyncQueueItem[]> {

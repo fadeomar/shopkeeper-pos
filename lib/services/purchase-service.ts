@@ -1,5 +1,6 @@
 import { AppError, AppErrorCode } from '@/lib/errors/app-error';
 import { db } from "@/lib/db/schema";
+import { logAudit } from "@/lib/services/audit-service";
 import { SETTINGS_ID, supplierRepo } from "@/lib/db/repositories";
 import { calculateBillTotals, calculateChange, calculateLineSubtotal } from "@/lib/utils/calculations";
 import { nowIso } from "@/lib/utils/date";
@@ -397,6 +398,10 @@ export async function voidPurchase(input: {
   const reason = input.reason.trim();
   if (!reason) throw new AppError(AppErrorCode.VOID_REASON_REQUIRED);
 
+  // Captured inside the transaction for the post-commit audit log entry.
+  let auditPurchaseNumber = '';
+  let auditShiftId: string | undefined;
+
   await db.transaction(
     "rw",
     [db.purchases, db.purchaseItems, db.products, db.stockMovements, db.syncQueue],
@@ -409,6 +414,8 @@ export async function voidPurchase(input: {
       if (purchase.status !== "finalized") {
         throw new AppError(AppErrorCode.PURCHASE_NOT_FINALIZED);
       }
+      auditPurchaseNumber = purchase.purchaseNumber;
+      auditShiftId = purchase.shiftId;
 
       const items = await db.purchaseItems
         .where("purchaseId")
@@ -504,6 +511,14 @@ export async function voidPurchase(input: {
     },
   );
   requestSync();
+  void logAudit({
+    category: 'purchase',
+    action: 'void',
+    entityId: input.purchaseId,
+    entityLabel: auditPurchaseNumber,
+    reason,
+    shiftId: auditShiftId,
+  });
 }
 
 /**
@@ -523,6 +538,10 @@ export async function returnPurchaseItem(input: {
   if (!Number.isInteger(quantity) || quantity <= 0) {
     throw new AppError(AppErrorCode.RETURN_QTY_INVALID);
   }
+
+  let auditPurchaseNumber = '';
+  let auditProductName = '';
+  let auditShiftId: string | undefined;
 
   await db.transaction(
     "rw",
@@ -550,6 +569,9 @@ export async function returnPurchaseItem(input: {
       if (product.quantityInStock < quantity) {
         throw new AppError(AppErrorCode.PURCHASE_RETURN_INSUFFICIENT_STOCK);
       }
+      auditPurchaseNumber = purchase.purchaseNumber;
+      auditProductName = item.productNameAtPurchase;
+      auditShiftId = purchase.shiftId;
 
       const now = nowIso();
       const returnedAmount = calculateReturnedPurchaseLineValue(purchase, item, quantity);
@@ -627,4 +649,13 @@ export async function returnPurchaseItem(input: {
     },
   );
   requestSync();
+  void logAudit({
+    category: 'purchase',
+    action: 'return',
+    entityId: input.purchaseId,
+    entityLabel: auditPurchaseNumber,
+    reason,
+    summary: `${quantity} × ${auditProductName}`,
+    shiftId: auditShiftId,
+  });
 }
