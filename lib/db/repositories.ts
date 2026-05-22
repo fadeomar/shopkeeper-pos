@@ -23,7 +23,7 @@ export function buildDefaultSettings(): Settings {
     id: SETTINGS_ID,
     storeName: "My Shop",
     cashierName: "",
-    currency: "USD",
+    currency: "₪",
     allowLossSale: false,
     nextBillSequence: 1,
     nextPurchaseSequence: 1,
@@ -123,7 +123,15 @@ export const settingsRepo = {
       await Promise.race([
         db.open(),
         new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("IndexedDB open timed out after 10 s. Your browser may be blocking local storage.")), 10_000)
+          setTimeout(
+            () =>
+              reject(
+                new Error(
+                  "IndexedDB open timed out after 10 s. Your browser may be blocking local storage.",
+                ),
+              ),
+            10_000,
+          ),
         ),
       ]);
     }
@@ -177,16 +185,21 @@ export const settingsRepo = {
 
 export const customerRepo = {
   async list(): Promise<Customer[]> {
-    return db.customers.orderBy('name').toArray();
+    return db.customers.orderBy("name").toArray();
   },
 
   async findById(id: string): Promise<Customer | undefined> {
     return db.customers.get(id);
   },
 
-  async findByNormalizedPhone(normalizedPhone: string): Promise<Customer | undefined> {
+  async findByNormalizedPhone(
+    normalizedPhone: string,
+  ): Promise<Customer | undefined> {
     if (!normalizedPhone) return undefined;
-    return db.customers.where('normalizedPhone').equals(normalizedPhone).first();
+    return db.customers
+      .where("normalizedPhone")
+      .equals(normalizedPhone)
+      .first();
   },
 
   /**
@@ -203,14 +216,21 @@ export const customerRepo = {
   async findOrCreate(input: {
     name?: string;
     phone?: string;
-  }): Promise<{ customer: Customer; created: boolean; changed: boolean } | null> {
+  }): Promise<{
+    customer: Customer;
+    created: boolean;
+    changed: boolean;
+  } | null> {
     const cleanName = input.name?.trim();
     const cleanPhone = input.phone?.trim();
     if (!cleanName && !cleanPhone) return null;
 
     const normalizedPhone = normalizePhone(cleanPhone);
     if (normalizedPhone) {
-      const existing = await db.customers.where('normalizedPhone').equals(normalizedPhone).first();
+      const existing = await db.customers
+        .where("normalizedPhone")
+        .equals(normalizedPhone)
+        .first();
       if (existing) {
         // Refresh name if the new bill supplied a non-empty one that differs.
         if (cleanName && cleanName !== existing.name) {
@@ -218,7 +238,7 @@ export const customerRepo = {
             ...existing,
             name: cleanName,
             updatedAt: nowIso(),
-            syncStatus: 'pending',
+            syncStatus: "pending",
             lastSyncError: undefined,
           };
           await db.customers.put(updated);
@@ -230,37 +250,41 @@ export const customerRepo = {
 
     const now = nowIso();
     const customer: Customer = {
-      id: createId('cust'),
-      name: cleanName || 'Customer',
+      id: createId("cust"),
+      name: cleanName || "Customer",
       phone: cleanPhone || undefined,
       normalizedPhone: normalizedPhone || undefined,
       createdAt: now,
       updatedAt: now,
-      syncStatus: 'pending',
+      syncStatus: "pending",
     };
     await db.customers.put(customer);
     return { customer, created: true, changed: false };
   },
 
   async save(customer: Customer): Promise<void> {
-    await db.transaction('rw', [db.customers, db.syncQueue], async () => {
+    await db.transaction("rw", [db.customers, db.syncQueue], async () => {
       const now = nowIso();
       const next: Customer = {
         ...customer,
         updatedAt: now,
-        normalizedPhone: customer.phone ? normalizePhone(customer.phone) : undefined,
-        syncStatus: 'pending',
+        normalizedPhone: customer.phone
+          ? normalizePhone(customer.phone)
+          : undefined,
+        syncStatus: "pending",
         lastSyncError: undefined,
       };
       await db.customers.put(next);
-      await db.syncQueue.put(buildSyncQueueItem({
-        entity: 'customer',
-        entityId: next.id,
-        operation: 'upsert',
-      }));
+      await db.syncQueue.put(
+        buildSyncQueueItem({
+          entity: "customer",
+          entityId: next.id,
+          operation: "upsert",
+        }),
+      );
     });
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new Event('shopkeeper:sync-requested'));
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("shopkeeper:sync-requested"));
     }
   },
 };
@@ -270,16 +294,21 @@ export const customerRepo = {
 // itself just stores name/phone the same way.
 export const supplierRepo = {
   async list(): Promise<Supplier[]> {
-    return db.suppliers.orderBy('name').toArray();
+    return db.suppliers.orderBy("name").toArray();
   },
 
   async findById(id: string): Promise<Supplier | undefined> {
     return db.suppliers.get(id);
   },
 
-  async findByNormalizedPhone(normalizedPhone: string): Promise<Supplier | undefined> {
+  async findByNormalizedPhone(
+    normalizedPhone: string,
+  ): Promise<Supplier | undefined> {
     if (!normalizedPhone) return undefined;
-    return db.suppliers.where('normalizedPhone').equals(normalizedPhone).first();
+    return db.suppliers
+      .where("normalizedPhone")
+      .equals(normalizedPhone)
+      .first();
   },
 
   /**
@@ -290,21 +319,28 @@ export const supplierRepo = {
   async findOrCreate(input: {
     name?: string;
     phone?: string;
-  }): Promise<{ supplier: Supplier; created: boolean; changed: boolean } | null> {
+  }): Promise<{
+    supplier: Supplier;
+    created: boolean;
+    changed: boolean;
+  } | null> {
     const cleanName = input.name?.trim();
     const cleanPhone = input.phone?.trim();
     if (!cleanName && !cleanPhone) return null;
 
     const normalizedPhone = normalizePhone(cleanPhone);
     if (normalizedPhone) {
-      const existing = await db.suppliers.where('normalizedPhone').equals(normalizedPhone).first();
+      const existing = await db.suppliers
+        .where("normalizedPhone")
+        .equals(normalizedPhone)
+        .first();
       if (existing) {
         if (cleanName && cleanName !== existing.name) {
           const updated: Supplier = {
             ...existing,
             name: cleanName,
             updatedAt: nowIso(),
-            syncStatus: 'pending',
+            syncStatus: "pending",
             lastSyncError: undefined,
           };
           await db.suppliers.put(updated);
@@ -316,37 +352,41 @@ export const supplierRepo = {
 
     const now = nowIso();
     const supplier: Supplier = {
-      id: createId('supp'),
-      name: cleanName || 'Supplier',
+      id: createId("supp"),
+      name: cleanName || "Supplier",
       phone: cleanPhone || undefined,
       normalizedPhone: normalizedPhone || undefined,
       createdAt: now,
       updatedAt: now,
-      syncStatus: 'pending',
+      syncStatus: "pending",
     };
     await db.suppliers.put(supplier);
     return { supplier, created: true, changed: false };
   },
 
   async save(supplier: Supplier): Promise<void> {
-    await db.transaction('rw', [db.suppliers, db.syncQueue], async () => {
+    await db.transaction("rw", [db.suppliers, db.syncQueue], async () => {
       const now = nowIso();
       const next: Supplier = {
         ...supplier,
         updatedAt: now,
-        normalizedPhone: supplier.phone ? normalizePhone(supplier.phone) : undefined,
-        syncStatus: 'pending',
+        normalizedPhone: supplier.phone
+          ? normalizePhone(supplier.phone)
+          : undefined,
+        syncStatus: "pending",
         lastSyncError: undefined,
       };
       await db.suppliers.put(next);
-      await db.syncQueue.put(buildSyncQueueItem({
-        entity: 'supplier',
-        entityId: next.id,
-        operation: 'upsert',
-      }));
+      await db.syncQueue.put(
+        buildSyncQueueItem({
+          entity: "supplier",
+          entityId: next.id,
+          operation: "upsert",
+        }),
+      );
     });
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new Event('shopkeeper:sync-requested'));
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("shopkeeper:sync-requested"));
     }
   },
 };

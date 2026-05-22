@@ -89,18 +89,21 @@ export const en: TranslationDict = {
   },
   errorPage: {
     pageTitle: "This page could not load",
-    pageDesc: "Your local data is still safe on this device. Try again first. If the issue remains, clear the offline cache and reload.",
+    pageDesc:
+      "Your local data is still safe on this device. Try again first. If the issue remains, clear the offline cache and reload.",
     tryAgain: "Try again",
     clearAndReload: "Clear cache & reload",
     copyDetails: "Copy error details",
     copied: "Copied",
     globalTitle: "Shopkeeper POS could not load",
-    globalDesc: "Your local data is still safe. Try again, or clear the offline cache and reload.",
+    globalDesc:
+      "Your local data is still safe. Try again, or clear the offline cache and reload.",
   },
   expenses: {
     navTitle: "Expenses",
     title: "Operational expenses",
-    subtitle: "Rent, utilities, salaries, and other store running costs (not inventory purchases).",
+    subtitle:
+      "Rent, utilities, salaries, and other store running costs (not inventory purchases).",
     addButton: "Record expense",
     category: "Category",
     amount: "Amount",
@@ -117,7 +120,8 @@ export const en: TranslationDict = {
     cashTotal: "Paid in cash",
     byCategory: "By category",
     empty: "No expenses recorded yet",
-    emptyDesc: "Use this page to track recurring costs and one-off expenses. Cash expenses are deducted from the active shift's expected drawer.",
+    emptyDesc:
+      "Use this page to track recurring costs and one-off expenses. Cash expenses are deducted from the active shift's expected drawer.",
     colTime: "Time",
     colCategory: "Category",
     colPayee: "Payee",
@@ -146,14 +150,16 @@ export const en: TranslationDict = {
   cash: {
     navTitle: "Cash drawer",
     title: "Cash drawer movements",
-    subtitle: "Manual cash events that aren't sales, purchases, or customer/supplier payments.",
+    subtitle:
+      "Manual cash events that aren't sales, purchases, or customer/supplier payments.",
     addButton: "Record movement",
     type: "Type",
     amount: "Amount",
-    amountHelper: "Enter a positive value. The direction is set by the movement type.",
+    amountHelper:
+      "Enter a positive value. The direction is set by the movement type.",
     reason: "Reason / note",
     referenceLabel: "Reference",
-    referenceLabelHelper: "Optional — e.g. \"Owner: Ali\" or \"Bank slip 4421\".",
+    referenceLabelHelper: 'Optional — e.g. "Owner: Ali" or "Bank slip 4421".',
     direction: "Direction",
     cashIn: "Money in",
     cashOut: "Money out",
@@ -165,7 +171,8 @@ export const en: TranslationDict = {
     cashInTotal: "Cash in",
     cashOutTotal: "Cash out",
     empty: "No cash movements yet",
-    emptyDesc: "Use this page to log float top-ups, owner withdrawals, bank deposits, petty-cash expenses, or mid-shift drawer corrections.",
+    emptyDesc:
+      "Use this page to log float top-ups, owner withdrawals, bank deposits, petty-cash expenses, or mid-shift drawer corrections.",
     colTime: "Time",
     colType: "Type",
     colAmount: "Amount",
@@ -177,9 +184,11 @@ export const en: TranslationDict = {
     typeBankDeposit: "Bank deposit",
     typePettyCash: "Petty cash",
     typeDrawerCorrection: "Drawer correction",
-    drawerCorrectionHint: "Enter a positive number if the drawer has MORE cash than expected, negative if LESS.",
+    drawerCorrectionHint:
+      "Enter a positive number if the drawer has MORE cash than expected, negative if LESS.",
     activeShiftLabel: "Active shift",
-    noActiveShiftLabel: "No active shift — this movement won't appear in any shift reconciliation.",
+    noActiveShiftLabel:
+      "No active shift — this movement won't appear in any shift reconciliation.",
     confirmHeading: "Confirm cash movement",
   },
   audit: {
@@ -199,7 +208,8 @@ export const en: TranslationDict = {
     colReason: "Reason",
     colActor: "By",
     empty: "No audit events yet",
-    emptyDesc: "Voids, returns, payments, stock adjustments and other actions will appear here.",
+    emptyDesc:
+      "Voids, returns, payments, stock adjustments and other actions will appear here.",
     catProduct: "Product",
     catInventory: "Inventory",
     catBill: "Bill",
@@ -266,7 +276,8 @@ export const en: TranslationDict = {
     demoInserted: "Demo data initialized.",
     demoExists: "Demo data already exists.",
     emptyTitle: "Welcome to Shopkeeper POS",
-    emptyDesc: "Start by adding your products, then open a shift to begin selling.",
+    emptyDesc:
+      "Start by adding your products, then open a shift to begin selling.",
     addFirstProduct: "Add products",
     openFirstShift: "Open shift",
   },
@@ -328,17 +339,20 @@ export const en: TranslationDict = {
     nonZeroAdj: "Enter a non-zero stock adjustment.",
     adjustFailed: "Adjustment failed.",
     importExportTitle: "Product import / export",
-    importExportDesc: "Add many products from CSV, export your catalog, or download a safe template.",
+    importExportDesc:
+      "Add many products from CSV, export your catalog, or download a safe template.",
     downloadTemplate: "Download template",
     exportProducts: "Export products",
     importProducts: "Import products",
-    importProductsDesc: "Upload the CSV template. The app will preview valid rows and block duplicate barcodes before saving.",
+    importProductsDesc:
+      "Upload the CSV template. The app will preview valid rows and block duplicate barcodes before saving.",
     templateDownloaded: "Product template downloaded.",
     productsExported: "{{count}} products exported.",
     noProductsToExport: "No products to export yet.",
     csvOnly: "Please choose a CSV file.",
     noCsvSelected: "No CSV selected",
-    importProductsHelp: "Required columns: barcode, name, sellPrice. Other fields can use defaults.",
+    importProductsHelp:
+      "Required columns: barcode, name, sellPrice. Other fields can use defaults.",
     chooseCsv: "Choose CSV",
     readingFile: "Reading file…",
     rowsValid: "Valid",
@@ -358,11 +372,14 @@ export const en: TranslationDict = {
 
   inventory: {
     title: "Inventory",
-    subtitle: "Control stock, receive supplier purchases, count real shelf quantities, and review movement history.",
+    subtitle:
+      "Control stock, receive supplier purchases, count real shelf quantities, and review movement history.",
     receiveStock: "Receive stock",
-    receiveStockDesc: "Add stock from a supplier purchase and optionally update buy price or supplier name.",
+    receiveStockDesc:
+      "Add stock from a supplier purchase and optionally update buy price or supplier name.",
     stockCount: "Stock count",
-    stockCountDesc: "Enter the real shelf quantity. The app saves only the difference as an adjustment.",
+    stockCountDesc:
+      "Enter the real shelf quantity. The app saves only the difference as an adjustment.",
     lowStock: "Low stock",
     outOfStock: "Out of stock",
     expiringSoon: "Expiring soon",
@@ -374,7 +391,8 @@ export const en: TranslationDict = {
     count: "Count",
     expires: "Expires",
     movementHistory: "Stock movement history",
-    movementHistoryDesc: "Recent purchases, sales, returns, stock counts, and adjustments.",
+    movementHistoryDesc:
+      "Recent purchases, sales, returns, stock counts, and adjustments.",
     date: "Date",
     product: "Product",
     type: "Type",
@@ -387,7 +405,8 @@ export const en: TranslationDict = {
     countedQuantity: "Counted quantity",
     newBuyPrice: "New buy price",
     supplier: "Supplier",
-    notePlaceholder: "Example: supplier delivery, shelf count, damaged correction...",
+    notePlaceholder:
+      "Example: supplier delivery, shelf count, damaged correction...",
     selectProductFirst: "Select a product first.",
     invalidQuantity: "Quantity must be a whole number zero or higher.",
     invalidReceiveQuantity: "Received quantity must be greater than zero.",
@@ -400,17 +419,20 @@ export const en: TranslationDict = {
 
   customers: {
     title: "Customers",
-    subtitle: "Every customer captured during a sale appears here. Credit bills and debt payments show in the same ledger.",
+    subtitle:
+      "Every customer captured during a sale appears here. Credit bills and debt payments show in the same ledger.",
     showAll: "Show all",
     totalCreditSales: "Credit sales",
     totalPaid: "Paid back",
     totalBalanceDue: "Balance due",
     customersWithDebt: "Customers owing",
     ledger: "Customer ledger",
-    ledgerDesc: "Customers are created automatically when you enter a name or phone on any bill. Credit balances and debt payments are tracked here.",
+    ledgerDesc:
+      "Customers are created automatically when you enter a name or phone on any bill. Credit balances and debt payments are tracked here.",
     searchPlaceholder: "Search customer name or phone...",
     noCustomers: "No customers yet",
-    noCustomersDesc: "Enter a customer name or phone on a bill to start the directory.",
+    noCustomersDesc:
+      "Enter a customer name or phone on a bill to start the directory.",
     customer: "Customer",
     phone: "Phone",
     creditSales: "Credit sales",
@@ -427,7 +449,8 @@ export const en: TranslationDict = {
     savePaymentCredit: "Save (creates credit)",
     paymentAmount: "Payment amount",
     paymentMethod: "Payment method",
-    overpaymentWarning: "This is {{extra}} more than the balance due. The extra will be saved as customer credit.",
+    overpaymentWarning:
+      "This is {{extra}} more than the balance due. The extra will be saved as customer credit.",
     creditBalanceNote: "Customer credit",
     note: "Note",
     notePlaceholder: "Example: cash payment, bank transfer, partial payment...",
@@ -443,7 +466,8 @@ export const en: TranslationDict = {
 
   reports: {
     title: "Reports",
-    subtitle: "Understand sales, profit, payments, top products, and low-stock items from the data already saved in the app.",
+    subtitle:
+      "Understand sales, profit, payments, top products, and low-stock items from the data already saved in the app.",
     openBills: "Open bills",
     openInventory: "Open inventory",
     period: "Report period",
@@ -463,21 +487,26 @@ export const en: TranslationDict = {
     purchaseCost: "Purchase cost",
     purchaseCount: "Purchases",
     cashPaidOut: "Cash paid out",
-    cashPaidOutHelper: "Cash leg of purchases + supplier payments in this range.",
+    cashPaidOutHelper:
+      "Cash leg of purchases + supplier payments in this range.",
     supplierPayments: "Supplier payments",
     entries: "entries",
     netSupplierDebt: "Net debt accrued",
-    netSupplierDebtHelper: "Debt added by credit purchases minus debt-settlement payments.",
+    netSupplierDebtHelper:
+      "Debt added by credit purchases minus debt-settlement payments.",
     paymentBreakdown: "Payment breakdown",
     adjustmentsNote: "Net totals include voids and returns",
     salesTrend: "7-day sales trend",
     salesTrendDesc: "Daily net sales after voids and returns.",
     topSellingProducts: "Top selling products",
-    topSellingProductsDesc: "Products ranked by net sales value in the selected period.",
+    topSellingProductsDesc:
+      "Products ranked by net sales value in the selected period.",
     highestProfitProducts: "Highest profit products",
-    highestProfitProductsDesc: "Products ranked by estimated net profit in the selected period.",
+    highestProfitProductsDesc:
+      "Products ranked by estimated net profit in the selected period.",
     lowStockSoldProducts: "Low-stock products that sold",
-    lowStockSoldProductsDesc: "Sold products that are now at or below their minimum stock alert.",
+    lowStockSoldProductsDesc:
+      "Sold products that are now at or below their minimum stock alert.",
     noProductSales: "No product sales in this period yet.",
     noLowStockSold: "No sold products are currently low stock.",
     qty: "Qty",
@@ -562,7 +591,8 @@ export const en: TranslationDict = {
     totalProfit: "Profit",
     change: "Change",
     paidBelowTotal: "Actual paid amount is lower than the final total.",
-    creditCustomerRequired: "Customer name or phone is required for credit bills.",
+    creditCustomerRequired:
+      "Customer name or phone is required for credit bills.",
     amountDue: "Amount due",
     mixedSplit: "Cash + card split",
     mixedSumMismatch: "Cash + card must equal the bill total.",
@@ -594,23 +624,31 @@ export const en: TranslationDict = {
     shortcutsHelp: "Keyboard shortcuts",
     shortcutFinalize: "Ctrl/⌘ + Enter — finalize sale",
     shortcutClearBarcode: "Esc — clear barcode input",
-    noShiftOpenWarning: "No shift open — cash drawer reconciliation is disabled for this sale.",
+    noShiftOpenWarning:
+      "No shift open — cash drawer reconciliation is disabled for this sale.",
     openShift: "Open shift",
     itemAdded: "{{name}} added.",
     itemUpdated: "{{name}} ×{{qty}}",
     productNotFoundAddNow: "No product found for {{barcode}}. Add it now?",
     quickAddProduct: "Quick add product",
-    quickAddProductDesc: "Barcode {{barcode}} was not found. Add the product and continue this bill.",
+    quickAddProductDesc:
+      "Barcode {{barcode}} was not found. Add the product and continue this bill.",
     saveAndAddToBill: "Save and add to bill",
-    productCreatedNotAdded: "{{name}} was created but not added because stock is zero.",
+    productCreatedNotAdded:
+      "{{name}} was created but not added because stock is zero.",
     quickAddFailed: "Could not create product.",
     productCreatedAndAdded: "{{name}} created and added to the bill.",
-    inactiveProduct: "This product is inactive. Activate it from Products before selling.",
-    quickAddInvalidNumbers: "Stock and minimum stock must be whole numbers. Prices must be valid non-negative numbers.",
+    inactiveProduct:
+      "This product is inactive. Activate it from Products before selling.",
+    quickAddInvalidNumbers:
+      "Stock and minimum stock must be whole numbers. Prices must be valid non-negative numbers.",
     quickAddRequired: "Enter barcode, name, category, and unit.",
-    draftPricesRefreshed: "Prices refreshed for {{count}} item(s) in your saved cart.",
-    draftProductsRemoved: "{{count}} item(s) removed from your saved cart — product is inactive or no longer exists.",
-    draftStockAdjusted: "Quantity reduced for {{count}} item(s) — not enough stock.",
+    draftPricesRefreshed:
+      "Prices refreshed for {{count}} item(s) in your saved cart.",
+    draftProductsRemoved:
+      "{{count}} item(s) removed from your saved cart — product is inactive or no longer exists.",
+    draftStockAdjusted:
+      "Quantity reduced for {{count}} item(s) — not enough stock.",
   },
   bills: {
     title: "Bill history",
@@ -708,12 +746,13 @@ export const en: TranslationDict = {
     storeName: "Store name",
     cashierName: "Default cashier name",
     currency: "Currency code",
-    currencyHint: "Use a 3-letter ISO code, for example USD, ILS, or JOD.",
+    currencyHint: "Use a 3-letter ISO code, for example ₪, USD, ILS, or JOD.",
     allowLossSale: "Allow sell price below buy price",
     lowStockHighlight: "Highlight low-stock products",
     save: "Save settings",
     saved: "Settings saved.",
-    invalidCurrency: "Currency must be a 3-letter ISO code (e.g. USD, EUR, ILS).",
+    invalidCurrency:
+      "Currency must be a 3-letter ISO code (e.g. ₪, USD, EUR, ILS).",
     language: "Language",
     languageDesc: "Choose your preferred display language",
     english: "English",
@@ -732,13 +771,17 @@ export const en: TranslationDict = {
     movements: "Movements",
     neverSynced: "Never synced on this device.",
     deviceHealth: "Device health",
-    deviceHealthDesc: "Quick release-safety tools for this device: local counts, pending sync jobs, manual backup export, and cache reset.",
+    deviceHealthDesc:
+      "Quick release-safety tools for this device: local counts, pending sync jobs, manual backup export, and cache reset.",
     refreshHealth: "Refresh health",
     pendingSync: "Pending sync",
     healthLooksGood: "Device data looks healthy. Local data is safe.",
-    failedSyncWarning: "{{count}} sync job needs retry. Local data is still safe on this device.",
-    blockedSyncWarning: "{{count}} sync job is blocked after repeated failures. Tap \"Retry failed sync\" to try again.",
-    waitingSyncWarning: "{{count}} item is waiting to sync when internet is available.",
+    failedSyncWarning:
+      "{{count}} sync job needs retry. Local data is still safe on this device.",
+    blockedSyncWarning:
+      '{{count}} sync job is blocked after repeated failures. Tap "Retry failed sync" to try again.',
+    waitingSyncWarning:
+      "{{count}} item is waiting to sync when internet is available.",
     exportLocalBackup: "Export local backup",
     exportingBackup: "Exporting…",
     localBackupExported: "Local backup exported.",
@@ -749,11 +792,16 @@ export const en: TranslationDict = {
     clearCacheReload: "Clear cache & reload",
     cacheCleared: "Offline cache cleared. Reloading…",
     clearCacheConfirmTitle: "Clear the offline cache?",
-    clearCacheConfirmDesc: "This clears the cached app files and reloads the page.",
-    clearCacheDataNote: "Your sales, products, customers, and other local data will NOT be deleted.",
-    clearCacheOfflineWarning: "You are offline. After clearing the cache the app may not load again until you reconnect to the internet.",
-    clearCacheUnsyncedWarning: "You have {{count}} unsynced changes on this device. They are safe in IndexedDB and will not be deleted, but please ensure you stay signed in so they can sync.",
-    clearCacheConflictsWarning: "You have {{count}} sync conflicts that need review. Resolve them before clearing the cache.",
+    clearCacheConfirmDesc:
+      "This clears the cached app files and reloads the page.",
+    clearCacheDataNote:
+      "Your sales, products, customers, and other local data will NOT be deleted.",
+    clearCacheOfflineWarning:
+      "You are offline. After clearing the cache the app may not load again until you reconnect to the internet.",
+    clearCacheUnsyncedWarning:
+      "You have {{count}} unsynced changes on this device. They are safe in IndexedDB and will not be deleted, but please ensure you stay signed in so they can sync.",
+    clearCacheConflictsWarning:
+      "You have {{count}} sync conflicts that need review. Resolve them before clearing the cache.",
     clearCacheConfirmButton: "Yes, clear cache & reload",
   },
   scanner: {
@@ -775,7 +823,8 @@ export const en: TranslationDict = {
     doneScan: "Done scanning",
   },
   auth: {
-    previousAccountUnsynced: "Previous account on this device had {{count}} unsynced change(s) — saved locally and will sync when that account signs in here again.",
+    previousAccountUnsynced:
+      "Previous account on this device had {{count}} unsynced change(s) — saved locally and will sync when that account signs in here again.",
     signIn: "Sign in",
     signInToContinue: "Sign in to continue",
     requestAccess: "Request access",
@@ -808,9 +857,12 @@ export const en: TranslationDict = {
     signOutTitle: "Sign out?",
     unsyncedTitle: "Unsynced changes",
     offlineTitle: "You are offline",
-    offlineDesc: "Changes saved on this device will stay linked to this account and sync when this same account is opened online again.",
-    unsyncedDesc: "Some changes have not finished syncing yet. Sync before signing out to make them available on other devices.",
-    signOutDesc: "Your local data will stay safely stored for this account on this browser.",
+    offlineDesc:
+      "Changes saved on this device will stay linked to this account and sync when this same account is opened online again.",
+    unsyncedDesc:
+      "Some changes have not finished syncing yet. Sync before signing out to make them available on other devices.",
+    signOutDesc:
+      "Your local data will stay safely stored for this account on this browser.",
     signOutStatProducts: "products",
     signOutStatBills: "bills",
     signOutStatMovements: "stock movements",
@@ -822,19 +874,24 @@ export const en: TranslationDict = {
     signOutStatPurchases: "purchases",
     signOutStatShifts: "shifts",
     signOutStatSupplierPayments: "supplier payments",
-    signOutDataNote: "Data on this browser is preserved per account. Other accounts on this browser will not see this account's local data.",
-    signOutConflictsWarning: "Resolve conflicts before expecting every change to sync cleanly to the cloud.",
+    signOutDataNote:
+      "Data on this browser is preserved per account. Other accounts on this browser will not see this account's local data.",
+    signOutConflictsWarning:
+      "Resolve conflicts before expecting every change to sync cleanly to the cloud.",
     checkApproval: "Check approval status",
     checkStatus: "Check account status",
     checking: "Checking…",
     pendingTitle: "Account pending approval",
-    pendingDesc: "Your account request was received. An admin must approve it before you can access the app.",
+    pendingDesc:
+      "Your account request was received. An admin must approve it before you can access the app.",
     pendingContactAdmin: "Contact your admin if this takes too long.",
     pendingStillWaiting: "Still waiting — your admin hasn't approved yet.",
     inactiveTitle: "Account inactive",
-    inactiveDesc: "Your account has been deactivated. Contact your admin to restore access.",
+    inactiveDesc:
+      "Your account has been deactivated. Contact your admin to restore access.",
     useExistingTitle: "Use your existing data?",
-    useExistingDesc: "We found data for this account in the cloud from {{date}}. Sync it to this device, or start with an empty local workspace. Starting empty will not delete your cloud data.",
+    useExistingDesc:
+      "We found data for this account in the cloud from {{date}}. Sync it to this device, or start with an empty local workspace. Starting empty will not delete your cloud data.",
     startEmpty: "Start empty on this device",
     copyError: "Copy error",
     closeRestorePrompt: "Close restore prompt",
@@ -848,15 +905,17 @@ export const en: TranslationDict = {
     pending: "Saved on this device",
     syncing: "Syncing to cloud…",
     synced: "Synced to cloud",
-    conflict: 'Conflict',
+    conflict: "Conflict",
     failed: "Sync failed — local data is safe",
     blocked: "Blocked — manual retry needed",
     pendingBadge: "{{count}} waiting to sync",
     safeLocal: "Local data is safe on this device.",
     waitingCloud: "Waiting to sync to cloud.",
     conflictReviewTitle: "Some changes need your review",
-    conflictReviewDesc: "This account was used on another device or browser, and some items changed in both places. Choose how to resolve each conflict.",
-    conflictNoSilentOverwrite: "We will not silently overwrite business data. Review each difference, then choose which version to keep.",
+    conflictReviewDesc:
+      "This account was used on another device or browser, and some items changed in both places. Choose how to resolve each conflict.",
+    conflictNoSilentOverwrite:
+      "We will not silently overwrite business data. Review each difference, then choose which version to keep.",
     conflictEntitySuffix: "conflict",
     needsReview: "Needs review",
     keepCloud: "Keep cloud",
@@ -871,8 +930,12 @@ export const en: TranslationDict = {
   },
   purchases: {
     newPurchase: "New purchase",
+    productMissingNote:
+      "Cant find the product? Create it in Products first, then come back here to receive stock.",
+    addProductInProducts: "Add new product",
     title: "Record a purchase",
-    subtitle: "Add items received from a supplier. Stock goes up; cash leaves the drawer if paid now, otherwise the balance becomes supplier debt.",
+    subtitle:
+      "Add items received from a supplier. Stock goes up; cash leaves the drawer if paid now, otherwise the balance becomes supplier debt.",
     supplierName: "Supplier name",
     supplierPhone: "Supplier phone",
     unitCost: "Unit cost",
@@ -896,12 +959,14 @@ export const en: TranslationDict = {
     mixedSplit: "Cash + card split",
     mixedSumMismatch: "Cash + card must equal the purchase total.",
     paidBelowTotal: "Paid amount is lower than the purchase total.",
-    creditSupplierRequired: "Supplier name or phone is required for credit purchases.",
+    creditSupplierRequired:
+      "Supplier name or phone is required for credit purchases.",
     invalidTotal: "Discount cannot be greater than subtotal plus tax.",
     clearDraft: "Clear draft",
     reviewFinalize: "Review & save",
     finalizePurchase: "Save purchase",
-    finalizeDesc: "You are about to save this purchase. Stock will be increased and a stock movement will be recorded for each line.",
+    finalizeDesc:
+      "You are about to save this purchase. Stock will be increased and a stock movement will be recorded for each line.",
     confirmSave: "Confirm save",
     addOneProduct: "Add at least one product before saving.",
     purchaseCreated: "Purchase {{purchaseNumber}} saved.",
@@ -920,13 +985,15 @@ export const en: TranslationDict = {
   },
   suppliers: {
     title: "Suppliers & payables",
-    subtitle: "Track purchase invoices, supplier balances, and debt payments saved on this device.",
+    subtitle:
+      "Track purchase invoices, supplier balances, and debt payments saved on this device.",
     totalPurchases: "Total purchases",
     totalPaid: "Total paid",
     totalBalanceOwed: "Total owed to suppliers",
     suppliersWithDebt: "Suppliers we owe",
     ledger: "Supplier ledger",
-    ledgerDesc: "Suppliers are created automatically from purchase invoices. Record payments here when you settle a debt.",
+    ledgerDesc:
+      "Suppliers are created automatically from purchase invoices. Record payments here when you settle a debt.",
     supplier: "Supplier",
     phone: "Phone",
     creditPurchases: "Credit purchases",
@@ -935,7 +1002,8 @@ export const en: TranslationDict = {
     purchaseCount: "Purchases",
     lastActivity: "Last activity",
     noSuppliers: "No suppliers yet",
-    noSuppliersDesc: "Create a purchase invoice with a supplier name or phone to start the ledger.",
+    noSuppliersDesc:
+      "Create a purchase invoice with a supplier name or phone to start the ledger.",
     view: "View",
     showAll: "Show all",
     searchPlaceholder: "Search by supplier name or phone",
@@ -954,17 +1022,21 @@ export const en: TranslationDict = {
     notePlaceholder: "Example: cash payment, bank transfer, partial payment...",
     savePayment: "Save payment",
     savePaymentCredit: "Save (creates credit)",
-    overpaymentWarning: "This is {{extra}} more than the balance owed. The extra will be saved as supplier credit.",
+    overpaymentWarning:
+      "This is {{extra}} more than the balance owed. The extra will be saved as supplier credit.",
     paymentSaved: "Supplier payment saved.",
     paymentFailed: "Could not save payment.",
   },
   shift: {
     title: "Cash drawer shift",
-    subtitle: "Track the cash drawer between opening and closing. Bills created during an open shift are reconciled at close.",
+    subtitle:
+      "Track the cash drawer between opening and closing. Bills created during an open shift are reconciled at close.",
     noActiveShift: "No shift open",
-    noActiveShiftDesc: "Open a shift to start tracking the cash drawer. Sales without a shift still finalize but won't appear in any reconciliation.",
+    noActiveShiftDesc:
+      "Open a shift to start tracking the cash drawer. Sales without a shift still finalize but won't appear in any reconciliation.",
     openShift: "Open shift",
-    openShiftDesc: "Count the cash currently in the drawer and open a new shift.",
+    openShiftDesc:
+      "Count the cash currently in the drawer and open a new shift.",
     openShiftCta: "Open new shift",
     openingCash: "Opening cash",
     openingCashHelper: "Physical cash in the drawer right now.",
@@ -979,7 +1051,8 @@ export const en: TranslationDict = {
     cardCollected: "Card collected",
     creditAccrued: "Credit accrued",
     expectedCash: "Expected cash now",
-    expectedCashHelper: "Opening + cash collected from sales − cash paid to suppliers.",
+    expectedCashHelper:
+      "Opening + cash collected from sales − cash paid to suppliers.",
     cashPaidOut: "Cash paid out",
     cashPaidOutHelper: "Cash leg of purchases + supplier payments this shift.",
     purchasesInShift: "Purchases",
@@ -989,7 +1062,8 @@ export const en: TranslationDict = {
     voidedCount: "Voided",
     returnedCount: "Returned",
     closeShift: "Close shift",
-    closeShiftDesc: "Count the cash in the drawer now and record any variance against the expected amount.",
+    closeShiftDesc:
+      "Count the cash in the drawer now and record any variance against the expected amount.",
     countedCash: "Counted cash",
     countedCashHelper: "Physical cash you just counted from the drawer.",
     closingNotes: "Closing notes",
@@ -999,7 +1073,8 @@ export const en: TranslationDict = {
     historyDesc: "Closed shifts on this device.",
     noPastShifts: "No closed shifts yet.",
     viewReport: "View report",
-    openedAlready: "A shift is already open. Close it before opening a new one.",
+    openedAlready:
+      "A shift is already open. Close it before opening a new one.",
     openShiftSuccess: "Shift opened.",
     openShiftFailed: "Could not open shift.",
     closeShiftSuccess: "Shift closed.",
@@ -1012,11 +1087,13 @@ export const en: TranslationDict = {
   },
   admin: {
     usersTitle: "Admin Support Dashboard",
-    usersSubtitle: "Approve users, check backup health, and support seller data.",
+    usersSubtitle:
+      "Approve users, check backup health, and support seller data.",
     refreshHealth: "Refresh health",
     newUser: "Add User",
     userDetails: "User Support Details",
-    userDetailsDesc: "Real-time cloud data, backup health, and account actions.",
+    userDetailsDesc:
+      "Real-time cloud data, backup health, and account actions.",
     backupHealth: "Backup Health",
     lastCloudSync: "Last Cloud Sync",
     cloudBills: "Cloud Bills",
@@ -1062,11 +1139,14 @@ export const en: TranslationDict = {
     users: "Users",
     refresh: "Refresh",
     exportBackupJSON: "Export backup JSON",
-    resetLinkHeading: "Password reset link (share with user via WhatsApp or SMS):",
+    resetLinkHeading:
+      "Password reset link (share with user via WhatsApp or SMS):",
     resetLinkCopy: "Copy",
-    resetLinkExpiry: "Link expires after first use or 1 hour. Generate a new one if needed.",
+    resetLinkExpiry:
+      "Link expires after first use or 1 hour. Generate a new one if needed.",
     paymentSnapshot: "Payment Snapshot",
-    noSellerData: "No seller data has synced yet. Ask the user to open the app online and run sync once.",
+    noSellerData:
+      "No seller data has synced yet. Ask the user to open the app online and run sync once.",
     recentBills: "Recent Bills",
     recentCustomerPayments: "Recent Customer Payments",
     recentStockMovements: "Recent Stock Movements",
@@ -1083,7 +1163,8 @@ export const en: TranslationDict = {
     PRODUCT_QTY_POSITIVE: "Quantity for {{name}} must be greater than zero.",
     PRODUCT_INSUFFICIENT_STOCK: "Not enough stock for {{name}}.",
     PRODUCT_LOSS_SALE_BLOCKED: "Loss-making sale is not allowed for {{name}}.",
-    PRODUCT_QTY_POSITIVE_WHOLE: "Quantity for {{name}} must be a positive whole number.",
+    PRODUCT_QTY_POSITIVE_WHOLE:
+      "Quantity for {{name}} must be a positive whole number.",
     PRODUCT_UNIT_COST_NEGATIVE: "Unit cost for {{name}} cannot be negative.",
     PRODUCT_NOT_FOUND: "Product not found.",
     // Shared bill / purchase
@@ -1096,9 +1177,11 @@ export const en: TranslationDict = {
     RETURN_EXCEEDS_QTY: "Return quantity exceeds available quantity.",
     // Bill-specific
     BILL_NO_ITEMS: "Add at least one product before finalizing the bill.",
-    BILL_CREDIT_NEEDS_CUSTOMER: "Customer name or phone is required for credit bills.",
+    BILL_CREDIT_NEEDS_CUSTOMER:
+      "Customer name or phone is required for credit bills.",
     BILL_PAID_TOO_LOW: "Paid amount is lower than bill total.",
-    BILL_MIXED_SPLIT_MISMATCH: "Mixed payment cash + card must equal bill total.",
+    BILL_MIXED_SPLIT_MISMATCH:
+      "Mixed payment cash + card must equal bill total.",
     BILL_PAYMENT_SPLIT_INVALID: "Payment split does not sum to bill total.",
     BILL_NOT_FOUND: "Bill not found.",
     BILL_ALREADY_VOIDED: "Bill is already voided.",
@@ -1107,32 +1190,42 @@ export const en: TranslationDict = {
     BILL_VOIDED_NO_RETURN: "Voided bills cannot receive returns.",
     // Purchase-specific
     PURCHASE_NO_ITEMS: "Add at least one product before saving the purchase.",
-    PURCHASE_CREDIT_NEEDS_SUPPLIER: "Supplier name or phone is required for credit purchases.",
+    PURCHASE_CREDIT_NEEDS_SUPPLIER:
+      "Supplier name or phone is required for credit purchases.",
     PURCHASE_PAID_TOO_LOW: "Paid amount is lower than the purchase total.",
-    PURCHASE_MIXED_SPLIT_MISMATCH: "Mixed payment cash + card must equal purchase total.",
+    PURCHASE_MIXED_SPLIT_MISMATCH:
+      "Mixed payment cash + card must equal purchase total.",
     PURCHASE_NOT_FOUND: "Purchase not found.",
     PURCHASE_ALREADY_VOIDED: "Purchase is already voided.",
     PURCHASE_NOT_FINALIZED: "Only finalized purchases can be voided.",
     PURCHASE_ITEM_NOT_FOUND: "Purchase item not found.",
     PURCHASE_VOIDED_NO_RETURN: "Voided purchases cannot receive returns.",
-    PURCHASE_VOID_INSUFFICIENT_STOCK: "Cannot void: only {{stock}} unit(s) of \"{{name}}\" remain in stock but {{required}} need to be reversed. Adjust stock first.",
-    PURCHASE_RETURN_INSUFFICIENT_STOCK: "Not enough stock to return — some units were sold or adjusted out already.",
+    PURCHASE_VOID_INSUFFICIENT_STOCK:
+      'Cannot void: only {{stock}} unit(s) of "{{name}}" remain in stock but {{required}} need to be reversed. Adjust stock first.',
+    PURCHASE_RETURN_INSUFFICIENT_STOCK:
+      "Not enough stock to return — some units were sold or adjusted out already.",
     // Shift
     SHIFT_OPENING_CASH_NEGATIVE: "Opening cash must be zero or greater.",
-    SHIFT_ALREADY_OPEN: "A shift is already open on this device. Close it before opening a new one.",
+    SHIFT_ALREADY_OPEN:
+      "A shift is already open on this device. Close it before opening a new one.",
     SHIFT_COUNTED_CASH_NEGATIVE: "Counted cash must be zero or greater.",
     SHIFT_NOT_FOUND: "Shift not found.",
     SHIFT_ALREADY_CLOSED: "Shift is already closed.",
     // Stock / inventory
-    STOCK_ADJ_ZERO_OR_WHOLE: "Stock adjustment must be a non-zero whole number.",
-    STOCK_ADJ_NEGATIVE_RESULT: "Stock adjustment would make inventory negative.",
-    STOCK_RECEIVED_QTY_INVALID: "Received quantity must be a positive whole number.",
-    STOCK_COUNTED_QTY_INVALID: "Counted quantity must be a non-negative whole number.",
+    STOCK_ADJ_ZERO_OR_WHOLE:
+      "Stock adjustment must be a non-zero whole number.",
+    STOCK_ADJ_NEGATIVE_RESULT:
+      "Stock adjustment would make inventory negative.",
+    STOCK_RECEIVED_QTY_INVALID:
+      "Received quantity must be a positive whole number.",
+    STOCK_COUNTED_QTY_INVALID:
+      "Counted quantity must be a non-negative whole number.",
     // Payments
     CUSTOMER_REQUIRED: "Customer is required.",
     SUPPLIER_REQUIRED: "Supplier is required.",
     PAYMENT_AMOUNT_INVALID: "Payment amount must be greater than zero.",
     // Import
-    IMPORT_DUPLICATES: "Some products already exist. Preview the CSV again and retry.",
+    IMPORT_DUPLICATES:
+      "Some products already exist. Preview the CSV again and retry.",
   },
 };

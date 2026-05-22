@@ -71,7 +71,7 @@ export function BillsTable() {
     [],
   );
   const settings = useLiveQuery(() => settingsRepo.get(), []);
-  const currency = settings?.currency ?? "USD";
+  const currency = settings?.currency ?? "₪";
   const [query, setQuery] = useState("");
   const [dateFilter, setDateFilter] = useState<BillDateFilter>("today");
   const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>("all");

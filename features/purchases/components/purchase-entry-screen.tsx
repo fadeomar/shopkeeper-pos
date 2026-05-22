@@ -194,7 +194,7 @@ export function PurchaseEntryScreen() {
   const suppliers = useLiveQuery(() => supplierRepo.list(), []);
   const settings = useLiveQuery(() => settingsRepo.get(), []);
   const { push } = useToast();
-  const currency = settings?.currency ?? "USD";
+  const currency = settings?.currency ?? "₪";
   const draftKey = user?.uid
     ? `${PURCHASE_DRAFT_KEY_PREFIX}:${user.uid}`
     : null;
@@ -365,7 +365,8 @@ export function PurchaseEntryScreen() {
   useEffect(() => {
     if (!isMixedPurchase) return;
     const total = Number(purchaseSummary.totalAmount.toFixed(2));
-    if (Math.abs(watchedCashAmount + watchedCardAmount - total) < MONEY_EPSILON) return;
+    if (Math.abs(watchedCashAmount + watchedCardAmount - total) < MONEY_EPSILON)
+      return;
     form.setValue("cashAmount", total, { shouldDirty: false });
     form.setValue("cardAmount", 0, { shouldDirty: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -460,9 +461,7 @@ export function PurchaseEntryScreen() {
       const existing = cur.find((i) => i.productId === product.id);
       if (existing) {
         return cur.map((i) =>
-          i.productId === product.id
-            ? { ...i, quantity: i.quantity + 1 }
-            : i,
+          i.productId === product.id ? { ...i, quantity: i.quantity + 1 } : i,
         );
       }
       return [
@@ -721,8 +720,18 @@ export function PurchaseEntryScreen() {
               variant="secondary"
               onClick={() => setScannerOpen(true)}
             >
-              {t("billing.scan")}
+              {t("common.scan")}
             </Button>
+          </div>
+
+          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            <p>{t("purchases.productMissingNote")}</p>
+            <Link
+              href="/products"
+              className="mt-2 inline-flex text-sm font-semibold text-blue-600 hover:text-blue-700"
+            >
+              {t("purchases.addProductInProducts")}
+            </Link>
           </div>
 
           {/* Items list */}

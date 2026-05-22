@@ -86,7 +86,7 @@ export function BillDetails({ billId }: { billId: string }) {
     [billId],
   );
   const settings = useLiveQuery(() => settingsRepo.get(), []);
-  const currency = settings?.currency ?? "USD";
+  const currency = settings?.currency ?? "₪";
   const [voidOpen, setVoidOpen] = useState(false);
   const [voidReason, setVoidReason] = useState("");
   const [returnItem, setReturnItem] = useState<BillItem | null>(null);

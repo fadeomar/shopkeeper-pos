@@ -28,7 +28,6 @@ import {
   type TrendRow,
 } from "@/features/reports/utils/report-summary";
 
-
 function ProductRows({
   rows,
   currency,
@@ -121,12 +120,15 @@ export function ReportsWorkspace() {
     [],
   );
   const settings = useLiveQuery(() => settingsRepo.get(), []);
-  const customerPayments = useLiveQuery(() => db.customerPayments.toArray(), []);
+  const customerPayments = useLiveQuery(
+    () => db.customerPayments.toArray(),
+    [],
+  );
   const [range, setRange] = useState<ReportRange>("today");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
 
-  const currency = settings?.currency ?? "USD";
+  const currency = settings?.currency ?? "₪";
   const loading = !bills || !billItems || !products;
 
   const filteredBills = useMemo(
@@ -153,11 +155,11 @@ export function ReportsWorkspace() {
   const customerPaymentsCashIn = useMemo(() => {
     const { from, to } = getReportRange({ range, customFrom, customTo });
     return (customerPayments ?? [])
-      .filter(p => {
+      .filter((p) => {
         const created = new Date(p.createdAt);
         if (from && created < from) return false;
         if (to && created >= to) return false;
-        return (p.paymentMethod ?? 'cash') === 'cash';
+        return (p.paymentMethod ?? "cash") === "cash";
       })
       .reduce((sum, p) => sum + p.amount, 0);
   }, [customerPayments, range, customFrom, customTo]);

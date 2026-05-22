@@ -17,8 +17,13 @@ export function addMoney(...values: number[]): number {
   return fromCents(values.reduce((sum, value) => sum + toCents(value), 0));
 }
 
-export function subtractMoney(value: number, ...subtractValues: number[]): number {
-  return fromCents(subtractValues.reduce((sum, item) => sum - toCents(item), toCents(value)));
+export function subtractMoney(
+  value: number,
+  ...subtractValues: number[]
+): number {
+  return fromCents(
+    subtractValues.reduce((sum, item) => sum - toCents(item), toCents(value)),
+  );
 }
 
 export function multiplyMoney(value: number, quantity: number): number {
@@ -35,9 +40,9 @@ export function roundMoney(value: number) {
   return fromCents(toCents(value));
 }
 
-export function formatCurrency(value: number, currency = 'USD') {
+export function formatCurrency(value: number, currency = "₪") {
   return new Intl.NumberFormat(undefined, {
-    style: 'currency',
+    style: "currency",
     currency,
     maximumFractionDigits: 2,
   }).format(roundMoney(value));

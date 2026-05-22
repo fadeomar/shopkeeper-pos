@@ -23,7 +23,7 @@ export function ReceiptView({
 }) {
   const { t } = useLocale();
   const { push } = useToast();
-  const currency = settings?.currency ?? "USD";
+  const currency = settings?.currency ?? "₪";
   const storeName = settings?.storeName || "Shopkeeper POS";
   const paymentLabel = t(
     `common.${bill.paymentMethod}` as Parameters<typeof t>[0],
@@ -212,19 +212,25 @@ export function ReceiptView({
               {billWithSplit.cashAmount > 0 && (
                 <div className="flex justify-between">
                   <span>{t("common.cash")}</span>
-                  <span className="tabular-nums">{formatCurrency(billWithSplit.cashAmount, currency)}</span>
+                  <span className="tabular-nums">
+                    {formatCurrency(billWithSplit.cashAmount, currency)}
+                  </span>
                 </div>
               )}
               {billWithSplit.cardAmount > 0 && (
                 <div className="flex justify-between">
                   <span>{t("common.card")}</span>
-                  <span className="tabular-nums">{formatCurrency(billWithSplit.cardAmount, currency)}</span>
+                  <span className="tabular-nums">
+                    {formatCurrency(billWithSplit.cardAmount, currency)}
+                  </span>
                 </div>
               )}
               {billWithSplit.creditAmount > 0 && (
                 <div className="flex justify-between font-semibold text-red-600">
                   <span>{t("common.credit")}</span>
-                  <span className="tabular-nums">{formatCurrency(billWithSplit.creditAmount, currency)}</span>
+                  <span className="tabular-nums">
+                    {formatCurrency(billWithSplit.creditAmount, currency)}
+                  </span>
                 </div>
               )}
             </div>

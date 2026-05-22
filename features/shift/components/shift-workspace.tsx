@@ -81,7 +81,7 @@ export function ShiftWorkspace() {
         : Promise.resolve<CustomerPayment[]>([]),
     [activeShift?.id],
   );
-  const currency = settings?.currency ?? "USD";
+  const currency = settings?.currency ?? "₪";
 
   const [openingCash, setOpeningCash] = useState("");
   const [openNotes, setOpenNotes] = useState("");
@@ -227,7 +227,11 @@ export function ShiftWorkspace() {
     try {
       await openShift({
         openingCash: Number(openingCash || 0),
-        cashierName: (cashierName || settings?.cashierName || t("common.owner")).trim(),
+        cashierName: (
+          cashierName ||
+          settings?.cashierName ||
+          t("common.owner")
+        ).trim(),
         notes: openNotes,
       });
       setOpeningCash("");
@@ -378,7 +382,9 @@ export function ShiftWorkspace() {
               label={t("shift.cashPaidOut")}
               value={formatCurrency(cashOut.totalCashOut, currency)}
               helper={t("shift.cashPaidOutHelper")}
-              tone={cashOut.totalCashOut > MONEY_EPSILON ? "warning" : "neutral"}
+              tone={
+                cashOut.totalCashOut > MONEY_EPSILON ? "warning" : "neutral"
+              }
             />
             <StatCard
               label={t("shift.expectedCash")}

@@ -187,7 +187,7 @@ export function PosScreen() {
   const activeShift = useLiveQuery(() => getActiveShift(), []);
   const settings = useLiveQuery(() => settingsRepo.get(), []);
   const { push } = useToast();
-  const currency = settings?.currency ?? "USD";
+  const currency = settings?.currency ?? "₪";
   const draftKey = user?.uid ? `${POS_DRAFT_KEY_PREFIX}:${user.uid}` : null;
 
   // Mobile UX: tapping a numeric input opens the soft keyboard and leaves it
@@ -313,7 +313,8 @@ export function PosScreen() {
   // Runs only on the first render where both products and a non-empty cart are
   // available. The ref gate prevents it from re-running on every cart change.
   useEffect(() => {
-    if (staleDraftChecked.current || !products || draftItems.length === 0) return;
+    if (staleDraftChecked.current || !products || draftItems.length === 0)
+      return;
     staleDraftChecked.current = true;
 
     let priceCount = 0;
@@ -322,7 +323,7 @@ export function PosScreen() {
 
     const next = draftItems.reduce<BillDraftItem[]>((acc, item) => {
       const live = products.find((p) => p.id === item.productId);
-      if (!live || live.status !== 'active') {
+      if (!live || live.status !== "active") {
         removedCount += 1;
         return acc; // drop the item
       }
@@ -335,7 +336,8 @@ export function PosScreen() {
         return acc;
       }
       const priceChanged =
-        live.sellPrice !== item.unitSellPrice || live.buyPrice !== item.unitBuyPrice;
+        live.sellPrice !== item.unitSellPrice ||
+        live.buyPrice !== item.unitBuyPrice;
       if (priceChanged) priceCount += 1;
 
       const cappedQty = Math.min(item.quantity, live.quantityInStock);
@@ -357,12 +359,18 @@ export function PosScreen() {
 
     setDraftItems(next);
     if (removedCount > 0)
-      push(t('billing.draftProductsRemoved', { count: String(removedCount) }), 'error');
+      push(
+        t("billing.draftProductsRemoved", { count: String(removedCount) }),
+        "error",
+      );
     if (priceCount > 0)
-      push(t('billing.draftPricesRefreshed', { count: String(priceCount) }));
+      push(t("billing.draftPricesRefreshed", { count: String(priceCount) }));
     if (stockCount > 0)
-      push(t('billing.draftStockAdjusted', { count: String(stockCount) }), 'error');
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+      push(
+        t("billing.draftStockAdjusted", { count: String(stockCount) }),
+        "error",
+      );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [products, draftItems]);
 
   // Watch all form fields for draft persistence
@@ -525,7 +533,8 @@ export function PosScreen() {
   useEffect(() => {
     if (!isMixedSale) return;
     const total = Number(billSummary.totalAmount.toFixed(2));
-    if (Math.abs(watchedCashAmount + watchedCardAmount - total) < MONEY_EPSILON) return;
+    if (Math.abs(watchedCashAmount + watchedCardAmount - total) < MONEY_EPSILON)
+      return;
     form.setValue("cashAmount", total, {
       shouldDirty: false,
       shouldValidate: false,
@@ -734,10 +743,7 @@ export function PosScreen() {
       setConfirmOpen(false);
       setLastFinalized({ bill, items: billItems });
     } catch (error) {
-      push(
-        getServiceErrorMessage(error, t, t("billing.billFailed")),
-        "error",
-      );
+      push(getServiceErrorMessage(error, t, t("billing.billFailed")), "error");
     }
   }
 
@@ -851,7 +857,7 @@ export function PosScreen() {
         >
           <span className="font-medium">{t("billing.noShiftOpenWarning")}</span>
           <span className="text-xs font-semibold uppercase tracking-wide">
-            {t("billing.openShift")} {dir === 'rtl' ? '←' : '→'}
+            {t("billing.openShift")} {dir === "rtl" ? "←" : "→"}
           </span>
         </Link>
       )}
@@ -1010,7 +1016,10 @@ export function PosScreen() {
                       </div>
                       <div className="rounded-xl bg-slate-50 p-2">
                         <p className="text-slate-500">{t("billing.sell")}</p>
-                        <p className="font-bold text-slate-800 tabular-nums" dir="ltr">
+                        <p
+                          className="font-bold text-slate-800 tabular-nums"
+                          dir="ltr"
+                        >
                           {formatCurrency(item.unitSellPrice, currency)}
                         </p>
                       </div>
@@ -1018,7 +1027,10 @@ export function PosScreen() {
                         <p className="text-slate-500">
                           {t("billing.subtotalCol")}
                         </p>
-                        <p className="font-bold text-slate-800 tabular-nums" dir="ltr">
+                        <p
+                          className="font-bold text-slate-800 tabular-nums"
+                          dir="ltr"
+                        >
                           {formatCurrency(
                             calculateLineSubtotal(
                               item.quantity,
@@ -1419,7 +1431,10 @@ export function PosScreen() {
               <p className="text-xs font-medium text-slate-500">
                 {draftItems.length} {t("billing.items")}
               </p>
-              <p className="truncate text-lg font-black text-slate-900 tabular-nums" dir="ltr">
+              <p
+                className="truncate text-lg font-black text-slate-900 tabular-nums"
+                dir="ltr"
+              >
                 {formatCurrency(billSummary.totalAmount, currency)}
               </p>
             </div>

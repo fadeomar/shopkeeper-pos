@@ -44,7 +44,7 @@ export function CustomerLedgerWorkspace() {
   const [paymentMethod, setPaymentMethod] = useState<
     "cash" | "card" | "bank" | "other"
   >("cash");
-  const currency = settings?.currency ?? "USD";
+  const currency = settings?.currency ?? "₪";
 
   const rows = ledger ?? [];
   const filteredRows = useMemo(() => {
@@ -170,7 +170,7 @@ export function CustomerLedgerWorkspace() {
   async function savePayment() {
     if (!selected) return;
     if (!safePaymentAmount || safePaymentAmount <= 0) {
-      push(t('common.invalidAmount'), 'error');
+      push(t("common.invalidAmount"), "error");
       return;
     }
     try {
@@ -313,7 +313,10 @@ export function CustomerLedgerWorkspace() {
                       0,
                       bill.totalAmount - (bill.returnedAmount ?? 0),
                     );
-                    const due = netSplitField(withSplit, withSplit.creditAmount);
+                    const due = netSplitField(
+                      withSplit,
+                      withSplit.creditAmount,
+                    );
                     return (
                       <div
                         key={bill.id}

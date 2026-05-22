@@ -7,17 +7,33 @@ import {
   writeBatch,
   type DocumentData,
   type QueryDocumentSnapshot,
-} from 'firebase/firestore';
-import { firestore } from './config';
-import { db } from '@/lib/db/schema';
-import { setRestoreInProgress } from '@/lib/services/sync-gate';
-import { createBillNumber } from '@/lib/utils/id';
-import { normalizeBillSplit } from '@/lib/utils/bill-split';
-import { normalizePhone } from '@/lib/utils/customer-key';
-import type { AuditEvent, Bill, BillItem, CashMovement, Customer, Expense, Product, Purchase, PurchaseItem, Settings, Shift, StockMovement, Supplier, SupplierPayment, CustomerPayment } from '@/types/domain';
-import type { SyncMeta } from './sync-service';
+} from "firebase/firestore";
+import { firestore } from "./config";
+import { db } from "@/lib/db/schema";
+import { setRestoreInProgress } from "@/lib/services/sync-gate";
+import { createBillNumber } from "@/lib/utils/id";
+import { normalizeBillSplit } from "@/lib/utils/bill-split";
+import { normalizePhone } from "@/lib/utils/customer-key";
+import type {
+  AuditEvent,
+  Bill,
+  BillItem,
+  CashMovement,
+  Customer,
+  Expense,
+  Product,
+  Purchase,
+  PurchaseItem,
+  Settings,
+  Shift,
+  StockMovement,
+  Supplier,
+  SupplierPayment,
+  CustomerPayment,
+} from "@/types/domain";
+import type { SyncMeta } from "./sync-service";
 
-const SETTINGS_ID = 'app-settings';
+const SETTINGS_ID = "app-settings";
 const BATCH_SIZE = 400;
 
 export class RestoreError extends Error {
@@ -26,16 +42,16 @@ export class RestoreError extends Error {
 
   constructor(message: string, options?: { code?: string; cause?: unknown }) {
     super(message);
-    this.name = 'RestoreError';
+    this.name = "RestoreError";
     this.code = options?.code;
     this.cause = options?.cause;
   }
 }
 
 function getErrorCode(error: unknown): string | undefined {
-  if (typeof error === 'object' && error !== null && 'code' in error) {
+  if (typeof error === "object" && error !== null && "code" in error) {
     const code = (error as { code?: unknown }).code;
-    return typeof code === 'string' ? code : undefined;
+    return typeof code === "string" ? code : undefined;
   }
   return undefined;
 }
@@ -48,22 +64,22 @@ export function getRestoreErrorMessage(error: unknown): string {
   if (error instanceof RestoreError) return error.message;
 
   const code = getErrorCode(error);
-  if (code === 'permission-denied') {
-    return 'Restore failed because this account does not have permission to read the backup data.';
+  if (code === "permission-denied") {
+    return "Restore failed because this account does not have permission to read the backup data.";
   }
-  if (code === 'unavailable' || code === 'deadline-exceeded') {
-    return 'Restore failed because the cloud backup is temporarily unavailable. Check the connection and try again.';
+  if (code === "unavailable" || code === "deadline-exceeded") {
+    return "Restore failed because the cloud backup is temporarily unavailable. Check the connection and try again.";
   }
-  if (code === 'unauthenticated') {
-    return 'Restore failed because the login session is no longer valid. Sign in again and retry.';
+  if (code === "unauthenticated") {
+    return "Restore failed because the login session is no longer valid. Sign in again and retry.";
   }
 
-  return 'Restore failed. Check your connection and try again.';
+  return "Restore failed. Check your connection and try again.";
 }
 
 function syncedMeta(syncedAt: string) {
   return {
-    syncStatus: 'synced' as const,
+    syncStatus: "synced" as const,
     syncedAt,
     lastSyncError: undefined,
   };
@@ -73,9 +89,11 @@ function stripUndefined<T>(value: T): T {
   if (Array.isArray(value)) {
     return value.map((item) => stripUndefined(item)) as T;
   }
-  if (value && typeof value === 'object') {
+  if (value && typeof value === "object") {
     const output: Record<string, unknown> = {};
-    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    for (const [key, item] of Object.entries(
+      value as Record<string, unknown>,
+    )) {
       if (item !== undefined) output[key] = stripUndefined(item);
     }
     return output as T;
@@ -88,15 +106,20 @@ function finiteNumber(value: unknown, fallback = 0): number {
   return Number.isFinite(numberValue) ? numberValue : fallback;
 }
 
-function withDocId<T extends { id: string }>(snapshot: QueryDocumentSnapshot<DocumentData>): T {
+function withDocId<T extends { id: string }>(
+  snapshot: QueryDocumentSnapshot<DocumentData>,
+): T {
   const data = snapshot.data() as Partial<T>;
   return {
     ...data,
-    id: typeof data.id === 'string' && data.id.trim() ? data.id : snapshot.id,
+    id: typeof data.id === "string" && data.id.trim() ? data.id : snapshot.id,
   } as T;
 }
 
-function normalizeBill(snapshot: QueryDocumentSnapshot<DocumentData>, syncedAt: string): Bill {
+function normalizeBill(
+  snapshot: QueryDocumentSnapshot<DocumentData>,
+  syncedAt: string,
+): Bill {
   const bill = withDocId<Bill>(snapshot) as Partial<Bill> & { id: string };
   // Older devices may have written this bill before the Bα payment-split
   // migration added cashAmount/cardAmount/creditAmount. Fill in the canonical
@@ -104,7 +127,7 @@ function normalizeBill(snapshot: QueryDocumentSnapshot<DocumentData>, syncedAt: 
   // and downstream readers (reports, ledger, drawer reconciliation) work.
   const withSplit = normalizeBillSplit({
     ...bill,
-    status: bill.status ?? 'finalized',
+    status: bill.status ?? "finalized",
     returnedAmount: bill.returnedAmount ?? 0,
     returnedProfit: bill.returnedProfit ?? 0,
   });
@@ -114,22 +137,31 @@ function normalizeBill(snapshot: QueryDocumentSnapshot<DocumentData>, syncedAt: 
   } as Bill;
 }
 
-function normalizeBillItem(snapshot: QueryDocumentSnapshot<DocumentData>): BillItem {
-  const item = withDocId<BillItem>(snapshot) as Partial<BillItem> & { id: string };
+function normalizeBillItem(
+  snapshot: QueryDocumentSnapshot<DocumentData>,
+): BillItem {
+  const item = withDocId<BillItem>(snapshot) as Partial<BillItem> & {
+    id: string;
+  };
   return {
     ...item,
     quantityReturned: item.quantityReturned ?? 0,
   } as BillItem;
 }
 
-function normalizePurchase(snapshot: QueryDocumentSnapshot<DocumentData>, syncedAt: string): Purchase {
-  const purchase = withDocId<Purchase>(snapshot) as Partial<Purchase> & { id: string };
+function normalizePurchase(
+  snapshot: QueryDocumentSnapshot<DocumentData>,
+  syncedAt: string,
+): Purchase {
+  const purchase = withDocId<Purchase>(snapshot) as Partial<Purchase> & {
+    id: string;
+  };
   // Purchases share the bill payment-split invariant. Run them through the
   // same normalizer so older cloud documents land locally with cashAmount /
   // cardAmount / creditAmount populated.
   const withSplit = normalizeBillSplit({
     ...purchase,
-    status: purchase.status ?? 'finalized',
+    status: purchase.status ?? "finalized",
     returnedAmount: purchase.returnedAmount ?? 0,
   } as unknown as Bill) as unknown as Purchase;
   return {
@@ -138,142 +170,216 @@ function normalizePurchase(snapshot: QueryDocumentSnapshot<DocumentData>, synced
   } as Purchase;
 }
 
-function normalizePurchaseItem(snapshot: QueryDocumentSnapshot<DocumentData>): PurchaseItem {
-  const item = withDocId<PurchaseItem>(snapshot) as Partial<PurchaseItem> & { id: string };
+function normalizePurchaseItem(
+  snapshot: QueryDocumentSnapshot<DocumentData>,
+): PurchaseItem {
+  const item = withDocId<PurchaseItem>(snapshot) as Partial<PurchaseItem> & {
+    id: string;
+  };
   return {
     ...item,
     quantityReturned: item.quantityReturned ?? 0,
   } as PurchaseItem;
 }
 
-function normalizeProduct(snapshot: QueryDocumentSnapshot<DocumentData>, syncedAt: string): Product {
-  const product = withDocId<Product>(snapshot) as Partial<Product> & { id: string };
+function normalizeProduct(
+  snapshot: QueryDocumentSnapshot<DocumentData>,
+  syncedAt: string,
+): Product {
+  const product = withDocId<Product>(snapshot) as Partial<Product> & {
+    id: string;
+  };
   const dateAdded = product.dateAdded || product.lastUpdated || syncedAt;
   return {
     ...product,
-    barcode: typeof product.barcode === 'string' ? product.barcode.trim() : '',
-    name: typeof product.name === 'string' && product.name.trim() ? product.name.trim() : 'Restored product',
-    category: typeof product.category === 'string' && product.category.trim() ? product.category.trim() : 'Uncategorized',
-    unit: typeof product.unit === 'string' && product.unit.trim() ? product.unit.trim() : 'pcs',
+    barcode: typeof product.barcode === "string" ? product.barcode.trim() : "",
+    name:
+      typeof product.name === "string" && product.name.trim()
+        ? product.name.trim()
+        : "Restored product",
+    category:
+      typeof product.category === "string" && product.category.trim()
+        ? product.category.trim()
+        : "Uncategorized",
+    unit:
+      typeof product.unit === "string" && product.unit.trim()
+        ? product.unit.trim()
+        : "pcs",
     quantityInStock: Math.max(0, finiteNumber(product.quantityInStock)),
     buyPrice: Math.max(0, finiteNumber(product.buyPrice)),
     sellPrice: Math.max(0, finiteNumber(product.sellPrice)),
     minimumStockAlert: Math.max(0, finiteNumber(product.minimumStockAlert)),
     dateAdded,
     lastUpdated: product.lastUpdated || dateAdded,
-    status: product.status ?? 'active',
+    status: product.status ?? "active",
     ...syncedMeta(syncedAt),
   } as Product;
 }
 
-function normalizeStockMovement(snapshot: QueryDocumentSnapshot<DocumentData>, syncedAt: string): StockMovement {
+function normalizeStockMovement(
+  snapshot: QueryDocumentSnapshot<DocumentData>,
+  syncedAt: string,
+): StockMovement {
   const movement = withDocId<StockMovement>(snapshot);
   return { ...movement, ...syncedMeta(syncedAt) };
 }
 
-function normalizeSupplierPayment(snapshot: QueryDocumentSnapshot<DocumentData>, syncedAt: string): SupplierPayment {
-  const payment = withDocId<SupplierPayment>(snapshot) as Partial<SupplierPayment> & { id: string };
+function normalizeSupplierPayment(
+  snapshot: QueryDocumentSnapshot<DocumentData>,
+  syncedAt: string,
+): SupplierPayment {
+  const payment = withDocId<SupplierPayment>(
+    snapshot,
+  ) as Partial<SupplierPayment> & { id: string };
   return {
     ...payment,
-    supplierKey: payment.supplierKey || '',
-    supplierName: payment.supplierName || 'Supplier',
+    supplierKey: payment.supplierKey || "",
+    supplierName: payment.supplierName || "Supplier",
     amount: Math.max(0, finiteNumber(payment.amount)),
     createdAt: payment.createdAt || syncedAt,
     ...syncedMeta(syncedAt),
   } as SupplierPayment;
 }
 
-function normalizeCustomerPayment(snapshot: QueryDocumentSnapshot<DocumentData>, syncedAt: string): CustomerPayment {
-  const payment = withDocId<CustomerPayment>(snapshot) as Partial<CustomerPayment> & { id: string };
+function normalizeCustomerPayment(
+  snapshot: QueryDocumentSnapshot<DocumentData>,
+  syncedAt: string,
+): CustomerPayment {
+  const payment = withDocId<CustomerPayment>(
+    snapshot,
+  ) as Partial<CustomerPayment> & { id: string };
   return {
     ...payment,
-    customerKey: payment.customerKey || '',
-    customerName: payment.customerName || 'Customer',
+    customerKey: payment.customerKey || "",
+    customerName: payment.customerName || "Customer",
     amount: Math.max(0, finiteNumber(payment.amount)),
     createdAt: payment.createdAt || syncedAt,
     ...syncedMeta(syncedAt),
   } as CustomerPayment;
 }
 
-function normalizeAuditEvent(snapshot: QueryDocumentSnapshot<DocumentData>, syncedAt: string): AuditEvent {
-  const event = withDocId<AuditEvent>(snapshot) as Partial<AuditEvent> & { id: string };
+function normalizeAuditEvent(
+  snapshot: QueryDocumentSnapshot<DocumentData>,
+  syncedAt: string,
+): AuditEvent {
+  const event = withDocId<AuditEvent>(snapshot) as Partial<AuditEvent> & {
+    id: string;
+  };
   return {
     ...event,
-    category: event.category ?? 'sync',
-    action: event.action ?? 'update',
+    category: event.category ?? "sync",
+    action: event.action ?? "update",
     createdAt: event.createdAt || syncedAt,
     ...syncedMeta(syncedAt),
   } as AuditEvent;
 }
 
-function normalizeCashMovement(snapshot: QueryDocumentSnapshot<DocumentData>, syncedAt: string): CashMovement {
-  const movement = withDocId<CashMovement>(snapshot) as Partial<CashMovement> & { id: string };
+function normalizeCashMovement(
+  snapshot: QueryDocumentSnapshot<DocumentData>,
+  syncedAt: string,
+): CashMovement {
+  const movement = withDocId<CashMovement>(
+    snapshot,
+  ) as Partial<CashMovement> & { id: string };
   return {
     ...movement,
-    type: movement.type ?? 'cash_in',
+    type: movement.type ?? "cash_in",
     amount: finiteNumber(movement.amount),
     createdAt: movement.createdAt || syncedAt,
     ...syncedMeta(syncedAt),
   } as CashMovement;
 }
 
-function normalizeExpense(snapshot: QueryDocumentSnapshot<DocumentData>, syncedAt: string): Expense {
-  const expense = withDocId<Expense>(snapshot) as Partial<Expense> & { id: string };
+function normalizeExpense(
+  snapshot: QueryDocumentSnapshot<DocumentData>,
+  syncedAt: string,
+): Expense {
+  const expense = withDocId<Expense>(snapshot) as Partial<Expense> & {
+    id: string;
+  };
   return {
     ...expense,
-    category: expense.category ?? 'other',
-    paymentMethod: expense.paymentMethod ?? 'cash',
+    category: expense.category ?? "other",
+    paymentMethod: expense.paymentMethod ?? "cash",
     amount: Math.max(0, finiteNumber(expense.amount)),
     createdAt: expense.createdAt || syncedAt,
     ...syncedMeta(syncedAt),
   } as Expense;
 }
 
-function normalizeShift(snapshot: QueryDocumentSnapshot<DocumentData>, syncedAt: string): Shift {
+function normalizeShift(
+  snapshot: QueryDocumentSnapshot<DocumentData>,
+  syncedAt: string,
+): Shift {
   const shift = withDocId<Shift>(snapshot) as Partial<Shift> & { id: string };
   return {
     ...shift,
     openedAt: shift.openedAt || syncedAt,
-    openedByCashierName: shift.openedByCashierName || 'Cashier',
+    openedByCashierName: shift.openedByCashierName || "Cashier",
     openingCash: Math.max(0, finiteNumber(shift.openingCash)),
-    status: shift.status === 'closed' ? 'closed' : 'open',
+    status: shift.status === "closed" ? "closed" : "open",
     ...syncedMeta(syncedAt),
   } as Shift;
 }
 
-function normalizeSupplier(snapshot: QueryDocumentSnapshot<DocumentData>, syncedAt: string): Supplier {
-  const supplier = withDocId<Supplier>(snapshot) as Partial<Supplier> & { id: string };
-  const phone = typeof supplier.phone === 'string' ? supplier.phone.trim() : undefined;
+function normalizeSupplier(
+  snapshot: QueryDocumentSnapshot<DocumentData>,
+  syncedAt: string,
+): Supplier {
+  const supplier = withDocId<Supplier>(snapshot) as Partial<Supplier> & {
+    id: string;
+  };
+  const phone =
+    typeof supplier.phone === "string" ? supplier.phone.trim() : undefined;
   return {
     ...supplier,
-    name: typeof supplier.name === 'string' && supplier.name.trim() ? supplier.name.trim() : 'Supplier',
+    name:
+      typeof supplier.name === "string" && supplier.name.trim()
+        ? supplier.name.trim()
+        : "Supplier",
     phone: phone || undefined,
-    normalizedPhone: phone ? normalizePhone(phone) || undefined : supplier.normalizedPhone,
+    normalizedPhone: phone
+      ? normalizePhone(phone) || undefined
+      : supplier.normalizedPhone,
     createdAt: supplier.createdAt || syncedAt,
     updatedAt: supplier.updatedAt || supplier.createdAt || syncedAt,
     ...syncedMeta(syncedAt),
   } as Supplier;
 }
 
-function normalizeCustomer(snapshot: QueryDocumentSnapshot<DocumentData>, syncedAt: string): Customer {
-  const customer = withDocId<Customer>(snapshot) as Partial<Customer> & { id: string };
-  const phone = typeof customer.phone === 'string' ? customer.phone.trim() : undefined;
+function normalizeCustomer(
+  snapshot: QueryDocumentSnapshot<DocumentData>,
+  syncedAt: string,
+): Customer {
+  const customer = withDocId<Customer>(snapshot) as Partial<Customer> & {
+    id: string;
+  };
+  const phone =
+    typeof customer.phone === "string" ? customer.phone.trim() : undefined;
   return {
     ...customer,
-    name: typeof customer.name === 'string' && customer.name.trim() ? customer.name.trim() : 'Customer',
+    name:
+      typeof customer.name === "string" && customer.name.trim()
+        ? customer.name.trim()
+        : "Customer",
     phone: phone || undefined,
-    normalizedPhone: phone ? normalizePhone(phone) || undefined : customer.normalizedPhone,
+    normalizedPhone: phone
+      ? normalizePhone(phone) || undefined
+      : customer.normalizedPhone,
     createdAt: customer.createdAt || syncedAt,
     updatedAt: customer.updatedAt || customer.createdAt || syncedAt,
     ...syncedMeta(syncedAt),
   } as Customer;
 }
 
-function normalizeSettings(snapshot: QueryDocumentSnapshot<DocumentData>, syncedAt: string): Settings {
+function normalizeSettings(
+  snapshot: QueryDocumentSnapshot<DocumentData>,
+  syncedAt: string,
+): Settings {
   const data = snapshot.data() as Partial<Settings>;
   return {
     ...data,
-    id: typeof data.id === 'string' && data.id.trim() ? data.id : SETTINGS_ID,
+    id: typeof data.id === "string" && data.id.trim() ? data.id : SETTINGS_ID,
     ...syncedMeta(syncedAt),
   } as Settings;
 }
@@ -284,11 +390,13 @@ async function readUserCollection<T>(
   mapDoc: (snapshot: QueryDocumentSnapshot<DocumentData>) => T,
 ): Promise<T[]> {
   try {
-    const snap = await getDocs(collection(firestore, `users/${uid}/${collectionName}`));
+    const snap = await getDocs(
+      collection(firestore, `users/${uid}/${collectionName}`),
+    );
     return snap.docs.map(mapDoc);
   } catch (error) {
     const code = getErrorCode(error);
-    const reason = code ? ` (${code})` : '';
+    const reason = code ? ` (${code})` : "";
     throw new RestoreError(
       `Could not read ${collectionName} from the cloud backup${reason}.`,
       { code, cause: error },
@@ -296,15 +404,21 @@ async function readUserCollection<T>(
   }
 }
 
-function getBillSequenceFromNumber(billNumber: string | undefined): number | null {
+function getBillSequenceFromNumber(
+  billNumber: string | undefined,
+): number | null {
   if (!billNumber) return null;
-  const match = billNumber.match(/^(?:INV-)?(\d+)$/i) ?? billNumber.match(/(\d+)$/);
+  const match =
+    billNumber.match(/^(?:INV-)?(\d+)$/i) ?? billNumber.match(/(\d+)$/);
   if (!match) return null;
   const value = Number(match[1]);
   return Number.isFinite(value) && value > 0 ? value : null;
 }
 
-function makeUniqueBillNumber(usedBillNumbers: Set<string>, nextSequence: { value: number }): string {
+function makeUniqueBillNumber(
+  usedBillNumbers: Set<string>,
+  nextSequence: { value: number },
+): string {
   let candidate = createBillNumber(nextSequence.value);
   while (usedBillNumbers.has(candidate)) {
     nextSequence.value += 1;
@@ -324,7 +438,7 @@ function normalizeUniqueBillNumbers(bills: Bill[]): Bill[] {
   const nextSequence = { value: maxSequence + 1 };
   const usedBillNumbers = new Set<string>();
   const sortedBills = [...bills].sort((a, b) => {
-    const byDate = (a.createdAt || '').localeCompare(b.createdAt || '');
+    const byDate = (a.createdAt || "").localeCompare(b.createdAt || "");
     return byDate !== 0 ? byDate : a.id.localeCompare(b.id);
   });
   const repairedBillNumbers = new Map<string, string>();
@@ -337,17 +451,22 @@ function normalizeUniqueBillNumbers(bills: Bill[]): Bill[] {
       continue;
     }
 
-    repairedBillNumbers.set(bill.id, makeUniqueBillNumber(usedBillNumbers, nextSequence));
+    repairedBillNumbers.set(
+      bill.id,
+      makeUniqueBillNumber(usedBillNumbers, nextSequence),
+    );
   }
 
   return bills.map((bill) => {
-    const billNumber = repairedBillNumbers.get(bill.id) ?? makeUniqueBillNumber(usedBillNumbers, nextSequence);
+    const billNumber =
+      repairedBillNumbers.get(bill.id) ??
+      makeUniqueBillNumber(usedBillNumbers, nextSequence);
     if (billNumber === bill.billNumber) return bill;
 
     const previousNumber = bill.billNumber?.trim();
     const restoreNote = previousNumber
       ? `Restored from cloud backup. Original duplicate bill number: ${previousNumber}.`
-      : 'Restored from cloud backup. Missing bill number was regenerated.';
+      : "Restored from cloud backup. Missing bill number was regenerated.";
 
     return {
       ...bill,
@@ -357,12 +476,15 @@ function normalizeUniqueBillNumbers(bills: Bill[]): Bill[] {
   });
 }
 
-function buildRestoredDefaultSettings(restoredAt: string, nextBillSequence: number): Settings {
+function buildRestoredDefaultSettings(
+  restoredAt: string,
+  nextBillSequence: number,
+): Settings {
   return {
     id: SETTINGS_ID,
-    storeName: 'My Shop',
-    cashierName: '',
-    currency: 'USD',
+    storeName: "My Shop",
+    cashierName: "",
+    currency: "₪",
     allowLossSale: false,
     nextBillSequence,
     nextPurchaseSequence: nextBillSequence,
@@ -373,7 +495,11 @@ function buildRestoredDefaultSettings(restoredAt: string, nextBillSequence: numb
   };
 }
 
-function ensureRestoredSettings(settings: Settings[], bills: Bill[], restoredAt: string): Settings[] {
+function ensureRestoredSettings(
+  settings: Settings[],
+  bills: Bill[],
+  restoredAt: string,
+): Settings[] {
   const maxSequence = bills.reduce((max, bill) => {
     const sequence = getBillSequenceFromNumber(bill.billNumber);
     return sequence ? Math.max(max, sequence) : max;
@@ -395,13 +521,16 @@ function appendRestoreNote(existing: string | undefined, note: string): string {
 }
 
 function productTimeValue(product: Product): number {
-  const parsed = Date.parse(product.lastUpdated || product.dateAdded || product.syncedAt || '');
+  const parsed = Date.parse(
+    product.lastUpdated || product.dateAdded || product.syncedAt || "",
+  );
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function chooseCanonicalProduct(products: Product[]): Product {
   return [...products].sort((a, b) => {
-    const byActive = Number(b.status === 'active') - Number(a.status === 'active');
+    const byActive =
+      Number(b.status === "active") - Number(a.status === "active");
     if (byActive !== 0) return byActive;
 
     const byUpdated = productTimeValue(b) - productTimeValue(a);
@@ -414,8 +543,11 @@ function chooseCanonicalProduct(products: Product[]): Product {
   })[0];
 }
 
-function makeRestoredBarcode(product: Product, usedBarcodes: Set<string>): string {
-  const base = `RESTORED-${product.id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10) || Date.now()}`;
+function makeRestoredBarcode(
+  product: Product,
+  usedBarcodes: Set<string>,
+): string {
+  const base = `RESTORED-${product.id.replace(/[^a-zA-Z0-9]/g, "").slice(0, 10) || Date.now()}`;
   let candidate = base;
   let suffix = 2;
 
@@ -460,7 +592,7 @@ function repairDuplicateProductBarcodes(input: {
           barcode,
           notes: appendRestoreNote(
             product.notes,
-            'Restored from cloud backup. Missing barcode was replaced with a temporary restored barcode.',
+            "Restored from cloud backup. Missing barcode was replaced with a temporary restored barcode.",
           ),
         };
 
@@ -494,10 +626,12 @@ function repairDuplicateProductBarcodes(input: {
     products.push({
       ...canonical,
       barcode,
-      status: group.some((product) => product.status === 'active') ? 'active' : canonical.status,
+      status: group.some((product) => product.status === "active")
+        ? "active"
+        : canonical.status,
       notes: appendRestoreNote(
         canonical.notes,
-        `Restored backup repair: merged ${duplicateIds.length} duplicate product record${duplicateIds.length === 1 ? '' : 's'} for barcode ${barcode}.`,
+        `Restored backup repair: merged ${duplicateIds.length} duplicate product record${duplicateIds.length === 1 ? "" : "s"} for barcode ${barcode}.`,
       ),
     });
   }
@@ -541,29 +675,30 @@ async function repairCloudDuplicateProducts(input: {
     repair.duplicateProductIds.length === 0 &&
     repair.remappedBillItems.length === 0 &&
     repair.remappedStockMovements.length === 0
-  ) return;
+  )
+    return;
 
   const writes: Array<
-    | { type: 'set'; ref: ReturnType<typeof doc>; data: object }
-    | { type: 'delete'; ref: ReturnType<typeof doc> }
+    | { type: "set"; ref: ReturnType<typeof doc>; data: object }
+    | { type: "delete"; ref: ReturnType<typeof doc> }
   > = [
     ...repair.products.map((product) => ({
-      type: 'set' as const,
+      type: "set" as const,
       ref: doc(firestore, `users/${uid}/products/${product.id}`),
       data: stripUndefined(product),
     })),
     ...repair.remappedBillItems.map((item) => ({
-      type: 'set' as const,
+      type: "set" as const,
       ref: doc(firestore, `users/${uid}/billItems/${item.id}`),
       data: stripUndefined(item),
     })),
     ...repair.remappedStockMovements.map((movement) => ({
-      type: 'set' as const,
+      type: "set" as const,
       ref: doc(firestore, `users/${uid}/stockMovements/${movement.id}`),
       data: stripUndefined(movement),
     })),
     ...repair.duplicateProductIds.map((id) => ({
-      type: 'delete' as const,
+      type: "delete" as const,
       ref: doc(firestore, `users/${uid}/products/${id}`),
     })),
   ];
@@ -571,7 +706,7 @@ async function repairCloudDuplicateProducts(input: {
   for (let index = 0; index < writes.length; index += BATCH_SIZE) {
     const batch = writeBatch(firestore);
     for (const write of writes.slice(index, index + BATCH_SIZE)) {
-      if (write.type === 'set') batch.set(write.ref, write.data);
+      if (write.type === "set") batch.set(write.ref, write.data);
       else batch.delete(write.ref);
     }
     await batch.commit();
@@ -585,7 +720,9 @@ async function repairCloudDuplicateProducts(input: {
  * cloud copy is newer (last-write-wins via updatedAt).
  * Returns the updated Settings if local was overwritten, or null if local was already current.
  */
-export async function pullSettingsFromCloud(uid: string): Promise<Settings | null> {
+export async function pullSettingsFromCloud(
+  uid: string,
+): Promise<Settings | null> {
   try {
     const snap = await getDocs(collection(firestore, `users/${uid}/settings`));
     if (snap.empty) return null;
@@ -595,8 +732,15 @@ export async function pullSettingsFromCloud(uid: string): Promise<Settings | nul
     if (!db.isOpen()) await db.open();
 
     const local = await db.settings.get(cloud.id);
-    const pendingSettingsJob = await db.syncQueue.get(`sq:settings:${cloud.id}`);
-    if (pendingSettingsJob && ['pending', 'failed', 'syncing', 'conflict'].includes(pendingSettingsJob.status)) {
+    const pendingSettingsJob = await db.syncQueue.get(
+      `sq:settings:${cloud.id}`,
+    );
+    if (
+      pendingSettingsJob &&
+      ["pending", "failed", "syncing", "conflict"].includes(
+        pendingSettingsJob.status,
+      )
+    ) {
       return null;
     }
 
@@ -604,7 +748,13 @@ export async function pullSettingsFromCloud(uid: string): Promise<Settings | nul
     // monotonic, so never pull it backwards.
     if (!local || cloud.updatedAt > local.updatedAt) {
       const merged = local
-        ? { ...cloud, nextBillSequence: Math.max(local.nextBillSequence || 1, cloud.nextBillSequence || 1) }
+        ? {
+            ...cloud,
+            nextBillSequence: Math.max(
+              local.nextBillSequence || 1,
+              cloud.nextBillSequence || 1,
+            ),
+          }
         : cloud;
       await db.settings.put(merged);
       return merged;
@@ -693,49 +843,89 @@ async function doRestoreFromCloud(
 ): Promise<void> {
   const restoredAt = new Date().toISOString();
 
-  onProgress?.('Fetching bills…');
-  let bills = await readUserCollection(uid, 'bills', (snapshot) => normalizeBill(snapshot, restoredAt));
+  onProgress?.("Fetching bills…");
+  let bills = await readUserCollection(uid, "bills", (snapshot) =>
+    normalizeBill(snapshot, restoredAt),
+  );
 
-  onProgress?.('Fetching bill items…');
-  const cloudBillItems = await readUserCollection(uid, 'billItems', normalizeBillItem);
+  onProgress?.("Fetching bill items…");
+  const cloudBillItems = await readUserCollection(
+    uid,
+    "billItems",
+    normalizeBillItem,
+  );
 
-  onProgress?.('Fetching products…');
-  const cloudProducts = await readUserCollection(uid, 'products', (snapshot) => normalizeProduct(snapshot, restoredAt));
+  onProgress?.("Fetching products…");
+  const cloudProducts = await readUserCollection(uid, "products", (snapshot) =>
+    normalizeProduct(snapshot, restoredAt),
+  );
 
-  onProgress?.('Fetching stock movements…');
-  const cloudStockMovements = await readUserCollection(uid, 'stockMovements', (snapshot) => normalizeStockMovement(snapshot, restoredAt));
+  onProgress?.("Fetching stock movements…");
+  const cloudStockMovements = await readUserCollection(
+    uid,
+    "stockMovements",
+    (snapshot) => normalizeStockMovement(snapshot, restoredAt),
+  );
 
-  onProgress?.('Fetching customer payments…');
-  const customerPayments = await readUserCollection(uid, 'customerPayments', (snapshot) => normalizeCustomerPayment(snapshot, restoredAt));
+  onProgress?.("Fetching customer payments…");
+  const customerPayments = await readUserCollection(
+    uid,
+    "customerPayments",
+    (snapshot) => normalizeCustomerPayment(snapshot, restoredAt),
+  );
 
-  onProgress?.('Fetching customers…');
-  const customers = await readUserCollection(uid, 'customers', (snapshot) => normalizeCustomer(snapshot, restoredAt));
+  onProgress?.("Fetching customers…");
+  const customers = await readUserCollection(uid, "customers", (snapshot) =>
+    normalizeCustomer(snapshot, restoredAt),
+  );
 
-  onProgress?.('Fetching shifts…');
-  const shifts = await readUserCollection(uid, 'shifts', (snapshot) => normalizeShift(snapshot, restoredAt));
+  onProgress?.("Fetching shifts…");
+  const shifts = await readUserCollection(uid, "shifts", (snapshot) =>
+    normalizeShift(snapshot, restoredAt),
+  );
 
-  onProgress?.('Fetching suppliers…');
-  const suppliers = await readUserCollection(uid, 'suppliers', (snapshot) => normalizeSupplier(snapshot, restoredAt));
+  onProgress?.("Fetching suppliers…");
+  const suppliers = await readUserCollection(uid, "suppliers", (snapshot) =>
+    normalizeSupplier(snapshot, restoredAt),
+  );
 
-  onProgress?.('Fetching purchases…');
-  const purchases = await readUserCollection(uid, 'purchases', (snapshot) => normalizePurchase(snapshot, restoredAt));
+  onProgress?.("Fetching purchases…");
+  const purchases = await readUserCollection(uid, "purchases", (snapshot) =>
+    normalizePurchase(snapshot, restoredAt),
+  );
 
-  onProgress?.('Fetching purchase items…');
-  const purchaseItems = await readUserCollection(uid, 'purchaseItems', (snapshot) => normalizePurchaseItem(snapshot));
+  onProgress?.("Fetching purchase items…");
+  const purchaseItems = await readUserCollection(
+    uid,
+    "purchaseItems",
+    (snapshot) => normalizePurchaseItem(snapshot),
+  );
 
-  onProgress?.('Fetching supplier payments…');
-  const supplierPayments = await readUserCollection(uid, 'supplierPayments', (snapshot) => normalizeSupplierPayment(snapshot, restoredAt));
+  onProgress?.("Fetching supplier payments…");
+  const supplierPayments = await readUserCollection(
+    uid,
+    "supplierPayments",
+    (snapshot) => normalizeSupplierPayment(snapshot, restoredAt),
+  );
 
   // History-only collections added in sprint v12–v14. Append-only and
   // never mutated after create, so a single fetch + bulkPut is enough.
-  onProgress?.('Fetching audit log…');
-  const auditEvents = await readUserCollection(uid, 'auditEvents', (snapshot) => normalizeAuditEvent(snapshot, restoredAt));
+  onProgress?.("Fetching audit log…");
+  const auditEvents = await readUserCollection(uid, "auditEvents", (snapshot) =>
+    normalizeAuditEvent(snapshot, restoredAt),
+  );
 
-  onProgress?.('Fetching cash drawer movements…');
-  const cashMovements = await readUserCollection(uid, 'cashMovements', (snapshot) => normalizeCashMovement(snapshot, restoredAt));
+  onProgress?.("Fetching cash drawer movements…");
+  const cashMovements = await readUserCollection(
+    uid,
+    "cashMovements",
+    (snapshot) => normalizeCashMovement(snapshot, restoredAt),
+  );
 
-  onProgress?.('Fetching expenses…');
-  const expenses = await readUserCollection(uid, 'expenses', (snapshot) => normalizeExpense(snapshot, restoredAt));
+  onProgress?.("Fetching expenses…");
+  const expenses = await readUserCollection(uid, "expenses", (snapshot) =>
+    normalizeExpense(snapshot, restoredAt),
+  );
 
   const productRepair = repairDuplicateProductBarcodes({
     products: cloudProducts,
@@ -745,12 +935,14 @@ async function doRestoreFromCloud(
 
   if (productRepair.duplicateProductIds.length) {
     onProgress?.(
-      `Repairing duplicate product barcodes (${productRepair.duplicateBarcodes.slice(0, 3).join(', ')})…`,
+      `Repairing duplicate product barcodes (${productRepair.duplicateBarcodes.slice(0, 3).join(", ")})…`,
     );
   }
 
-  onProgress?.('Fetching settings…');
-  let settings = await readUserCollection(uid, 'settings', (snapshot) => normalizeSettings(snapshot, restoredAt));
+  onProgress?.("Fetching settings…");
+  let settings = await readUserCollection(uid, "settings", (snapshot) =>
+    normalizeSettings(snapshot, restoredAt),
+  );
 
   bills = normalizeUniqueBillNumbers(bills);
   settings = ensureRestoredSettings(settings, bills, restoredAt);
@@ -776,11 +968,29 @@ async function doRestoreFromCloud(
     },
   };
 
-  onProgress?.('Writing to local database…');
+  onProgress?.("Writing to local database…");
   try {
     await db.transaction(
-      'rw',
-      [db.bills, db.billItems, db.products, db.stockMovements, db.customerPayments, db.customers, db.shifts, db.suppliers, db.purchases, db.purchaseItems, db.supplierPayments, db.auditEvents, db.cashMovements, db.expenses, db.settings, db.syncQueue, db.syncConflicts],
+      "rw",
+      [
+        db.bills,
+        db.billItems,
+        db.products,
+        db.stockMovements,
+        db.customerPayments,
+        db.customers,
+        db.shifts,
+        db.suppliers,
+        db.purchases,
+        db.purchaseItems,
+        db.supplierPayments,
+        db.auditEvents,
+        db.cashMovements,
+        db.expenses,
+        db.settings,
+        db.syncQueue,
+        db.syncConflicts,
+      ],
       async () => {
         // Clear first so stale local rows that no longer exist in the cloud are removed.
         // This is still safe because fetch/normalization already succeeded and Dexie
@@ -805,16 +1015,21 @@ async function doRestoreFromCloud(
           db.syncConflicts.clear(),
         ]);
         if (bills.length) await db.bills.bulkPut(bills);
-        if (productRepair.billItems.length) await db.billItems.bulkPut(productRepair.billItems);
-        if (productRepair.products.length) await db.products.bulkPut(productRepair.products);
-        if (productRepair.stockMovements.length) await db.stockMovements.bulkPut(productRepair.stockMovements);
-        if (customerPayments.length) await db.customerPayments.bulkPut(customerPayments);
+        if (productRepair.billItems.length)
+          await db.billItems.bulkPut(productRepair.billItems);
+        if (productRepair.products.length)
+          await db.products.bulkPut(productRepair.products);
+        if (productRepair.stockMovements.length)
+          await db.stockMovements.bulkPut(productRepair.stockMovements);
+        if (customerPayments.length)
+          await db.customerPayments.bulkPut(customerPayments);
         if (customers.length) await db.customers.bulkPut(customers);
         if (shifts.length) await db.shifts.bulkPut(shifts);
         if (suppliers.length) await db.suppliers.bulkPut(suppliers);
         if (purchases.length) await db.purchases.bulkPut(purchases);
         if (purchaseItems.length) await db.purchaseItems.bulkPut(purchaseItems);
-        if (supplierPayments.length) await db.supplierPayments.bulkPut(supplierPayments);
+        if (supplierPayments.length)
+          await db.supplierPayments.bulkPut(supplierPayments);
         if (auditEvents.length) await db.auditEvents.bulkPut(auditEvents);
         if (cashMovements.length) await db.cashMovements.bulkPut(cashMovements);
         if (expenses.length) await db.expenses.bulkPut(expenses);
@@ -828,10 +1043,12 @@ async function doRestoreFromCloud(
     );
   }
 
-  onProgress?.('Finalizing restore…');
+  onProgress?.("Finalizing restore…");
   try {
     localStorage.setItem(`shopkeeper_last_sync_${uid}`, JSON.stringify(meta));
-  } catch { /* non-fatal */ }
+  } catch {
+    /* non-fatal */
+  }
 
   // Best effort: clean the cloud backup so future devices do not see the same
   // duplicate barcode records. If this cleanup fails, the local restore is still valid.
@@ -839,8 +1056,8 @@ async function doRestoreFromCloud(
     try {
       await repairCloudDuplicateProducts({ uid, repair: productRepair, meta });
     } catch (error) {
-      if (process.env.NODE_ENV === 'development') {
-        console.warn('[restore] cloud duplicate repair failed', error);
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[restore] cloud duplicate repair failed", error);
       }
     }
   }

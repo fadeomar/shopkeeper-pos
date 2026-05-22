@@ -27,7 +27,7 @@ export const ar: TranslationDict = {
     returned: "مرتجع",
     walkin: "زبون عابر",
     back: "رجوع",
-    adjust: "تعديل",
+    adjust: "تعديل الكمية",
     deactivate: "تعطيل",
     activate: "تفعيل",
     saveAdjustment: "حفظ التعديل",
@@ -89,18 +89,21 @@ export const ar: TranslationDict = {
   },
   errorPage: {
     pageTitle: "تعذر تحميل هذه الصفحة",
-    pageDesc: "بياناتك المحلية لا تزال آمنة على هذا الجهاز. حاول مرة أخرى أولاً. إذا استمرت المشكلة، امسح ذاكرة التخزين المؤقت وأعد التحميل.",
+    pageDesc:
+      "بياناتك المحلية لا تزال آمنة على هذا الجهاز. حاول مرة أخرى أولاً. إذا استمرت المشكلة، امسح ذاكرة التخزين المؤقت وأعد التحميل.",
     tryAgain: "حاول مرة أخرى",
     clearAndReload: "مسح الذاكرة المؤقتة وإعادة التحميل",
     copyDetails: "نسخ تفاصيل الخطأ",
     copied: "تم النسخ",
     globalTitle: "تعذر تحميل Shopkeeper POS",
-    globalDesc: "بياناتك المحلية لا تزال آمنة. حاول مرة أخرى، أو امسح ذاكرة التخزين المؤقت وأعد التحميل.",
+    globalDesc:
+      "بياناتك المحلية لا تزال آمنة. حاول مرة أخرى، أو امسح ذاكرة التخزين المؤقت وأعد التحميل.",
   },
   expenses: {
     navTitle: "المصاريف",
     title: "المصاريف التشغيلية",
-    subtitle: "الإيجار والكهرباء والرواتب وغيرها من تكاليف التشغيل (ليست مشتريات مخزون).",
+    subtitle:
+      "الإيجار والكهرباء والرواتب وغيرها من تكاليف التشغيل (ليست مشتريات مخزون).",
     addButton: "تسجيل مصروف",
     category: "الفئة",
     amount: "المبلغ",
@@ -117,7 +120,8 @@ export const ar: TranslationDict = {
     cashTotal: "المدفوع نقداً",
     byCategory: "حسب الفئة",
     empty: "لا توجد مصاريف مسجلة بعد",
-    emptyDesc: "استخدم هذه الصفحة لتتبع التكاليف المتكررة والمصاريف الفردية. المصاريف النقدية تُخصم من النقد المتوقع للوردية النشطة.",
+    emptyDesc:
+      "استخدم هذه الصفحة لتتبع التكاليف المتكررة والمصاريف الفردية. المصاريف النقدية تُخصم من النقد المتوقع للوردية النشطة.",
     colTime: "الوقت",
     colCategory: "الفئة",
     colPayee: "المستفيد",
@@ -146,14 +150,15 @@ export const ar: TranslationDict = {
   cash: {
     navTitle: "حركة الكاش",
     title: "حركات الكاش في الدرج",
-    subtitle: "أحداث الكاش اليدوية التي ليست مبيعات أو مشتريات أو مدفوعات عملاء/موردين.",
+    subtitle:
+      "أحداث الكاش اليدوية التي ليست مبيعات أو مشتريات أو مدفوعات عملاء/موردين.",
     addButton: "تسجيل حركة",
     type: "النوع",
     amount: "المبلغ",
     amountHelper: "أدخل قيمة موجبة. اتجاه الحركة يُحدَّد بحسب النوع.",
     reason: "السبب / ملاحظة",
     referenceLabel: "المرجع",
-    referenceLabelHelper: "اختياري — مثل \"المالك: علي\" أو \"إيصال بنك 4421\".",
+    referenceLabelHelper: 'اختياري — مثل "المالك: علي" أو "إيصال بنك 4421".',
     direction: "الاتجاه",
     cashIn: "إدخال كاش",
     cashOut: "إخراج كاش",
@@ -165,7 +170,8 @@ export const ar: TranslationDict = {
     cashInTotal: "إدخالات الكاش",
     cashOutTotal: "إخراجات الكاش",
     empty: "لا توجد حركات كاش بعد",
-    emptyDesc: "استخدم هذه الصفحة لتسجيل دفعات الفكة والسحوبات والإيداعات البنكية والمصاريف النثرية أو تصحيحات الدرج.",
+    emptyDesc:
+      "استخدم هذه الصفحة لتسجيل دفعات الفكة والسحوبات والإيداعات البنكية والمصاريف النثرية أو تصحيحات الدرج.",
     colTime: "الوقت",
     colType: "النوع",
     colAmount: "المبلغ",
@@ -177,9 +183,11 @@ export const ar: TranslationDict = {
     typeBankDeposit: "إيداع بنكي",
     typePettyCash: "مصروف نثري",
     typeDrawerCorrection: "تصحيح الدرج",
-    drawerCorrectionHint: "أدخل رقماً موجباً إذا كان الكاش في الدرج أكثر من المتوقع، أو سالباً إذا كان أقل.",
+    drawerCorrectionHint:
+      "أدخل رقماً موجباً إذا كان الكاش في الدرج أكثر من المتوقع، أو سالباً إذا كان أقل.",
     activeShiftLabel: "الوردية النشطة",
-    noActiveShiftLabel: "لا توجد وردية نشطة — هذه الحركة لن تظهر في تسوية أي وردية.",
+    noActiveShiftLabel:
+      "لا توجد وردية نشطة — هذه الحركة لن تظهر في تسوية أي وردية.",
     confirmHeading: "تأكيد حركة الكاش",
   },
   audit: {
@@ -199,7 +207,8 @@ export const ar: TranslationDict = {
     colReason: "السبب",
     colActor: "بواسطة",
     empty: "لا توجد أحداث في السجل بعد",
-    emptyDesc: "ستظهر هنا عمليات الإلغاء والإرجاع والمدفوعات وتعديلات المخزون والإجراءات الأخرى.",
+    emptyDesc:
+      "ستظهر هنا عمليات الإلغاء والإرجاع والمدفوعات وتعديلات المخزون والإجراءات الأخرى.",
     catProduct: "منتج",
     catInventory: "مخزون",
     catBill: "فاتورة",
@@ -325,17 +334,20 @@ export const ar: TranslationDict = {
     nonZeroAdj: "أدخل تعديلاً غير صفري للمخزون.",
     adjustFailed: "فشل التعديل.",
     importExportTitle: "استيراد / تصدير المنتجات",
-    importExportDesc: "أضف منتجات كثيرة من CSV أو صدّر الكتالوج أو حمّل قالباً آمناً.",
+    importExportDesc:
+      "أضف منتجات كثيرة من CSV أو صدّر الكتالوج أو حمّل قالباً آمناً.",
     downloadTemplate: "تحميل القالب",
     exportProducts: "تصدير المنتجات",
     importProducts: "استيراد المنتجات",
-    importProductsDesc: "ارفع ملف CSV من القالب. سيعرض التطبيق الصفوف الصحيحة ويمنع الباركود المكرر قبل الحفظ.",
+    importProductsDesc:
+      "ارفع ملف CSV من القالب. سيعرض التطبيق الصفوف الصحيحة ويمنع الباركود المكرر قبل الحفظ.",
     templateDownloaded: "تم تحميل قالب المنتجات.",
     productsExported: "تم تصدير {{count}} منتج.",
     noProductsToExport: "لا توجد منتجات للتصدير بعد.",
     csvOnly: "يرجى اختيار ملف CSV.",
     noCsvSelected: "لم يتم اختيار CSV",
-    importProductsHelp: "الأعمدة المطلوبة: barcode و name و sellPrice. باقي الحقول يمكن أن تستخدم القيم الافتراضية.",
+    importProductsHelp:
+      "الأعمدة المطلوبة: barcode و name و sellPrice. باقي الحقول يمكن أن تستخدم القيم الافتراضية.",
     chooseCsv: "اختيار CSV",
     readingFile: "جارٍ قراءة الملف…",
     rowsValid: "صحيح",
@@ -355,11 +367,14 @@ export const ar: TranslationDict = {
 
   inventory: {
     title: "المخزون",
-    subtitle: "تحكم بالمخزون واستلام مشتريات الموردين وعدّ الكميات الفعلية ومراجعة سجل الحركات.",
+    subtitle:
+      "تحكم بالمخزون واستلام مشتريات الموردين وعدّ الكميات الفعلية ومراجعة سجل الحركات.",
     receiveStock: "استلام مخزون",
-    receiveStockDesc: "أضف مخزوناً من شراء المورد مع إمكانية تحديث سعر الشراء أو اسم المورد.",
+    receiveStockDesc:
+      "أضف مخزوناً من شراء المورد مع إمكانية تحديث سعر الشراء أو اسم المورد.",
     stockCount: "جرد المخزون",
-    stockCountDesc: "أدخل الكمية الفعلية على الرف. يحفظ التطبيق الفرق فقط كتعديل.",
+    stockCountDesc:
+      "أدخل الكمية الفعلية على الرف. يحفظ التطبيق الفرق فقط كتعديل.",
     lowStock: "مخزون منخفض",
     outOfStock: "نفد المخزون",
     expiringSoon: "ينتهي قريباً",
@@ -371,7 +386,8 @@ export const ar: TranslationDict = {
     count: "جرد",
     expires: "ينتهي",
     movementHistory: "سجل حركات المخزون",
-    movementHistoryDesc: "آخر المشتريات والمبيعات والمرتجعات والجرد والتعديلات.",
+    movementHistoryDesc:
+      "آخر المشتريات والمبيعات والمرتجعات والجرد والتعديلات.",
     date: "التاريخ",
     product: "المنتج",
     type: "النوع",
@@ -397,14 +413,16 @@ export const ar: TranslationDict = {
 
   customers: {
     title: "العملاء",
-    subtitle: "يظهر هنا كل عميل أدخلت اسمه على أي فاتورة. فواتير الآجل وسداد الديون تُتابع في نفس الدفتر.",
+    subtitle:
+      "يظهر هنا كل عميل أدخلت اسمه على أي فاتورة. فواتير الآجل وسداد الديون تُتابع في نفس الدفتر.",
     showAll: "عرض الكل",
     totalCreditSales: "مبيعات الآجل",
     totalPaid: "المدفوع",
     totalBalanceDue: "الرصيد المستحق",
     customersWithDebt: "عملاء عليهم دين",
     ledger: "دفتر العملاء",
-    ledgerDesc: "يُنشأ العميل تلقائياً عند إدخال اسم أو هاتف على أي فاتورة. أرصدة الآجل ومدفوعات الديون تظهر هنا.",
+    ledgerDesc:
+      "يُنشأ العميل تلقائياً عند إدخال اسم أو هاتف على أي فاتورة. أرصدة الآجل ومدفوعات الديون تظهر هنا.",
     searchPlaceholder: "ابحث باسم العميل أو الهاتف...",
     noCustomers: "لا يوجد عملاء بعد",
     noCustomersDesc: "أدخل اسم العميل أو هاتفه على إحدى الفواتير لبدء الدفتر.",
@@ -424,7 +442,8 @@ export const ar: TranslationDict = {
     savePaymentCredit: "حفظ (ينشئ رصيدًا)",
     paymentAmount: "مبلغ الدفعة",
     paymentMethod: "طريقة الدفع",
-    overpaymentWarning: "هذا أكثر بمقدار {{extra}} من الرصيد المستحق. سيُحفظ الفائض كرصيد للعميل.",
+    overpaymentWarning:
+      "هذا أكثر بمقدار {{extra}} من الرصيد المستحق. سيُحفظ الفائض كرصيد للعميل.",
     creditBalanceNote: "رصيد للعميل",
     note: "ملاحظة",
     notePlaceholder: "مثال: دفعة نقدية، تحويل بنكي، دفعة جزئية...",
@@ -440,7 +459,8 @@ export const ar: TranslationDict = {
 
   reports: {
     title: "التقارير",
-    subtitle: "افهم المبيعات والربح وطرق الدفع وأفضل المنتجات والمنتجات منخفضة المخزون من البيانات المحفوظة في التطبيق.",
+    subtitle:
+      "افهم المبيعات والربح وطرق الدفع وأفضل المنتجات والمنتجات منخفضة المخزون من البيانات المحفوظة في التطبيق.",
     openBills: "فتح الفواتير",
     openInventory: "فتح المخزون",
     period: "فترة التقرير",
@@ -460,19 +480,23 @@ export const ar: TranslationDict = {
     purchaseCost: "تكلفة المشتريات",
     purchaseCount: "المشتريات",
     cashPaidOut: "النقد المدفوع",
-    cashPaidOutHelper: "النقد من فواتير الشراء + دفعات الموردين خلال هذه الفترة.",
+    cashPaidOutHelper:
+      "النقد من فواتير الشراء + دفعات الموردين خلال هذه الفترة.",
     supplierPayments: "دفعات الموردين",
     entries: "قيود",
     netSupplierDebt: "صافي الدين المتراكم",
-    netSupplierDebtHelper: "الدين الناتج عن المشتريات الآجلة ناقص دفعات السداد.",
+    netSupplierDebtHelper:
+      "الدين الناتج عن المشتريات الآجلة ناقص دفعات السداد.",
     paymentBreakdown: "تفصيل طرق الدفع",
     adjustmentsNote: "الإجماليات الصافية تشمل الإلغاء والمرتجعات",
     salesTrend: "اتجاه المبيعات خلال 7 أيام",
     salesTrendDesc: "صافي المبيعات اليومية بعد الإلغاء والمرتجعات.",
     topSellingProducts: "أفضل المنتجات مبيعاً",
-    topSellingProductsDesc: "المنتجات مرتبة حسب صافي قيمة المبيعات في الفترة المحددة.",
+    topSellingProductsDesc:
+      "المنتجات مرتبة حسب صافي قيمة المبيعات في الفترة المحددة.",
     highestProfitProducts: "أعلى المنتجات ربحاً",
-    highestProfitProductsDesc: "المنتجات مرتبة حسب صافي الربح التقديري في الفترة المحددة.",
+    highestProfitProductsDesc:
+      "المنتجات مرتبة حسب صافي الربح التقديري في الفترة المحددة.",
     lowStockSoldProducts: "منتجات بيعت ومخزونها منخفض",
     lowStockSoldProductsDesc: "منتجات تم بيعها وهي الآن عند حد التنبيه أو أقل.",
     noProductSales: "لا توجد مبيعات منتجات في هذه الفترة بعد.",
@@ -591,23 +615,31 @@ export const ar: TranslationDict = {
     shortcutsHelp: "اختصارات لوحة المفاتيح",
     shortcutFinalize: "Ctrl/⌘ + Enter — إنهاء البيع",
     shortcutClearBarcode: "Esc — مسح حقل الباركود",
-    noShiftOpenWarning: "لا يوجد دوام مفتوح — لن يتم احتساب هذه الفاتورة في تسوية الكاش.",
+    noShiftOpenWarning:
+      "لا يوجد دوام مفتوح — لن يتم احتساب هذه الفاتورة في تسوية الكاش.",
     openShift: "فتح دوام",
     itemAdded: "تمت إضافة {{name}}.",
     itemUpdated: "{{name}} ×{{qty}}",
-    productNotFoundAddNow: "لم يتم العثور على منتج للباركود {{barcode}}. هل تريد إضافته الآن؟",
+    productNotFoundAddNow:
+      "لم يتم العثور على منتج للباركود {{barcode}}. هل تريد إضافته الآن؟",
     quickAddProduct: "إضافة منتج سريعة",
-    quickAddProductDesc: "الباركود {{barcode}} غير موجود. أضف المنتج وتابع هذه الفاتورة.",
+    quickAddProductDesc:
+      "الباركود {{barcode}} غير موجود. أضف المنتج وتابع هذه الفاتورة.",
     saveAndAddToBill: "حفظ وإضافة للفاتورة",
-    productCreatedNotAdded: "تم إنشاء {{name}} ولكن لم تتم إضافته لأن المخزون صفر.",
+    productCreatedNotAdded:
+      "تم إنشاء {{name}} ولكن لم تتم إضافته لأن المخزون صفر.",
     quickAddFailed: "تعذر إنشاء المنتج.",
     productCreatedAndAdded: "تم إنشاء {{name}} وإضافته إلى الفاتورة.",
     inactiveProduct: "هذا المنتج غير مفعل. فعّله من صفحة المنتجات قبل البيع.",
-    quickAddInvalidNumbers: "المخزون والحد الأدنى يجب أن يكونا أرقاماً صحيحة. الأسعار يجب أن تكون أرقاماً صالحة غير سالبة.",
+    quickAddInvalidNumbers:
+      "المخزون والحد الأدنى يجب أن يكونا أرقاماً صحيحة. الأسعار يجب أن تكون أرقاماً صالحة غير سالبة.",
     quickAddRequired: "أدخل الباركود والاسم والفئة والوحدة.",
-    draftPricesRefreshed: "تم تحديث أسعار {{count}} منتج/منتجات في سلة المشتريات المحفوظة.",
-    draftProductsRemoved: "تم حذف {{count}} منتج/منتجات من سلة المشتريات المحفوظة — المنتج غير نشط أو غير موجود.",
-    draftStockAdjusted: "تم تعديل الكمية لـ {{count}} منتج/منتجات — المخزون غير كافٍ.",
+    draftPricesRefreshed:
+      "تم تحديث أسعار {{count}} منتج/منتجات في سلة المشتريات المحفوظة.",
+    draftProductsRemoved:
+      "تم حذف {{count}} منتج/منتجات من سلة المشتريات المحفوظة — المنتج غير نشط أو غير موجود.",
+    draftStockAdjusted:
+      "تم تعديل الكمية لـ {{count}} منتج/منتجات — المخزون غير كافٍ.",
   },
   bills: {
     title: "سجل الفواتير",
@@ -709,7 +741,8 @@ export const ar: TranslationDict = {
     lowStockHighlight: "تمييز المنتجات منخفضة المخزون",
     save: "حفظ الإعدادات",
     saved: "تم حفظ الإعدادات.",
-    invalidCurrency: "يجب أن تكون العملة رمز ISO من ثلاثة أحرف (مثل USD أو EUR أو ILS).",
+    invalidCurrency:
+      "يجب أن تكون العملة رمز ISO من ثلاثة أحرف (مثل USD أو EUR أو ILS).",
     language: "اللغة",
     languageDesc: "اختر لغة العرض المفضلة",
     english: "English",
@@ -728,12 +761,15 @@ export const ar: TranslationDict = {
     movements: "الحركات",
     neverSynced: "لم تتم المزامنة على هذا الجهاز بعد.",
     deviceHealth: "حالة الجهاز",
-    deviceHealthDesc: "أدوات سريعة لحماية هذا الجهاز: أعداد البيانات، عناصر المزامنة، تصدير نسخة محلية، وتنظيف الكاش.",
+    deviceHealthDesc:
+      "أدوات سريعة لحماية هذا الجهاز: أعداد البيانات، عناصر المزامنة، تصدير نسخة محلية، وتنظيف الكاش.",
     refreshHealth: "تحديث الحالة",
     pendingSync: "بانتظار المزامنة",
     healthLooksGood: "بيانات الجهاز تبدو سليمة. البيانات المحلية آمنة.",
-    failedSyncWarning: "{{count}} عنصر مزامنة يحتاج إعادة محاولة. البيانات المحلية ما زالت آمنة على هذا الجهاز.",
-    blockedSyncWarning: "{{count}} عنصر مزامنة متوقف بعد محاولات فاشلة متكررة. اضغط «إعادة محاولة المزامنة الفاشلة» للمحاولة مجددًا.",
+    failedSyncWarning:
+      "{{count}} عنصر مزامنة يحتاج إعادة محاولة. البيانات المحلية ما زالت آمنة على هذا الجهاز.",
+    blockedSyncWarning:
+      "{{count}} عنصر مزامنة متوقف بعد محاولات فاشلة متكررة. اضغط «إعادة محاولة المزامنة الفاشلة» للمحاولة مجددًا.",
     waitingSyncWarning: "{{count}} عنصر ينتظر المزامنة عند توفر الإنترنت.",
     exportLocalBackup: "تصدير نسخة محلية",
     exportingBackup: "جارٍ التصدير…",
@@ -745,11 +781,16 @@ export const ar: TranslationDict = {
     clearCacheReload: "تنظيف الكاش وإعادة التحميل",
     cacheCleared: "تم تنظيف كاش العمل بدون إنترنت. جارٍ إعادة التحميل…",
     clearCacheConfirmTitle: "هل تريد تنظيف الكاش بدون إنترنت؟",
-    clearCacheConfirmDesc: "سيؤدي هذا إلى مسح ملفات التطبيق المخزنة مؤقتاً وإعادة تحميل الصفحة.",
-    clearCacheDataNote: "لن يتم حذف مبيعاتك ومنتجاتك وعملائك وبياناتك المحلية الأخرى.",
-    clearCacheOfflineWarning: "أنت غير متصل بالإنترنت. بعد مسح الكاش، قد لا يتمكن التطبيق من التحميل مرة أخرى حتى تعيد الاتصال بالإنترنت.",
-    clearCacheUnsyncedWarning: "لديك {{count}} تغيير غير متزامن على هذا الجهاز. هي آمنة في IndexedDB ولن يتم حذفها، لكن الرجاء البقاء مسجلاً للدخول حتى تتم مزامنتها.",
-    clearCacheConflictsWarning: "لديك {{count}} تعارض مزامنة بحاجة إلى مراجعة. قم بحلها قبل تنظيف الكاش.",
+    clearCacheConfirmDesc:
+      "سيؤدي هذا إلى مسح ملفات التطبيق المخزنة مؤقتاً وإعادة تحميل الصفحة.",
+    clearCacheDataNote:
+      "لن يتم حذف مبيعاتك ومنتجاتك وعملائك وبياناتك المحلية الأخرى.",
+    clearCacheOfflineWarning:
+      "أنت غير متصل بالإنترنت. بعد مسح الكاش، قد لا يتمكن التطبيق من التحميل مرة أخرى حتى تعيد الاتصال بالإنترنت.",
+    clearCacheUnsyncedWarning:
+      "لديك {{count}} تغيير غير متزامن على هذا الجهاز. هي آمنة في IndexedDB ولن يتم حذفها، لكن الرجاء البقاء مسجلاً للدخول حتى تتم مزامنتها.",
+    clearCacheConflictsWarning:
+      "لديك {{count}} تعارض مزامنة بحاجة إلى مراجعة. قم بحلها قبل تنظيف الكاش.",
     clearCacheConfirmButton: "نعم، نظّف الكاش وأعد التحميل",
   },
   scanner: {
@@ -772,7 +813,8 @@ export const ar: TranslationDict = {
     doneScan: "إنهاء المسح",
   },
   auth: {
-    previousAccountUnsynced: "الحساب السابق على هذا الجهاز كان لديه {{count}} تغيير غير متزامن — محفوظ محلياً وسيُزامن عند تسجيل ذلك الحساب الدخول هنا مرة أخرى.",
+    previousAccountUnsynced:
+      "الحساب السابق على هذا الجهاز كان لديه {{count}} تغيير غير متزامن — محفوظ محلياً وسيُزامن عند تسجيل ذلك الحساب الدخول هنا مرة أخرى.",
     signIn: "تسجيل الدخول",
     signInToContinue: "سجّل دخولك للمتابعة",
     requestAccess: "طلب الوصول",
@@ -805,9 +847,12 @@ export const ar: TranslationDict = {
     signOutTitle: "تسجيل الخروج؟",
     unsyncedTitle: "تغييرات غير متزامنة",
     offlineTitle: "أنت غير متصل",
-    offlineDesc: "التغييرات المحفوظة على هذا الجهاز ستبقى مرتبطة بحسابك وتُزامَن عند الاتصال.",
-    unsyncedDesc: "بعض التغييرات لم تُزامَن بعد. زامن قبل تسجيل الخروج لتوفيرها على الأجهزة الأخرى.",
-    signOutDesc: "بياناتك المحلية ستبقى محفوظة بأمان لهذا الحساب في هذا المتصفح.",
+    offlineDesc:
+      "التغييرات المحفوظة على هذا الجهاز ستبقى مرتبطة بحسابك وتُزامَن عند الاتصال.",
+    unsyncedDesc:
+      "بعض التغييرات لم تُزامَن بعد. زامن قبل تسجيل الخروج لتوفيرها على الأجهزة الأخرى.",
+    signOutDesc:
+      "بياناتك المحلية ستبقى محفوظة بأمان لهذا الحساب في هذا المتصفح.",
     signOutStatProducts: "منتج",
     signOutStatBills: "فاتورة",
     signOutStatMovements: "حركة مخزون",
@@ -819,19 +864,23 @@ export const ar: TranslationDict = {
     signOutStatPurchases: "مشترى",
     signOutStatShifts: "وردية",
     signOutStatSupplierPayments: "دفعة مورد",
-    signOutDataNote: "البيانات على هذا المتصفح محفوظة لكل حساب. الحسابات الأخرى على هذا المتصفح لن ترى البيانات المحلية لهذا الحساب.",
-    signOutConflictsWarning: "حل التعارضات قبل توقع مزامنة كل التغييرات بشكل صحيح إلى السحابة.",
+    signOutDataNote:
+      "البيانات على هذا المتصفح محفوظة لكل حساب. الحسابات الأخرى على هذا المتصفح لن ترى البيانات المحلية لهذا الحساب.",
+    signOutConflictsWarning:
+      "حل التعارضات قبل توقع مزامنة كل التغييرات بشكل صحيح إلى السحابة.",
     checkApproval: "التحقق من حالة الموافقة",
     checkStatus: "التحقق من حالة الحساب",
     checking: "جارٍ التحقق…",
     pendingTitle: "الحساب بانتظار الموافقة",
-    pendingDesc: "تم استلام طلب حسابك. يجب أن يوافق المسؤول عليه قبل أن تتمكن من الوصول إلى التطبيق.",
+    pendingDesc:
+      "تم استلام طلب حسابك. يجب أن يوافق المسؤول عليه قبل أن تتمكن من الوصول إلى التطبيق.",
     pendingContactAdmin: "تواصل مع المسؤول إذا تأخر هذا أكثر من اللازم.",
     pendingStillWaiting: "لا يزال الانتظار — لم يوافق المسؤول بعد.",
     inactiveTitle: "الحساب غير نشط",
     inactiveDesc: "تم إلغاء تفعيل حسابك. تواصل مع المسؤول لاستعادة الوصول.",
     useExistingTitle: "استخدام بياناتك الموجودة؟",
-    useExistingDesc: "وجدنا بيانات لهذا الحساب في السحابة بتاريخ {{date}}. زامنها مع هذا الجهاز، أو ابدأ بمساحة عمل محلية فارغة. البدء فارغاً لن يحذف بياناتك السحابية.",
+    useExistingDesc:
+      "وجدنا بيانات لهذا الحساب في السحابة بتاريخ {{date}}. زامنها مع هذا الجهاز، أو ابدأ بمساحة عمل محلية فارغة. البدء فارغاً لن يحذف بياناتك السحابية.",
     startEmpty: "ابدأ فارغاً على هذا الجهاز",
     copyError: "نسخ الخطأ",
     closeRestorePrompt: "إغلاق نافذة الاستعادة",
@@ -845,15 +894,17 @@ export const ar: TranslationDict = {
     pending: "محفوظ على هذا الجهاز",
     syncing: "جارٍ المزامنة مع السحابة…",
     synced: "تمت المزامنة مع السحابة",
-    conflict: 'تعارض',
+    conflict: "تعارض",
     failed: "فشلت المزامنة — البيانات المحلية آمنة",
     blocked: "متوقف — يحتاج إعادة محاولة يدوية",
     pendingBadge: "{{count}} بانتظار المزامنة",
     safeLocal: "البيانات المحلية آمنة على هذا الجهاز.",
     waitingCloud: "بانتظار المزامنة مع السحابة.",
     conflictReviewTitle: "بعض التغييرات تحتاج إلى مراجعتك",
-    conflictReviewDesc: "تم استخدام هذا الحساب على جهاز أو متصفح آخر، وتغيرت بعض العناصر في كلا المكانين. اختر كيفية حل كل تعارض.",
-    conflictNoSilentOverwrite: "لن نستبدل بيانات العمل بصمت. راجع كل اختلاف، ثم اختر النسخة التي ترغب بالاحتفاظ بها.",
+    conflictReviewDesc:
+      "تم استخدام هذا الحساب على جهاز أو متصفح آخر، وتغيرت بعض العناصر في كلا المكانين. اختر كيفية حل كل تعارض.",
+    conflictNoSilentOverwrite:
+      "لن نستبدل بيانات العمل بصمت. راجع كل اختلاف، ثم اختر النسخة التي ترغب بالاحتفاظ بها.",
     conflictEntitySuffix: "تعارض",
     needsReview: "بحاجة إلى مراجعة",
     keepCloud: "احتفظ بالسحابي",
@@ -867,9 +918,13 @@ export const ar: TranslationDict = {
     badgeSyncedLocally: "تمت المزامنة محلياً",
   },
   purchases: {
+    productMissingNote:
+      "لا تجد المنتج؟ أضفه أولاً من صفحة المنتجات، ثم ارجع هنا لاستلام الكمية.",
+    addProductInProducts: "إضافة منتج جديد",
     newPurchase: "فاتورة شراء جديدة",
     title: "تسجيل فاتورة شراء",
-    subtitle: "أضف الأصناف المستلمة من المورد. يزداد المخزون؛ يخرج النقد من الدرج عند الدفع فورًا، وإلا يصبح المتبقي دينًا على المحل.",
+    subtitle:
+      "أضف الأصناف المستلمة من المورد. يزداد المخزون؛ يخرج النقد من الدرج عند الدفع فورًا، وإلا يصبح المتبقي دينًا على المحل.",
     supplierName: "اسم المورد",
     supplierPhone: "هاتف المورد",
     unitCost: "تكلفة الوحدة",
@@ -898,7 +953,8 @@ export const ar: TranslationDict = {
     clearDraft: "مسح المسودة",
     reviewFinalize: "مراجعة وحفظ",
     finalizePurchase: "حفظ الشراء",
-    finalizeDesc: "أنت على وشك حفظ هذه الفاتورة. سيزداد المخزون وسيُسجل حركة لكل صنف.",
+    finalizeDesc:
+      "أنت على وشك حفظ هذه الفاتورة. سيزداد المخزون وسيُسجل حركة لكل صنف.",
     confirmSave: "تأكيد الحفظ",
     addOneProduct: "أضف منتجًا واحدًا على الأقل قبل الحفظ.",
     purchaseCreated: "تم حفظ فاتورة الشراء {{purchaseNumber}}.",
@@ -917,13 +973,15 @@ export const ar: TranslationDict = {
   },
   suppliers: {
     title: "الموردون والديون",
-    subtitle: "تتبع فواتير الشراء وأرصدة الموردين ومدفوعات الديون المحفوظة على هذا الجهاز.",
+    subtitle:
+      "تتبع فواتير الشراء وأرصدة الموردين ومدفوعات الديون المحفوظة على هذا الجهاز.",
     totalPurchases: "إجمالي المشتريات",
     totalPaid: "إجمالي المدفوع",
     totalBalanceOwed: "المستحق للموردين",
     suppliersWithDebt: "موردون لهم دين",
     ledger: "دفتر الموردين",
-    ledgerDesc: "يتم إنشاء الموردين تلقائيًا من فواتير الشراء. سجّل الدفعات هنا عند سداد دين.",
+    ledgerDesc:
+      "يتم إنشاء الموردين تلقائيًا من فواتير الشراء. سجّل الدفعات هنا عند سداد دين.",
     supplier: "المورد",
     phone: "الهاتف",
     creditPurchases: "مشتريات آجلة",
@@ -951,15 +1009,18 @@ export const ar: TranslationDict = {
     notePlaceholder: "مثال: دفعة نقدية، تحويل بنكي، دفعة جزئية...",
     savePayment: "حفظ الدفعة",
     savePaymentCredit: "حفظ (ينشئ رصيدًا)",
-    overpaymentWarning: "هذا أكثر بمقدار {{extra}} من الرصيد المستحق. سيُحفظ الفائض كرصيد للمحل عند المورد.",
+    overpaymentWarning:
+      "هذا أكثر بمقدار {{extra}} من الرصيد المستحق. سيُحفظ الفائض كرصيد للمحل عند المورد.",
     paymentSaved: "تم حفظ دفعة المورد.",
     paymentFailed: "تعذر حفظ الدفعة.",
   },
   shift: {
     title: "دوام الكاش",
-    subtitle: "تتبّع الكاش في الدرج بين فتح الدوام وإغلاقه. الفواتير خلال الدوام تُحتسب عند الإغلاق.",
+    subtitle:
+      "تتبّع الكاش في الدرج بين فتح الدوام وإغلاقه. الفواتير خلال الدوام تُحتسب عند الإغلاق.",
     noActiveShift: "لا يوجد دوام مفتوح",
-    noActiveShiftDesc: "افتح دوامًا لبدء متابعة الدرج. الفواتير بدون دوام تُحفظ لكن لن تُحتسب في أي تسوية.",
+    noActiveShiftDesc:
+      "افتح دوامًا لبدء متابعة الدرج. الفواتير بدون دوام تُحفظ لكن لن تُحتسب في أي تسوية.",
     openShift: "فتح دوام",
     openShiftDesc: "احسب الكاش الموجود في الدرج الآن وافتح دوامًا جديدًا.",
     openShiftCta: "فتح دوام جديد",
@@ -976,9 +1037,11 @@ export const ar: TranslationDict = {
     cardCollected: "البطاقة المحصّلة",
     creditAccrued: "دَين تراكم",
     expectedCash: "الكاش المتوقع الآن",
-    expectedCashHelper: "الافتتاحي + الكاش المحصّل من البيع − النقد المدفوع للموردين.",
+    expectedCashHelper:
+      "الافتتاحي + الكاش المحصّل من البيع − النقد المدفوع للموردين.",
     cashPaidOut: "النقد المدفوع",
-    cashPaidOutHelper: "النقد من فواتير الشراء + دفعات الموردين خلال هذا الدوام.",
+    cashPaidOutHelper:
+      "النقد من فواتير الشراء + دفعات الموردين خلال هذا الدوام.",
     purchasesInShift: "المشتريات",
     paymentsInShift: "دفعات الموردين",
     billsInShift: "الفواتير",
@@ -1006,14 +1069,16 @@ export const ar: TranslationDict = {
     differenceShort: "فرق",
     surplus: "فائض",
     deficit: "عجز",
-    },
-    admin: {
+  },
+  admin: {
     usersTitle: "لوحة تحكم دعم المسؤول",
-    usersSubtitle: "الموافقة على المستخدمين، والتحقق من صحة النسخ الاحتياطي، ودعم بيانات البائع.",
+    usersSubtitle:
+      "الموافقة على المستخدمين، والتحقق من صحة النسخ الاحتياطي، ودعم بيانات البائع.",
     refreshHealth: "تحديث الصحة",
     newUser: "إضافة مستخدم",
     userDetails: "تفاصيل دعم المستخدم",
-    userDetailsDesc: "بيانات السحابة في الوقت الفعلي، وصحة النسخ الاحتياطي، وإجراءات الحساب.",
+    userDetailsDesc:
+      "بيانات السحابة في الوقت الفعلي، وصحة النسخ الاحتياطي، وإجراءات الحساب.",
     backupHealth: "صحة النسخ الاحتياطي",
     lastCloudSync: "آخر مزامنة سحابية",
     cloudBills: "الفواتير السحابية",
@@ -1059,11 +1124,14 @@ export const ar: TranslationDict = {
     users: "المستخدمون",
     refresh: "تحديث",
     exportBackupJSON: "تصدير نسخة JSON",
-    resetLinkHeading: "رابط إعادة تعيين كلمة المرور (شاركه مع المستخدم عبر واتساب أو SMS):",
+    resetLinkHeading:
+      "رابط إعادة تعيين كلمة المرور (شاركه مع المستخدم عبر واتساب أو SMS):",
     resetLinkCopy: "نسخ",
-    resetLinkExpiry: "تنتهي صلاحية الرابط بعد أول استخدام أو خلال ساعة واحدة. أنشئ رابطاً جديداً إذا لزم الأمر.",
+    resetLinkExpiry:
+      "تنتهي صلاحية الرابط بعد أول استخدام أو خلال ساعة واحدة. أنشئ رابطاً جديداً إذا لزم الأمر.",
     paymentSnapshot: "ملخص المدفوعات",
-    noSellerData: "لم يتم مزامنة أي بيانات للبائع بعد. اطلب من المستخدم فتح التطبيق متصلاً بالإنترنت وإجراء المزامنة مرة واحدة.",
+    noSellerData:
+      "لم يتم مزامنة أي بيانات للبائع بعد. اطلب من المستخدم فتح التطبيق متصلاً بالإنترنت وإجراء المزامنة مرة واحدة.",
     recentBills: "آخر الفواتير",
     recentCustomerPayments: "آخر مدفوعات العملاء",
     recentStockMovements: "آخر حركات المخزون",
@@ -1080,11 +1148,14 @@ export const ar: TranslationDict = {
     PRODUCT_QTY_POSITIVE: "كمية {{name}} يجب أن تكون أكبر من صفر.",
     PRODUCT_INSUFFICIENT_STOCK: "المخزون غير كافٍ لـ {{name}}.",
     PRODUCT_LOSS_SALE_BLOCKED: "البيع بخسارة غير مسموح لـ {{name}}.",
-    PRODUCT_QTY_POSITIVE_WHOLE: "كمية {{name}} يجب أن تكون رقماً صحيحاً موجباً.",
-    PRODUCT_UNIT_COST_NEGATIVE: "تكلفة الوحدة لـ {{name}} لا يمكن أن تكون سالبة.",
+    PRODUCT_QTY_POSITIVE_WHOLE:
+      "كمية {{name}} يجب أن تكون رقماً صحيحاً موجباً.",
+    PRODUCT_UNIT_COST_NEGATIVE:
+      "تكلفة الوحدة لـ {{name}} لا يمكن أن تكون سالبة.",
     PRODUCT_NOT_FOUND: "المنتج غير موجود.",
     // Shared bill / purchase
-    DISCOUNT_TOO_HIGH: "الخصم لا يمكن أن يتجاوز المجموع الفرعي بالإضافة إلى الضريبة.",
+    DISCOUNT_TOO_HIGH:
+      "الخصم لا يمكن أن يتجاوز المجموع الفرعي بالإضافة إلى الضريبة.",
     PRODUCTS_MISSING: "بعض المنتجات لم يتم العثور عليها في المخزون.",
     LINE_PRODUCT_NOT_FOUND: "المنتج {{name}} غير موجود.",
     VOID_REASON_REQUIRED: "سبب الإلغاء مطلوب.",
@@ -1093,9 +1164,11 @@ export const ar: TranslationDict = {
     RETURN_EXCEEDS_QTY: "كمية الإرجاع تتجاوز الكمية المتاحة.",
     // Bill-specific
     BILL_NO_ITEMS: "أضف منتجاً واحداً على الأقل قبل إتمام الفاتورة.",
-    BILL_CREDIT_NEEDS_CUSTOMER: "اسم العميل أو رقم هاتفه مطلوب للفواتير الآجلة.",
+    BILL_CREDIT_NEEDS_CUSTOMER:
+      "اسم العميل أو رقم هاتفه مطلوب للفواتير الآجلة.",
     BILL_PAID_TOO_LOW: "المبلغ المدفوع أقل من إجمالي الفاتورة.",
-    BILL_MIXED_SPLIT_MISMATCH: "مجموع الدفع النقدي وبالبطاقة يجب أن يساوي إجمالي الفاتورة.",
+    BILL_MIXED_SPLIT_MISMATCH:
+      "مجموع الدفع النقدي وبالبطاقة يجب أن يساوي إجمالي الفاتورة.",
     BILL_PAYMENT_SPLIT_INVALID: "مجموع طرق الدفع لا يساوي إجمالي الفاتورة.",
     BILL_NOT_FOUND: "الفاتورة غير موجودة.",
     BILL_ALREADY_VOIDED: "الفاتورة ملغاة مسبقاً.",
@@ -1104,32 +1177,40 @@ export const ar: TranslationDict = {
     BILL_VOIDED_NO_RETURN: "الفواتير الملغاة لا يمكن إرجاعها.",
     // Purchase-specific
     PURCHASE_NO_ITEMS: "أضف منتجاً واحداً على الأقل قبل حفظ المشترى.",
-    PURCHASE_CREDIT_NEEDS_SUPPLIER: "اسم المورد أو رقم هاتفه مطلوب للمشتريات الآجلة.",
+    PURCHASE_CREDIT_NEEDS_SUPPLIER:
+      "اسم المورد أو رقم هاتفه مطلوب للمشتريات الآجلة.",
     PURCHASE_PAID_TOO_LOW: "المبلغ المدفوع أقل من إجمالي المشترى.",
-    PURCHASE_MIXED_SPLIT_MISMATCH: "مجموع الدفع النقدي وبالبطاقة يجب أن يساوي إجمالي المشترى.",
+    PURCHASE_MIXED_SPLIT_MISMATCH:
+      "مجموع الدفع النقدي وبالبطاقة يجب أن يساوي إجمالي المشترى.",
     PURCHASE_NOT_FOUND: "المشترى غير موجود.",
     PURCHASE_ALREADY_VOIDED: "المشترى ملغى مسبقاً.",
     PURCHASE_NOT_FINALIZED: "لا يمكن إلغاء إلا المشتريات المكتملة.",
     PURCHASE_ITEM_NOT_FOUND: "صنف المشترى غير موجود.",
     PURCHASE_VOIDED_NO_RETURN: "المشتريات الملغاة لا يمكن إرجاعها.",
-    PURCHASE_VOID_INSUFFICIENT_STOCK: "لا يمكن الإلغاء: يوجد {{stock}} وحدة فقط من \"{{name}}\" في المخزون ولكن يلزم عكس {{required}}. عدّل المخزون أولاً.",
-    PURCHASE_RETURN_INSUFFICIENT_STOCK: "المخزون غير كافٍ للإرجاع — بعض الوحدات بِيعت أو تم تعديلها مسبقاً.",
+    PURCHASE_VOID_INSUFFICIENT_STOCK:
+      'لا يمكن الإلغاء: يوجد {{stock}} وحدة فقط من "{{name}}" في المخزون ولكن يلزم عكس {{required}}. عدّل المخزون أولاً.',
+    PURCHASE_RETURN_INSUFFICIENT_STOCK:
+      "المخزون غير كافٍ للإرجاع — بعض الوحدات بِيعت أو تم تعديلها مسبقاً.",
     // Shift
     SHIFT_OPENING_CASH_NEGATIVE: "النقد الافتتاحي يجب أن يكون صفراً أو أكثر.",
-    SHIFT_ALREADY_OPEN: "يوجد وردية مفتوحة بالفعل على هذا الجهاز. أغلقها قبل فتح وردية جديدة.",
+    SHIFT_ALREADY_OPEN:
+      "يوجد وردية مفتوحة بالفعل على هذا الجهاز. أغلقها قبل فتح وردية جديدة.",
     SHIFT_COUNTED_CASH_NEGATIVE: "النقد المعدود يجب أن يكون صفراً أو أكثر.",
     SHIFT_NOT_FOUND: "الوردية غير موجودة.",
     SHIFT_ALREADY_CLOSED: "الوردية مغلقة مسبقاً.",
     // Stock / inventory
     STOCK_ADJ_ZERO_OR_WHOLE: "تعديل المخزون يجب أن يكون رقماً صحيحاً غير صفري.",
     STOCK_ADJ_NEGATIVE_RESULT: "تعديل المخزون سيجعل الكمية سالبة.",
-    STOCK_RECEIVED_QTY_INVALID: "الكمية المستلمة يجب أن تكون رقماً صحيحاً موجباً.",
-    STOCK_COUNTED_QTY_INVALID: "الكمية المحصاة يجب أن تكون رقماً صحيحاً غير سالب.",
+    STOCK_RECEIVED_QTY_INVALID:
+      "الكمية المستلمة يجب أن تكون رقماً صحيحاً موجباً.",
+    STOCK_COUNTED_QTY_INVALID:
+      "الكمية المحصاة يجب أن تكون رقماً صحيحاً غير سالب.",
     // Payments
     CUSTOMER_REQUIRED: "العميل مطلوب.",
     SUPPLIER_REQUIRED: "المورد مطلوب.",
     PAYMENT_AMOUNT_INVALID: "مبلغ الدفع يجب أن يكون أكبر من صفر.",
     // Import
-    IMPORT_DUPLICATES: "بعض المنتجات موجودة مسبقاً. راجع ملف CSV وأعد المحاولة.",
+    IMPORT_DUPLICATES:
+      "بعض المنتجات موجودة مسبقاً. راجع ملف CSV وأعد المحاولة.",
   },
 };

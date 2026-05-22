@@ -37,7 +37,7 @@ export function SupplierLedgerWorkspace() {
   const [paymentMethod, setPaymentMethod] = useState<
     "cash" | "card" | "bank" | "other"
   >("cash");
-  const currency = settings?.currency ?? "USD";
+  const currency = settings?.currency ?? "₪";
 
   const paymentAmountNumeric = Number(amount);
   const safePaymentAmount = Number.isFinite(paymentAmountNumeric)
@@ -56,7 +56,7 @@ export function SupplierLedgerWorkspace() {
   async function savePayment() {
     if (!selected) return;
     if (!safePaymentAmount || safePaymentAmount <= 0) {
-      push(t('common.invalidAmount'), 'error');
+      push(t("common.invalidAmount"), "error");
       return;
     }
     try {

@@ -846,6 +846,8 @@ export interface TranslationDict {
     badgeSyncedLocally: string;
   };
   purchases: {
+    productMissingNote: string;
+    addProductInProducts: string;
     newPurchase: string;
     title: string;
     subtitle: string;

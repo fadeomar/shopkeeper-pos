@@ -5,7 +5,11 @@ import { useLiveQuery } from "dexie-react-hooks";
 import type { ColumnDef } from "@tanstack/react-table";
 import { settingsRepo } from "@/lib/db/repositories";
 import { listExpenses, recordExpense } from "@/lib/services/expense-service";
-import type { Expense, ExpenseCategory, ExpensePaymentMethod } from "@/types/domain";
+import type {
+  Expense,
+  ExpenseCategory,
+  ExpensePaymentMethod,
+} from "@/types/domain";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -23,11 +27,23 @@ import { formatDateTime, localDateKey } from "@/lib/utils/date";
 import { getServiceErrorMessage } from "@/lib/errors/get-error-message";
 
 const CATEGORIES: ExpenseCategory[] = [
-  'rent','utilities','internet','salaries','packaging','delivery',
-  'maintenance','marketing','transport','cleaning','office','tax','fees','other',
+  "rent",
+  "utilities",
+  "internet",
+  "salaries",
+  "packaging",
+  "delivery",
+  "maintenance",
+  "marketing",
+  "transport",
+  "cleaning",
+  "office",
+  "tax",
+  "fees",
+  "other",
 ];
 
-const METHODS: ExpensePaymentMethod[] = ['cash', 'card', 'bank', 'credit'];
+const METHODS: ExpensePaymentMethod[] = ["cash", "card", "bank", "credit"];
 
 function categoryKey(c: ExpenseCategory): string {
   return `expenses.cat${c.charAt(0).toUpperCase()}${c.slice(1)}`;
@@ -50,31 +66,31 @@ export function ExpensesWorkspace() {
   const { push } = useToast();
   const settings = useLiveQuery(() => settingsRepo.get(), []);
 
-  const expenses = useLiveQuery(
-    () => listExpenses({}),
-    [],
-    [] as Expense[],
-  );
-  const currency = settings?.currency ?? 'USD';
+  const expenses = useLiveQuery(() => listExpenses({}), [], [] as Expense[]);
+  const currency = settings?.currency ?? "₪";
 
   const [open, setOpen] = useState(false);
-  const [category, setCategory] = useState<ExpenseCategory>('rent');
-  const [paymentMethod, setPaymentMethod] = useState<ExpensePaymentMethod>('cash');
-  const [amount, setAmount] = useState('');
-  const [payee, setPayee] = useState('');
-  const [note, setNote] = useState('');
+  const [category, setCategory] = useState<ExpenseCategory>("rent");
+  const [paymentMethod, setPaymentMethod] =
+    useState<ExpensePaymentMethod>("cash");
+  const [amount, setAmount] = useState("");
+  const [payee, setPayee] = useState("");
+  const [note, setNote] = useState("");
   const [expenseDate, setExpenseDate] = useState(() => localDateKey());
   const [saving, setSaving] = useState(false);
 
   const { monthTotal, cashTotal, byCategory } = useMemo(() => {
     const { from, to } = currentMonthRange();
-    const month = expenses.filter((e) => e.createdAt >= from && e.createdAt < to);
+    const month = expenses.filter(
+      (e) => e.createdAt >= from && e.createdAt < to,
+    );
     const total = month.reduce((sum, e) => sum + e.amount, 0);
     const cash = month
-      .filter((e) => e.paymentMethod === 'cash')
+      .filter((e) => e.paymentMethod === "cash")
       .reduce((sum, e) => sum + e.amount, 0);
     const by = new Map<ExpenseCategory, number>();
-    for (const e of month) by.set(e.category, (by.get(e.category) ?? 0) + e.amount);
+    for (const e of month)
+      by.set(e.category, (by.get(e.category) ?? 0) + e.amount);
     return {
       monthTotal: roundMoney(total),
       cashTotal: roundMoney(cash),
@@ -83,18 +99,18 @@ export function ExpensesWorkspace() {
   }, [expenses]);
 
   function resetForm() {
-    setCategory('rent');
-    setPaymentMethod('cash');
-    setAmount('');
-    setPayee('');
-    setNote('');
+    setCategory("rent");
+    setPaymentMethod("cash");
+    setAmount("");
+    setPayee("");
+    setNote("");
     setExpenseDate(localDateKey());
   }
 
   async function handleSave() {
     const numeric = Number(amount);
     if (!Number.isFinite(numeric) || numeric <= 0) {
-      push(t('common.invalidAmount'), 'error');
+      push(t("common.invalidAmount"), "error");
       return;
     }
     setSaving(true);
@@ -108,11 +124,11 @@ export function ExpensesWorkspace() {
         expenseDate,
         cashierName: settings?.cashierName,
       });
-      push(t('expenses.saved'));
+      push(t("expenses.saved"));
       setOpen(false);
       resetForm();
     } catch (error) {
-      push(getServiceErrorMessage(error, t, t('expenses.saveFailed')), 'error');
+      push(getServiceErrorMessage(error, t, t("expenses.saveFailed")), "error");
     } finally {
       setSaving(false);
     }
@@ -121,8 +137,8 @@ export function ExpensesWorkspace() {
   const columns = useMemo<ColumnDef<Expense, unknown>[]>(
     () => [
       {
-        accessorKey: 'createdAt',
-        header: t('expenses.colTime'),
+        accessorKey: "createdAt",
+        header: t("expenses.colTime"),
         cell: ({ row }) => (
           <span className="whitespace-nowrap text-xs tabular-nums text-slate-600">
             {formatDateTime(row.original.createdAt)}
@@ -130,8 +146,8 @@ export function ExpensesWorkspace() {
         ),
       },
       {
-        accessorKey: 'category',
-        header: t('expenses.colCategory'),
+        accessorKey: "category",
+        header: t("expenses.colCategory"),
         cell: ({ row }) => (
           <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
             {t(categoryKey(row.original.category))}
@@ -139,20 +155,22 @@ export function ExpensesWorkspace() {
         ),
       },
       {
-        accessorKey: 'payee',
-        header: t('expenses.colPayee'),
+        accessorKey: "payee",
+        header: t("expenses.colPayee"),
         cell: ({ row }) => (
           <span className="text-sm text-slate-700">
-            {row.original.payee ?? '—'}
+            {row.original.payee ?? "—"}
             {row.original.note && (
-              <span className="block text-[10px] text-slate-400">{row.original.note}</span>
+              <span className="block text-[10px] text-slate-400">
+                {row.original.note}
+              </span>
             )}
           </span>
         ),
       },
       {
-        accessorKey: 'amount',
-        header: t('expenses.colAmount'),
+        accessorKey: "amount",
+        header: t("expenses.colAmount"),
         cell: ({ row }) => (
           <span className="font-semibold tabular-nums text-slate-800" dir="ltr">
             {formatCurrency(row.original.amount, currency)}
@@ -160,8 +178,8 @@ export function ExpensesWorkspace() {
         ),
       },
       {
-        accessorKey: 'paymentMethod',
-        header: t('expenses.colMethod'),
+        accessorKey: "paymentMethod",
+        header: t("expenses.colMethod"),
         cell: ({ row }) => (
           <span className="text-xs text-slate-600">
             {t(methodKey(row.original.paymentMethod))}
@@ -169,11 +187,11 @@ export function ExpensesWorkspace() {
         ),
       },
       {
-        accessorKey: 'shiftId',
-        header: t('expenses.colShift'),
+        accessorKey: "shiftId",
+        header: t("expenses.colShift"),
         cell: ({ row }) => (
           <span className="font-mono text-[10px] text-slate-400">
-            {row.original.shiftId ?? '—'}
+            {row.original.shiftId ?? "—"}
           </span>
         ),
       },
@@ -184,28 +202,43 @@ export function ExpensesWorkspace() {
   return (
     <PageShell>
       <PageHeader
-        title={t('expenses.title')}
-        description={t('expenses.subtitle')}
+        title={t("expenses.title")}
+        description={t("expenses.subtitle")}
         actions={
           <Button type="button" onClick={() => setOpen(true)}>
-            {t('expenses.addButton')}
+            {t("expenses.addButton")}
           </Button>
         }
       />
 
       <div className="grid gap-3 sm:grid-cols-3">
-        <StatCard label={t('expenses.monthTotal')} value={formatCurrency(monthTotal, currency)} />
-        <StatCard label={t('expenses.cashTotal')} value={formatCurrency(cashTotal, currency)} tone="warning" />
+        <StatCard
+          label={t("expenses.monthTotal")}
+          value={formatCurrency(monthTotal, currency)}
+        />
+        <StatCard
+          label={t("expenses.cashTotal")}
+          value={formatCurrency(cashTotal, currency)}
+          tone="warning"
+        />
         <Card className="text-sm">
-          <p className="text-xs font-medium text-slate-500 mb-2">{t('expenses.byCategory')}</p>
+          <p className="text-xs font-medium text-slate-500 mb-2">
+            {t("expenses.byCategory")}
+          </p>
           {byCategory.length === 0 ? (
             <p className="text-xs text-slate-400">—</p>
           ) : (
             <ul className="space-y-1">
               {byCategory.slice(0, 5).map(([cat, total]) => (
-                <li key={cat} className="flex items-center justify-between text-xs">
+                <li
+                  key={cat}
+                  className="flex items-center justify-between text-xs"
+                >
                   <span className="text-slate-700">{t(categoryKey(cat))}</span>
-                  <span className="font-medium tabular-nums text-slate-800" dir="ltr">
+                  <span
+                    className="font-medium tabular-nums text-slate-800"
+                    dir="ltr"
+                  >
                     {formatCurrency(total, currency)}
                   </span>
                 </li>
@@ -216,7 +249,10 @@ export function ExpensesWorkspace() {
       </div>
 
       {expenses.length === 0 ? (
-        <EmptyState title={t('expenses.empty')} description={t('expenses.emptyDesc')} />
+        <EmptyState
+          title={t("expenses.empty")}
+          description={t("expenses.emptyDesc")}
+        />
       ) : (
         <DataTable
           columns={columns}
@@ -229,30 +265,44 @@ export function ExpensesWorkspace() {
       <Modal
         open={open}
         onClose={() => (saving ? undefined : setOpen(false))}
-        title={t('expenses.addButton')}
+        title={t("expenses.addButton")}
         footer={
           <>
-            <Button type="button" variant="ghost" onClick={() => setOpen(false)} disabled={saving}>
-              {t('common.cancel')}
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setOpen(false)}
+              disabled={saving}
+            >
+              {t("common.cancel")}
             </Button>
             <Button type="button" onClick={handleSave} disabled={saving}>
-              {saving ? t('expenses.saving') : t('expenses.save')}
+              {saving ? t("expenses.saving") : t("expenses.save")}
             </Button>
           </>
         }
       >
         <div className="space-y-3">
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-slate-700">{t('expenses.category')}</span>
-            <Select value={category} onChange={(e) => setCategory(e.target.value as ExpenseCategory)}>
+            <span className="font-medium text-slate-700">
+              {t("expenses.category")}
+            </span>
+            <Select
+              value={category}
+              onChange={(e) => setCategory(e.target.value as ExpenseCategory)}
+            >
               {CATEGORIES.map((c) => (
-                <option key={c} value={c}>{t(categoryKey(c))}</option>
+                <option key={c} value={c}>
+                  {t(categoryKey(c))}
+                </option>
               ))}
             </Select>
           </label>
 
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-slate-700">{t('expenses.amount')}</span>
+            <span className="font-medium text-slate-700">
+              {t("expenses.amount")}
+            </span>
             <Input
               type="number"
               step="0.01"
@@ -263,27 +313,44 @@ export function ExpensesWorkspace() {
           </label>
 
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-slate-700">{t('expenses.paymentMethod')}</span>
-            <Select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value as ExpensePaymentMethod)}>
+            <span className="font-medium text-slate-700">
+              {t("expenses.paymentMethod")}
+            </span>
+            <Select
+              value={paymentMethod}
+              onChange={(e) =>
+                setPaymentMethod(e.target.value as ExpensePaymentMethod)
+              }
+            >
               {METHODS.map((m) => (
-                <option key={m} value={m}>{t(methodKey(m))}</option>
+                <option key={m} value={m}>
+                  {t(methodKey(m))}
+                </option>
               ))}
             </Select>
           </label>
 
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-slate-700">{t('expenses.payee')}</span>
+            <span className="font-medium text-slate-700">
+              {t("expenses.payee")}
+            </span>
             <Input value={payee} onChange={(e) => setPayee(e.target.value)} />
-            <span className="text-xs text-slate-500">{t('expenses.payeeHelper')}</span>
+            <span className="text-xs text-slate-500">
+              {t("expenses.payeeHelper")}
+            </span>
           </label>
 
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-slate-700">{t('expenses.note')}</span>
+            <span className="font-medium text-slate-700">
+              {t("expenses.note")}
+            </span>
             <Input value={note} onChange={(e) => setNote(e.target.value)} />
           </label>
 
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-slate-700">{t('expenses.expenseDate')}</span>
+            <span className="font-medium text-slate-700">
+              {t("expenses.expenseDate")}
+            </span>
             <Input
               type="date"
               value={expenseDate}
