@@ -26,6 +26,7 @@ export function buildDefaultSettings(): Settings {
     currency: "USD",
     allowLossSale: false,
     nextBillSequence: 1,
+    nextPurchaseSequence: 1,
     lowStockHighlight: true,
     createdAt: now,
     updatedAt: now,

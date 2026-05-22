@@ -10,6 +10,7 @@ import {
   updateProductDetails,
 } from "@/lib/services/inventory-service";
 import { createId } from "@/lib/utils/id";
+import { localDateKey } from "@/lib/utils/date";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -35,7 +36,7 @@ const emptyDefaults: ProductSchema = {
   sellPrice: 0,
   minimumStockAlert: 0,
   supplierName: "",
-  dateAdded: new Date().toISOString().slice(0, 10),
+  dateAdded: localDateKey(),
   expiryDate: "",
   shelfLocation: "",
   notes: "",

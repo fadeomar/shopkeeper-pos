@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { getServiceErrorMessage } from '@/lib/errors/get-error-message';
 import { useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/lib/db/schema';
@@ -55,16 +56,6 @@ export function InventoryWorkspace() {
   const [quantity, setQuantity] = useState('');
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  // buyPrice + supplierName were used by the legacy "Receive stock" modal.
-  // Stock receiving is now done through /purchases/new where supplier and
-  // multi-line cost tracking are first-class. These two pieces of local
-  // state are kept as stubs only to avoid widening the diff on every other
-  // bit of state in this file.
-  const buyPrice = '';
-  const supplierName = '';
-  void buyPrice;
-  void supplierName;
-
   const activeProducts = useMemo(
     () => (products ?? []).filter((product) => product.status === 'active'),
     [products],
@@ -131,7 +122,7 @@ export function InventoryWorkspace() {
       }
       setMode(null);
     } catch (error) {
-      push(error instanceof Error ? error.message : t('inventory.actionFailed'));
+      push(getServiceErrorMessage(error, t, t('inventory.actionFailed')));
     } finally {
       setSubmitting(false);
     }

@@ -237,6 +237,18 @@ export class ShopkeeperDB extends Dexie {
     this.version(10).stores({
       customerPayments: 'id, customerKey, createdAt, syncStatus, shiftId',
     });
+
+    // v11: split bill and purchase sequences so INV-XXXXXX and PO-XXXXXX
+    // counters advance independently. Existing settings rows are backfilled
+    // with nextPurchaseSequence = nextBillSequence so any PO numbers already
+    // issued from the shared counter are not repeated.
+    this.version(11).stores({}).upgrade(async (tx) => {
+      await tx.table('settings').toCollection().modify((s: Record<string, unknown>) => {
+        if (typeof s.nextPurchaseSequence !== 'number') {
+          s.nextPurchaseSequence = typeof s.nextBillSequence === 'number' ? s.nextBillSequence : 1;
+        }
+      });
+    });
   }
 }
 

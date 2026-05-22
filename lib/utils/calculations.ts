@@ -1,4 +1,4 @@
-import { addMoney, multiplyMoney, roundMoney, subtractMoney } from './money';
+import { addMoney, allocateMoney, multiplyMoney, roundMoney, subtractMoney } from './money';
 
 export function calculateLineSubtotal(quantity: number, unitSellPrice: number) {
   return multiplyMoney(unitSellPrice, quantity);
@@ -43,4 +43,24 @@ export function calculateBillTotals(
 
 export function calculateChange(paidAmount: number, totalAmount: number) {
   return subtractMoney(paidAmount, totalAmount);
+}
+
+/**
+ * Allocate a bill's discount and tax proportionally to one line's amount/profit.
+ * lineAmount must already reflect the net quantity (sold minus returned).
+ * This is the single source of truth for per-item discount+tax allocation —
+ * used by product reports, return calculations, and ledger summaries.
+ */
+export function calculateBillItemNetContribution(
+  bill: { subtotal: number; discountAmount: number; taxAmount: number },
+  lineAmount: number,
+  lineProfit: number,
+): { revenue: number; profit: number } {
+  const subtotalRatio = bill.subtotal > 0 ? lineAmount / bill.subtotal : 0;
+  const discountShare = allocateMoney(bill.discountAmount, subtotalRatio);
+  const taxShare = allocateMoney(bill.taxAmount, subtotalRatio);
+  return {
+    revenue: addMoney(subtractMoney(lineAmount, discountShare), taxShare),
+    profit: subtractMoney(lineProfit, discountShare),
+  };
 }

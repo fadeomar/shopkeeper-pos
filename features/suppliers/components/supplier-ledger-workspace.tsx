@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { getServiceErrorMessage } from "@/lib/errors/get-error-message";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
   getSupplierLedger,
@@ -19,7 +20,7 @@ import { Input } from "@/components/ui/input";
 import { DataTable } from "@/components/ui/data-table";
 // import { EmptyState } from '@/components/ui/empty-state';
 import { Modal } from "@/components/ui/modal";
-import { formatCurrency } from "@/lib/utils/money";
+import { formatCurrency, MONEY_EPSILON } from "@/lib/utils/money";
 import { settingsRepo } from "@/lib/db/repositories";
 import type { ColumnDef } from "@tanstack/react-table";
 
@@ -50,16 +51,20 @@ export function SupplierLedgerWorkspace() {
     safePaymentAmount > Math.max(0, balanceOwedAtModal)
       ? safePaymentAmount - Math.max(0, balanceOwedAtModal)
       : 0;
-  const isOverpayment = overpaymentExtra > 0.005;
+  const isOverpayment = overpaymentExtra > MONEY_EPSILON;
 
   async function savePayment() {
     if (!selected) return;
+    if (!safePaymentAmount || safePaymentAmount <= 0) {
+      push(t('common.invalidAmount'), 'error');
+      return;
+    }
     try {
       await recordSupplierPayment({
         supplierKey: selected.key,
         supplierName: selected.name,
         supplierPhone: selected.phone,
-        amount: Number(amount),
+        amount: safePaymentAmount,
         note,
         paymentMethod,
       });
@@ -72,7 +77,7 @@ export function SupplierLedgerWorkspace() {
       push(t("suppliers.paymentSaved"));
     } catch (error) {
       push(
-        error instanceof Error ? error.message : t("suppliers.paymentFailed"),
+        getServiceErrorMessage(error, t, t("suppliers.paymentFailed")),
         "error",
       );
     }
@@ -153,10 +158,10 @@ export function SupplierLedgerWorkspace() {
       accessorKey: "balanceOwed",
       cell: ({ row }) => (
         <span
-          className={`tabular-nums font-semibold ${row.original.balanceOwed > 0.005 ? "text-red-600" : row.original.balanceOwed < -0.005 ? "text-blue-600" : "text-green-600"}`}
+          className={`tabular-nums font-semibold ${row.original.balanceOwed > MONEY_EPSILON ? "text-red-600" : row.original.balanceOwed < -MONEY_EPSILON ? "text-blue-600" : "text-green-600"}`}
         >
           {formatCurrency(row.original.balanceOwed, currency)}
-          {row.original.balanceOwed > 0.005 && (
+          {row.original.balanceOwed > MONEY_EPSILON && (
             <span className="ms-1 text-[10px] font-medium uppercase tracking-wide text-red-500">
               {t("suppliers.creditBalanceNote")}
             </span>
@@ -312,7 +317,7 @@ export function SupplierLedgerWorkspace() {
                       </div>
                       <div className="text-end text-sm tabular-nums">
                         <p>{formatCurrency(purchase.totalAmount, currency)}</p>
-                        {purchase.creditAmount > 0.005 && (
+                        {purchase.creditAmount > MONEY_EPSILON && (
                           <p className="text-red-600 font-medium">
                             {formatCurrency(purchase.creditAmount, currency)}
                           </p>

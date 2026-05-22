@@ -330,6 +330,7 @@ function buildRestoredDefaultSettings(restoredAt: string, nextBillSequence: numb
     currency: 'USD',
     allowLossSale: false,
     nextBillSequence,
+    nextPurchaseSequence: nextBillSequence,
     lowStockHighlight: true,
     createdAt: restoredAt,
     updatedAt: restoredAt,

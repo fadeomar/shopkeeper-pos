@@ -1,5 +1,8 @@
 const CENTS_PER_UNIT = 100;
 
+/** Half-cent tolerance used across all payment split validations. */
+export const MONEY_EPSILON = 0.005;
+
 export function toCents(value: number): number {
   if (!Number.isFinite(value)) return 0;
   return Math.round((value + Number.EPSILON) * CENTS_PER_UNIT);

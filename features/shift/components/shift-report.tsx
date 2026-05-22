@@ -3,7 +3,7 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db/schema";
 import { summarizeShiftBills } from "@/lib/services/shift-service";
-import { formatCurrency } from "@/lib/utils/money";
+import { formatCurrency, MONEY_EPSILON } from "@/lib/utils/money";
 import { formatDateTime } from "@/lib/utils/date";
 import { useLocale } from "@/components/providers/locale-context";
 import { Button } from "@/components/ui/button";
@@ -149,9 +149,9 @@ export function ShiftReport({
                 value={formatCurrency(difference, currency)}
                 emphasis
                 tone={
-                  difference > 0.005
+                  difference > MONEY_EPSILON
                     ? "positive"
-                    : difference < -0.005
+                    : difference < -MONEY_EPSILON
                       ? "warning"
                       : "neutral"
                 }

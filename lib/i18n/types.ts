@@ -34,6 +34,9 @@ export interface TranslationDict {
     saveAdjustment: string;
     cancel_: string;
     self: string;
+    invalidAmount: string;
+    clear: string;
+    owner: string;
   };
   nav: {
     dashboard: string;
@@ -393,6 +396,9 @@ export interface TranslationDict {
     inactiveProduct: string;
     quickAddInvalidNumbers: string;
     quickAddRequired: string;
+    draftPricesRefreshed: string;
+    draftProductsRemoved: string;
+    draftStockAdjusted: string;
   };
   bills: {
     title: string;
@@ -805,5 +811,65 @@ export interface TranslationDict {
     joined: string;
     healthyBackup: string;
     needsAttention: string;
+  };
+  errors: {
+    UNKNOWN: string;
+    // Product line validation
+    PRODUCT_INACTIVE: string;
+    PRODUCT_QTY_WHOLE: string;
+    PRODUCT_QTY_POSITIVE: string;
+    PRODUCT_INSUFFICIENT_STOCK: string;
+    PRODUCT_LOSS_SALE_BLOCKED: string;
+    PRODUCT_QTY_POSITIVE_WHOLE: string;
+    PRODUCT_UNIT_COST_NEGATIVE: string;
+    PRODUCT_NOT_FOUND: string;
+    // Shared bill / purchase
+    DISCOUNT_TOO_HIGH: string;
+    PRODUCTS_MISSING: string;
+    LINE_PRODUCT_NOT_FOUND: string;
+    VOID_REASON_REQUIRED: string;
+    RETURN_REASON_REQUIRED: string;
+    RETURN_QTY_INVALID: string;
+    RETURN_EXCEEDS_QTY: string;
+    // Bill-specific
+    BILL_NO_ITEMS: string;
+    BILL_CREDIT_NEEDS_CUSTOMER: string;
+    BILL_PAID_TOO_LOW: string;
+    BILL_MIXED_SPLIT_MISMATCH: string;
+    BILL_PAYMENT_SPLIT_INVALID: string;
+    BILL_NOT_FOUND: string;
+    BILL_ALREADY_VOIDED: string;
+    BILL_NOT_FINALIZED: string;
+    BILL_ITEM_NOT_FOUND: string;
+    BILL_VOIDED_NO_RETURN: string;
+    // Purchase-specific
+    PURCHASE_NO_ITEMS: string;
+    PURCHASE_CREDIT_NEEDS_SUPPLIER: string;
+    PURCHASE_PAID_TOO_LOW: string;
+    PURCHASE_MIXED_SPLIT_MISMATCH: string;
+    PURCHASE_NOT_FOUND: string;
+    PURCHASE_ALREADY_VOIDED: string;
+    PURCHASE_NOT_FINALIZED: string;
+    PURCHASE_ITEM_NOT_FOUND: string;
+    PURCHASE_VOIDED_NO_RETURN: string;
+    PURCHASE_VOID_INSUFFICIENT_STOCK: string;
+    PURCHASE_RETURN_INSUFFICIENT_STOCK: string;
+    // Shift
+    SHIFT_OPENING_CASH_NEGATIVE: string;
+    SHIFT_ALREADY_OPEN: string;
+    SHIFT_COUNTED_CASH_NEGATIVE: string;
+    SHIFT_NOT_FOUND: string;
+    SHIFT_ALREADY_CLOSED: string;
+    // Stock / inventory
+    STOCK_ADJ_ZERO_OR_WHOLE: string;
+    STOCK_ADJ_NEGATIVE_RESULT: string;
+    STOCK_RECEIVED_QTY_INVALID: string;
+    STOCK_COUNTED_QTY_INVALID: string;
+    // Payments
+    CUSTOMER_REQUIRED: string;
+    SUPPLIER_REQUIRED: string;
+    PAYMENT_AMOUNT_INVALID: string;
+    // Import
+    IMPORT_DUPLICATES: string;
   };
 }

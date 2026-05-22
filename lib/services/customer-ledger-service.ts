@@ -1,3 +1,4 @@
+import { AppError, AppErrorCode } from '@/lib/errors/app-error';
 import { db } from '@/lib/db/schema';
 import { nowIso } from '@/lib/utils/date';
 import { createId } from '@/lib/utils/id';
@@ -107,20 +108,15 @@ function createEmptyRow(key: string, name = 'Unknown customer', phone?: string):
   };
 }
 
-export async function getCustomerLedger(): Promise<CustomerLedgerRow[]> {
-  const [bills, payments, customers] = await Promise.all([
-    db.bills.toArray().then(all => all.filter(b => (b.creditAmount ?? 0) > 0)),
-    db.customerPayments.toArray(),
-    db.customers.toArray(),
-  ]);
-
+function buildCustomerLedger(
+  bills: Bill[],
+  payments: CustomerPayment[],
+  customers: Customer[],
+): CustomerLedgerRow[] {
   const legacyToCustomerId = buildLegacyKeyToCustomerId(customers);
   const customersById = new Map(customers.map((c) => [c.id, c]));
   const rows = new Map<string, CustomerLedgerRow>();
 
-  // Seed a row for every known customer so cash-only customers (no credit
-  // activity, no payments) still appear in the directory. The credit + payment
-  // loops below populate financial fields on top of these empty rows.
   for (const customer of customers) {
     rows.set(customer.id, {
       key: customer.id,
@@ -167,14 +163,23 @@ export async function getCustomerLedger(): Promise<CustomerLedgerRow[]> {
     .sort((a, b) => b.balanceDue - a.balanceDue || b.lastActivityAt.localeCompare(a.lastActivityAt));
 }
 
+export async function getCustomerLedger(): Promise<CustomerLedgerRow[]> {
+  const [bills, payments, customers] = await Promise.all([
+    db.bills.toArray().then(all => all.filter(b => (b.creditAmount ?? 0) > 0)),
+    db.customerPayments.toArray(),
+    db.customers.toArray(),
+  ]);
+  return buildCustomerLedger(bills, payments, customers);
+}
+
 export async function getCustomerLedgerDetails(customerKey: string): Promise<CustomerLedgerDetails | null> {
-  const [ledger, bills, payments, customers] = await Promise.all([
-    getCustomerLedger(),
+  const [bills, payments, customers] = await Promise.all([
     db.bills.toArray().then(all => all.filter(b => (b.creditAmount ?? 0) > 0)),
     db.customerPayments.toArray(),
     db.customers.toArray(),
   ]);
 
+  const ledger = buildCustomerLedger(bills, payments, customers);
   const row = ledger.find((item) => item.key === customerKey);
   if (!row) return null;
 
@@ -202,8 +207,8 @@ export async function recordCustomerPayment(input: {
   shiftId?: string;
 }): Promise<CustomerPayment> {
   const amount = Number(input.amount);
-  if (!input.customerKey) throw new Error('Customer is required.');
-  if (!Number.isFinite(amount) || amount <= 0) throw new Error('Payment amount must be greater than zero.');
+  if (!input.customerKey) throw new AppError(AppErrorCode.CUSTOMER_REQUIRED);
+  if (!Number.isFinite(amount) || amount <= 0) throw new AppError(AppErrorCode.PAYMENT_AMOUNT_INVALID);
 
   const now = nowIso();
   const payment: CustomerPayment = {

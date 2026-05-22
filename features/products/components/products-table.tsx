@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { getServiceErrorMessage } from "@/lib/errors/get-error-message";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db/schema";
 import { formatCurrency } from "@/lib/utils/money";
@@ -130,7 +131,7 @@ export function ProductsTable({
       setAdjustNote("Manual stock adjustment");
     } catch (error) {
       push(
-        error instanceof Error ? error.message : t("products.adjustFailed"),
+        getServiceErrorMessage(error, t, t("products.adjustFailed")),
         "error",
       );
     }

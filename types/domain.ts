@@ -331,6 +331,7 @@ export interface Settings {
   currency: string;
   allowLossSale: boolean;
   nextBillSequence: number;
+  nextPurchaseSequence: number;
   lowStockHighlight: boolean;
   createdAt: string;
   updatedAt: string;

@@ -1,3 +1,4 @@
+import { AppError, AppErrorCode } from '@/lib/errors/app-error';
 import { db } from '@/lib/db/schema';
 import { createId } from '@/lib/utils/id';
 import { nowIso } from '@/lib/utils/date';
@@ -70,7 +71,7 @@ export async function adjustProductStock(
   // countProductStock both enforce Number.isInteger). Matching here keeps
   // adjustment movements consistent and prevents fractional stock drift.
   if (!Number.isInteger(quantityChange) || quantityChange === 0) {
-    throw new Error('Stock adjustment must be a non-zero whole number.');
+    throw new AppError(AppErrorCode.STOCK_ADJ_ZERO_OR_WHOLE);
   }
 
   const createdAt = nowIso();
@@ -78,12 +79,12 @@ export async function adjustProductStock(
   await db.transaction('rw', db.products, db.stockMovements, db.syncQueue, async () => {
     const liveProduct = await db.products.get(product.id);
     if (!liveProduct) {
-      throw new Error('Product not found.');
+      throw new AppError(AppErrorCode.PRODUCT_NOT_FOUND);
     }
 
     const nextQuantity = liveProduct.quantityInStock + quantityChange;
     if (nextQuantity < 0) {
-      throw new Error('Stock adjustment would make inventory negative.');
+      throw new AppError(AppErrorCode.STOCK_ADJ_NEGATIVE_RESULT);
     }
 
     const movement: StockMovement = {
@@ -123,7 +124,7 @@ export async function receiveProductStock(
   supplierName?: string,
 ) {
   if (!Number.isInteger(quantityReceived) || quantityReceived <= 0) {
-    throw new Error('Received quantity must be a positive whole number.');
+    throw new AppError(AppErrorCode.STOCK_RECEIVED_QTY_INVALID);
   }
 
   const createdAt = nowIso();
@@ -131,7 +132,7 @@ export async function receiveProductStock(
   await db.transaction('rw', db.products, db.stockMovements, db.syncQueue, async () => {
     const liveProduct = await db.products.get(product.id);
     if (!liveProduct) {
-      throw new Error('Product not found.');
+      throw new AppError(AppErrorCode.PRODUCT_NOT_FOUND);
     }
 
     const changes: Partial<Product> = {
@@ -176,7 +177,7 @@ export async function countProductStock(
   note: string,
 ) {
   if (!Number.isInteger(countedQuantity) || countedQuantity < 0) {
-    throw new Error('Counted quantity must be a non-negative whole number.');
+    throw new AppError(AppErrorCode.STOCK_COUNTED_QTY_INVALID);
   }
 
   const createdAt = nowIso();
@@ -184,7 +185,7 @@ export async function countProductStock(
   await db.transaction('rw', db.products, db.stockMovements, db.syncQueue, async () => {
     const liveProduct = await db.products.get(product.id);
     if (!liveProduct) {
-      throw new Error('Product not found.');
+      throw new AppError(AppErrorCode.PRODUCT_NOT_FOUND);
     }
 
     const quantityChange = countedQuantity - liveProduct.quantityInStock;

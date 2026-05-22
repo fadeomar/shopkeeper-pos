@@ -1,3 +1,4 @@
+import { AppError, AppErrorCode } from '@/lib/errors/app-error';
 import { db } from '@/lib/db/schema';
 import { nowIso } from '@/lib/utils/date';
 import { createId } from '@/lib/utils/id';
@@ -148,14 +149,14 @@ export async function openShift(input: {
 }): Promise<Shift> {
   const openingCash = Number(input.openingCash);
   if (!Number.isFinite(openingCash) || openingCash < 0) {
-    throw new Error('Opening cash must be zero or greater.');
+    throw new AppError(AppErrorCode.SHIFT_OPENING_CASH_NEGATIVE);
   }
   const cashierName = input.cashierName.trim() || 'Owner';
 
   return db.transaction('rw', [db.shifts, db.syncQueue], async () => {
     const existing = await db.shifts.where('status').equals('open').first();
     if (existing) {
-      throw new Error('A shift is already open on this device. Close it before opening a new one.');
+      throw new AppError(AppErrorCode.SHIFT_ALREADY_OPEN);
     }
 
     const now = nowIso();
@@ -190,7 +191,7 @@ export async function closeShift(input: {
 }): Promise<Shift> {
   const countedCash = Number(input.countedCash);
   if (!Number.isFinite(countedCash) || countedCash < 0) {
-    throw new Error('Counted cash must be zero or greater.');
+    throw new AppError(AppErrorCode.SHIFT_COUNTED_CASH_NEGATIVE);
   }
 
   return db.transaction(
@@ -198,8 +199,8 @@ export async function closeShift(input: {
     [db.shifts, db.bills, db.purchases, db.supplierPayments, db.customerPayments, db.syncQueue],
     async () => {
     const shift = await db.shifts.get(input.shiftId);
-    if (!shift) throw new Error('Shift not found.');
-    if (shift.status === 'closed') throw new Error('Shift is already closed.');
+    if (!shift) throw new AppError(AppErrorCode.SHIFT_NOT_FOUND);
+    if (shift.status === 'closed') throw new AppError(AppErrorCode.SHIFT_ALREADY_CLOSED);
 
     const [bills, purchases, supplierPayments, customerPayments] = await Promise.all([
       db.bills.where('shiftId').equals(shift.id).toArray(),

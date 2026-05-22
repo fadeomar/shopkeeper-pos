@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { getServiceErrorMessage } from "@/lib/errors/get-error-message";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useLiveQuery } from "dexie-react-hooks";
 import clsx from "clsx";
@@ -24,13 +25,23 @@ import {
 import { ReceiptView } from "@/features/bills/components/receipt-view";
 import type { BillItem } from "@/types/domain";
 
-function DetailField({ label, value, dir }: { label: string; value: string; dir?: string }) {
+function DetailField({
+  label,
+  value,
+  dir,
+}: {
+  label: string;
+  value: string;
+  dir?: string;
+}) {
   return (
     <div className="flex flex-col gap-1">
       <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">
         {label}
       </span>
-      <span className="text-sm font-semibold text-slate-800" dir={dir}>{value}</span>
+      <span className="text-sm font-semibold text-slate-800" dir={dir}>
+        {value}
+      </span>
     </div>
   );
 }
@@ -214,7 +225,7 @@ export function BillDetails({ billId }: { billId: string }) {
       toast.push(t("bills.billVoided"));
     } catch (err) {
       toast.push(
-        err instanceof Error ? err.message : t("bills.voidFailed"),
+        getServiceErrorMessage(err, t, t("bills.voidFailed")),
         "error",
       );
     } finally {
@@ -238,7 +249,7 @@ export function BillDetails({ billId }: { billId: string }) {
       toast.push(t("bills.itemReturned"));
     } catch (err) {
       toast.push(
-        err instanceof Error ? err.message : t("bills.returnFailed"),
+        getServiceErrorMessage(err, t, t("bills.returnFailed")),
         "error",
       );
     } finally {
