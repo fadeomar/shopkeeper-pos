@@ -2,7 +2,7 @@ import clsx from "clsx";
 import { formatCurrency } from "@/lib/utils/money";
 export function PriceDisplay({
   value,
-  currency = "USD",
+  currency = "ILS",
   size = "md",
   emphasis,
   className,

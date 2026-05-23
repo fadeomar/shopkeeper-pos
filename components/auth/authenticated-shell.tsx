@@ -33,6 +33,7 @@ import {
   getLocalDataSummary,
   saveCurrentAccountSnapshot,
 } from "@/lib/services/account-data-service";
+import { setRestoreDecisionPending } from "@/lib/services/sync-gate";
 import { SyncStatusBadge } from "@/components/sync/sync-status-badge";
 import { ConflictResolverModal } from "@/components/sync/conflict-resolver-modal";
 
@@ -48,7 +49,7 @@ export function AuthenticatedShell({
   if (status === "inactive") return <InactiveScreen onLogout={logout} />;
 
   // Authenticated — split by role
-  if (user?.role === "admin") return <AdminShell>{children}</AdminShell>;
+  if (user?.role === "owner") return <AdminShell>{children}</AdminShell>;
   return <CashierShell>{children}</CashierShell>;
 }
 
@@ -142,22 +143,49 @@ function CashierShell({ children }: { children: React.ReactNode }) {
   const [restoreError, setRestoreError] = useState("");
   const checkRan = useRef<string | null>(null);
 
-  // One-time new-device detection per uid (resets if uid ever changes)
+  // One-time new-device detection per uid (resets if uid ever changes).
+  // While the check runs, we close the sync-gate so background runSync ticks
+  // don't pull cloud rows into a still-being-decided local DB. The gate
+  // reopens in every branch of runRestoreCheck (success, skip, no-meta, or
+  // error) via the finally.
   useEffect(() => {
     if (!uid || checkRan.current === uid) return;
     checkRan.current = uid;
-    void runRestoreCheck(uid);
+    setRestoreDecisionPending(true);
+    void runRestoreCheck(uid).finally(() => setRestoreDecisionPending(false));
   }, [uid]);
 
   async function runRestoreCheck(userId: string) {
     try {
+      // Account-switch guard: if the device was last used by a different UID,
+      // wipe local Dexie so the incoming user starts fresh and gets a fair
+      // restore offer — rather than briefly seeing the previous user's data.
+      try {
+        const lastUid = localStorage.getItem('shopkeeper_last_active_uid');
+        if (lastUid && lastUid !== userId) {
+          await db.transaction('rw', db.tables, async () => {
+            await Promise.all(db.tables.map((t) => t.clear()));
+          });
+          localStorage.setItem('shopkeeper_last_active_uid', userId);
+        }
+      } catch {
+        // Non-fatal — if the wipe fails, proceed with whatever is in IndexedDB.
+      }
+
       const empty = await isLocalDbEmpty();
       if (empty) {
         const meta = await fetchSyncMeta(userId);
-        if (
-          meta &&
-          (meta.recordCounts.bills > 0 || meta.recordCounts.products > 0)
-        ) {
+        // Restore is worth offering if ANY business collection has data on
+        // the cloud — not just bills/products. Accounts that started in
+        // purchases (buy-side first), did supplier-only setup, recorded
+        // shifts or cash drawer events before any sales, or only tracked
+        // expenses would all be skipped by the old bills-or-products check.
+        const hasCloudData =
+          !!meta &&
+          Object.values(meta.recordCounts).some(
+            (count) => typeof count === 'number' && count > 0,
+          );
+        if (hasCloudData && meta) {
           const skippedBackup = readSkippedRestoreMeta(userId);
           if (skippedBackup === meta.lastSyncedAt) {
             setRestoreSkipped(true);
@@ -382,7 +410,7 @@ function RestoreModal({
       <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-xl p-6">
         <button
           type="button"
-          aria-label="Close restore prompt"
+          aria-label={t("auth.closeRestorePrompt")}
           onClick={onSkip}
           disabled={restoring}
           className="absolute end-3 top-3 rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 disabled:opacity-40"
@@ -414,20 +442,17 @@ function RestoreModal({
         </div>
 
         <h2 className="text-base font-bold text-slate-800 text-center mb-1">
-          Use your existing data?
+          {t("auth.useExistingTitle")}
         </h2>
         <p className="text-sm text-slate-500 text-center mb-4">
-          We found data for this account in the cloud from{" "}
-          <span className="font-medium text-slate-700">{date}</span>. Sync it to
-          this device, or start with an empty local workspace. Starting empty
-          will not delete your cloud data.
+          {t("auth.useExistingDesc", { date })}
         </p>
 
         {/* Counts */}
         <div className="flex justify-center gap-4 mb-5">
-          <Stat value={bills} label="bills" />
-          <Stat value={products} label="products" />
-          <Stat value={stockMovements} label="movements" />
+          <Stat value={bills} label={t("auth.restoreStatBills")} />
+          <Stat value={products} label={t("auth.restoreStatProducts")} />
+          <Stat value={stockMovements} label={t("auth.restoreStatMovements")} />
         </div>
 
         {/* Progress / error */}
@@ -448,7 +473,7 @@ function RestoreModal({
               }}
               className="mt-2 font-medium text-red-700 underline underline-offset-2"
             >
-              Copy error
+              {t("auth.copyError")}
             </button>
           </div>
         )}
@@ -467,7 +492,7 @@ function RestoreModal({
             disabled={restoring}
             className="w-full py-2 text-slate-500 hover:text-slate-700 text-sm transition-colors disabled:opacity-40"
           >
-            Start empty on this device
+            {t("auth.startEmpty")}
           </button>
         </div>
       </div>
@@ -487,11 +512,12 @@ function Stat({ value, label }: { value: number; label: string }) {
 // ─── Loading / gate screens ───────────────────────────────────────────────────
 
 function LoadingScreen() {
+  const { t } = useLocale();
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50">
       <div className="p-8 bg-white rounded-2xl shadow-sm border border-slate-200 text-center">
         <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-        <p className="text-sm text-slate-500">Loading Shopkeeper POS…</p>
+        <p className="text-sm text-slate-500">{t("auth.appLoading")}</p>
       </div>
     </div>
   );
@@ -531,16 +557,11 @@ function PendingScreen({ onLogout }: { onLogout: () => void }) {
           </svg>
         </div>
         <h2 className="font-semibold text-slate-800 mb-2">{t("auth.pendingTitle")}</h2>
-        <p className="text-sm text-slate-500 mb-2">
-          Your account request was received. An admin must approve it before you
-          can access the app.
-        </p>
-        <p className="text-xs text-slate-400 mb-6">
-          Contact your admin if this takes too long.
-        </p>
+        <p className="text-sm text-slate-500 mb-2">{t("auth.pendingDesc")}</p>
+        <p className="text-xs text-slate-400 mb-6">{t("auth.pendingContactAdmin")}</p>
         {checked && (
           <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 mb-4">
-            Still waiting — your admin hasn&apos;t approved yet.
+            {t("auth.pendingStillWaiting")}
           </p>
         )}
         <div className="flex flex-col gap-2">
@@ -593,10 +614,7 @@ function InactiveScreen({ onLogout }: { onLogout: () => void }) {
           </svg>
         </div>
         <h2 className="font-semibold text-slate-800 mb-2">{t("auth.inactiveTitle")}</h2>
-        <p className="text-sm text-slate-500 mb-6">
-          Your account has been deactivated. Contact your admin to restore
-          access.
-        </p>
+        <p className="text-sm text-slate-500 mb-6">{t("auth.inactiveDesc")}</p>
         <div className="flex flex-col gap-2">
           <button
             onClick={handleCheck}
@@ -875,7 +893,12 @@ function SafeSignOutButton({ className }: { className?: string }) {
   async function signOutKeepingDeviceData() {
     setSigningOut(true);
     try {
-      if (user?.uid) await saveCurrentAccountSnapshot(user.uid);
+      if (user?.uid) {
+        await saveCurrentAccountSnapshot(user.uid);
+        // Stamp the UID so runRestoreCheck can wipe local Dexie if a different
+        // account signs in on the same device next time.
+        try { localStorage.setItem('shopkeeper_last_active_uid', user.uid); } catch { /* non-fatal */ }
+      }
       await logout();
     } finally {
       setSigningOut(false);
@@ -963,10 +986,7 @@ function SafeSignOutButton({ className }: { className?: string }) {
       >
         {summary && (
           <div className="space-y-3 text-sm text-slate-600">
-            <p>
-              Data on this browser is preserved per account. Other accounts on
-              this browser will not see this account&apos;s local data.
-            </p>
+            <p>{t("auth.signOutDataNote")}</p>
             <div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-50 p-3 text-xs">
               <div>
                 <span className="font-semibold text-slate-800">
@@ -982,9 +1002,45 @@ function SafeSignOutButton({ className }: { className?: string }) {
               </div>
               <div>
                 <span className="font-semibold text-slate-800">
+                  {summary.customers}
+                </span>{" "}
+                {t("auth.signOutStatCustomers")}
+              </div>
+              <div>
+                <span className="font-semibold text-slate-800">
+                  {summary.suppliers}
+                </span>{" "}
+                {t("auth.signOutStatSuppliers")}
+              </div>
+              <div>
+                <span className="font-semibold text-slate-800">
+                  {summary.purchases}
+                </span>{" "}
+                {t("auth.signOutStatPurchases")}
+              </div>
+              <div>
+                <span className="font-semibold text-slate-800">
+                  {summary.shifts}
+                </span>{" "}
+                {t("auth.signOutStatShifts")}
+              </div>
+              <div>
+                <span className="font-semibold text-slate-800">
                   {summary.stockMovements}
                 </span>{" "}
                 {t("auth.signOutStatMovements")}
+              </div>
+              <div>
+                <span className="font-semibold text-slate-800">
+                  {summary.customerPayments}
+                </span>{" "}
+                {t("auth.signOutStatPayments")}
+              </div>
+              <div>
+                <span className="font-semibold text-slate-800">
+                  {summary.supplierPayments}
+                </span>{" "}
+                {t("auth.signOutStatSupplierPayments")}
               </div>
               <div>
                 <span className="font-semibold text-slate-800">
@@ -998,17 +1054,10 @@ function SafeSignOutButton({ className }: { className?: string }) {
                 </span>{" "}
                 {t("auth.signOutStatConflicts")}
               </div>
-              <div>
-                <span className="font-semibold text-slate-800">
-                  {summary.customerPayments}
-                </span>{" "}
-                {t("auth.signOutStatPayments")}
-              </div>
             </div>
             {summary.conflicts > 0 && (
               <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
-                Resolve conflicts before expecting every change to sync cleanly
-                to the cloud.
+                {t("auth.signOutConflictsWarning")}
               </p>
             )}
           </div>

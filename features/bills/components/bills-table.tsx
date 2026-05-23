@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Button } from "@/components/ui/button";
 import { useLocale } from "@/components/providers/locale-context";
+import { usePermissions } from "@/lib/hooks/use-permissions";
 import {
   filterBills,
   getBillNetProfit,
@@ -66,12 +67,13 @@ function SummaryCard({ label, value }: { label: string; value: string }) {
 
 export function BillsTable() {
   const { t } = useLocale();
+  const { canViewProfit } = usePermissions();
   const bills = useLiveQuery(
     () => db.bills.orderBy("createdAt").reverse().toArray(),
     [],
   );
   const settings = useLiveQuery(() => settingsRepo.get(), []);
-  const currency = settings?.currency ?? "USD";
+  const currency = settings?.currency ?? "ILS";
   const [query, setQuery] = useState("");
   const [dateFilter, setDateFilter] = useState<BillDateFilter>("today");
   const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>("all");
@@ -158,18 +160,22 @@ export function BillsTable() {
         />
       ),
     },
-    {
-      header: t("bills.profit"),
-      id: "profit",
-      cell: ({ row }) => (
-        <PriceDisplay
-          value={getBillNetProfit(row.original)}
-          currency={currency}
-          size="sm"
-          className="text-green-700"
-        />
-      ),
-    },
+    ...(canViewProfit
+      ? [
+          {
+            header: t("bills.profit"),
+            id: "profit",
+            cell: ({ row }: { row: { original: Bill } }) => (
+              <PriceDisplay
+                value={getBillNetProfit(row.original)}
+                currency={currency}
+                size="sm"
+                className="text-green-700"
+              />
+            ),
+          } as ColumnDef<Bill>,
+        ]
+      : []),
     {
       header: t("bills.payment"),
       accessorKey: "paymentMethod",
@@ -224,10 +230,12 @@ export function BillsTable() {
             label={t("bills.filteredSales")}
             value={formatCurrency(summary.totalSales, currency)}
           />
-          <SummaryCard
-            label={t("bills.filteredProfit")}
-            value={formatCurrency(summary.totalProfit, currency)}
-          />
+          {canViewProfit && (
+            <SummaryCard
+              label={t("bills.filteredProfit")}
+              value={formatCurrency(summary.totalProfit, currency)}
+            />
+          )}
           <SummaryCard
             label={t("bills.filteredBills")}
             value={String(summary.billCount)}
@@ -362,12 +370,14 @@ export function BillsTable() {
                         {formatCurrency(getBillNetTotal(bill), currency)}
                       </p>
                     </div>
-                    <div className="rounded-xl bg-slate-50 p-2">
-                      <p className="text-slate-500">{t("bills.profit")}</p>
-                      <p className="font-bold text-green-700 tabular-nums">
-                        {formatCurrency(getBillNetProfit(bill), currency)}
-                      </p>
-                    </div>
+                    {canViewProfit && (
+                      <div className="rounded-xl bg-slate-50 p-2">
+                        <p className="text-slate-500">{t("bills.profit")}</p>
+                        <p className="font-bold text-green-700 tabular-nums">
+                          {formatCurrency(getBillNetProfit(bill), currency)}
+                        </p>
+                      </div>
+                    )}
                     <div className="rounded-xl bg-slate-50 p-2">
                       <p className="text-slate-500">{t("bills.itemCount")}</p>
                       <p className="font-bold text-slate-800 tabular-nums">

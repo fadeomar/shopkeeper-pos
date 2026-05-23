@@ -3,7 +3,7 @@ import { firestore } from './config';
 import { db } from '@/lib/db/schema';
 import { nowIso } from '@/lib/utils/date';
 import { detectProductCloudConflict, detectSettingsCloudConflict } from '@/lib/firebase/cloud-merge-service';
-import type { Bill, BillItem, Customer, Product, Purchase, PurchaseItem, Settings, Shift, StockMovement, CustomerPayment, Supplier, SupplierPayment, SyncQueueItem } from '@/types/domain';
+import type { AuditEvent, Bill, BillItem, CashMovement, Customer, Expense, Product, Purchase, PurchaseItem, Settings, Shift, StockMovement, CustomerPayment, Supplier, SupplierPayment, SyncQueueItem } from '@/types/domain';
 
 const BATCH_SIZE = 400; // Firestore max is 500; stay under
 
@@ -21,6 +21,10 @@ export interface SyncMeta {
     purchases?: number;
     purchaseItems?: number;
     supplierPayments?: number;
+    auditEvents?: number;
+    cashMovements?: number;
+    expenses?: number;
+    settings?: number;
   };
 }
 
@@ -233,6 +237,48 @@ export async function syncSupplierPaymentsToCloud(
   return syncedAt;
 }
 
+export async function syncAuditEventsToCloud(
+  uid: string,
+  events: AuditEvent[],
+): Promise<string | null> {
+  if (events.length === 0) return null;
+  const syncedAt = nowIso();
+  const writes = events.map((event) => ({
+    ref: doc(firestore, `users/${uid}/auditEvents/${event.id}`),
+    data: asSyncedRecord(event, syncedAt),
+  }));
+  await commitInBatches(writes);
+  return syncedAt;
+}
+
+export async function syncCashMovementsToCloud(
+  uid: string,
+  movements: CashMovement[],
+): Promise<string | null> {
+  if (movements.length === 0) return null;
+  const syncedAt = nowIso();
+  const writes = movements.map((mv) => ({
+    ref: doc(firestore, `users/${uid}/cashMovements/${mv.id}`),
+    data: asSyncedRecord(mv, syncedAt),
+  }));
+  await commitInBatches(writes);
+  return syncedAt;
+}
+
+export async function syncExpensesToCloud(
+  uid: string,
+  expenses: Expense[],
+): Promise<string | null> {
+  if (expenses.length === 0) return null;
+  const syncedAt = nowIso();
+  const writes = expenses.map((expense) => ({
+    ref: doc(firestore, `users/${uid}/expenses/${expense.id}`),
+    data: asSyncedRecord(expense, syncedAt),
+  }));
+  await commitInBatches(writes);
+  return syncedAt;
+}
+
 export async function syncCustomersToCloud(
   uid: string,
   customers: Customer[],
@@ -355,7 +401,7 @@ export async function syncAllToCloud(uid: string): Promise<SyncMeta | null> {
     ]);
     if (activeQueueCount > 0 || openConflictCount > 0) return null;
 
-    const [bills, billItems, products, stockMovements, customerPayments, customers, shifts, suppliers, purchases, purchaseItems, supplierPayments, localSettings] = await Promise.all([
+    const [bills, billItems, products, stockMovements, customerPayments, customers, shifts, suppliers, purchases, purchaseItems, supplierPayments, auditEvents, cashMovements, expenses, localSettings] = await Promise.all([
       db.bills.toArray(),
       db.billItems.toArray(),
       db.products.toArray(),
@@ -367,6 +413,9 @@ export async function syncAllToCloud(uid: string): Promise<SyncMeta | null> {
       db.purchases.toArray(),
       db.purchaseItems.toArray(),
       db.supplierPayments.toArray(),
+      db.auditEvents.toArray(),
+      db.cashMovements.toArray(),
+      db.expenses.toArray(),
       db.settings.toArray(),
     ]);
 
@@ -459,6 +508,18 @@ export async function syncAllToCloud(uid: string): Promise<SyncMeta | null> {
         ref: doc(firestore, `users/${uid}/supplierPayments/${payment.id}`),
         data: asSyncedRecord(payment, syncedAt),
       })),
+      ...auditEvents.map((event) => ({
+        ref: doc(firestore, `users/${uid}/auditEvents/${event.id}`),
+        data: asSyncedRecord(event, syncedAt),
+      })),
+      ...cashMovements.map((mv) => ({
+        ref: doc(firestore, `users/${uid}/cashMovements/${mv.id}`),
+        data: asSyncedRecord(mv, syncedAt),
+      })),
+      ...expenses.map((e) => ({
+        ref: doc(firestore, `users/${uid}/expenses/${e.id}`),
+        data: asSyncedRecord(e, syncedAt),
+      })),
       ...settings.map((s) => ({
         ref: doc(firestore, `users/${uid}/settings/${s.id}`),
         data: asSyncedRecord(s, syncedAt),
@@ -481,11 +542,15 @@ export async function syncAllToCloud(uid: string): Promise<SyncMeta | null> {
         purchases: purchases.length,
         purchaseItems: purchaseItems.length,
         supplierPayments: supplierPayments.length,
+        auditEvents: auditEvents.length,
+        cashMovements: cashMovements.length,
+        expenses: expenses.length,
+        settings: settings.length,
       },
     };
     await setDoc(doc(firestore, `users/${uid}/meta/sync`), meta);
 
-    await db.transaction('rw', [db.bills, db.billItems, db.products, db.stockMovements, db.customerPayments, db.customers, db.shifts, db.suppliers, db.purchases, db.purchaseItems, db.supplierPayments, db.settings, db.syncQueue], async () => {
+    await db.transaction('rw', [db.bills, db.billItems, db.products, db.stockMovements, db.customerPayments, db.customers, db.shifts, db.suppliers, db.purchases, db.purchaseItems, db.supplierPayments, db.auditEvents, db.cashMovements, db.expenses, db.settings, db.syncQueue], async () => {
       await Promise.all([
         db.bills.toCollection().modify({ syncStatus: 'synced', syncedAt, lastSyncError: undefined }),
         db.billItems.toCollection().modify({ syncStatus: 'synced', syncedAt, lastSyncError: undefined }),
@@ -498,6 +563,9 @@ export async function syncAllToCloud(uid: string): Promise<SyncMeta | null> {
         db.purchases.toCollection().modify({ syncStatus: 'synced', syncedAt, lastSyncError: undefined }),
         db.purchaseItems.toCollection().modify({ syncStatus: 'synced', syncedAt, lastSyncError: undefined }),
         db.supplierPayments.toCollection().modify({ syncStatus: 'synced', syncedAt, lastSyncError: undefined }),
+        db.auditEvents.toCollection().modify({ syncStatus: 'synced', syncedAt, lastSyncError: undefined }),
+        db.cashMovements.toCollection().modify({ syncStatus: 'synced', syncedAt, lastSyncError: undefined }),
+        db.expenses.toCollection().modify({ syncStatus: 'synced', syncedAt, lastSyncError: undefined }),
         settings.length
           ? db.settings.bulkPut(settings.map((setting) => asSyncedRecord(setting, syncedAt)))
           : Promise.resolve(),

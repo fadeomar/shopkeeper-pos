@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { getServiceErrorMessage } from "@/lib/errors/get-error-message";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useForm } from "react-hook-form";
@@ -22,7 +23,7 @@ import {
   calculateChange,
   calculateLineSubtotal,
 } from "@/lib/utils/calculations";
-import { formatCurrency } from "@/lib/utils/money";
+import { MONEY_EPSILON, formatCurrency } from "@/lib/utils/money";
 import { createFinalizedPurchase } from "@/lib/services/purchase-service";
 import { useAuth } from "@/components/providers/auth-context";
 import { Button } from "@/components/ui/button";
@@ -193,7 +194,7 @@ export function PurchaseEntryScreen() {
   const suppliers = useLiveQuery(() => supplierRepo.list(), []);
   const settings = useLiveQuery(() => settingsRepo.get(), []);
   const { push } = useToast();
-  const currency = settings?.currency ?? "USD";
+  const currency = settings?.currency ?? "ILS";
   const draftKey = user?.uid
     ? `${PURCHASE_DRAFT_KEY_PREFIX}:${user.uid}`
     : null;
@@ -233,7 +234,7 @@ export function PurchaseEntryScreen() {
   const form = useForm<PurchaseFormSchema>({
     resolver: zodResolver(purchaseFormSchema),
     defaultValues: {
-      cashierName: settings?.cashierName ?? "Owner",
+      cashierName: settings?.cashierName ?? t("common.owner"),
       supplierName: "",
       supplierPhone: "",
       paymentMethod: "cash",
@@ -337,7 +338,7 @@ export function PurchaseEntryScreen() {
       purchaseSummary.totalAmount,
     ],
   );
-  const isMixedSplitValid = !isMixedPurchase || mixedSumDelta < 0.005;
+  const isMixedSplitValid = !isMixedPurchase || mixedSumDelta < MONEY_EPSILON;
   const hasCreditSupplier = Boolean(
     watchedSupplierName?.trim() || watchedSupplierPhone?.trim(),
   );
@@ -364,7 +365,8 @@ export function PurchaseEntryScreen() {
   useEffect(() => {
     if (!isMixedPurchase) return;
     const total = Number(purchaseSummary.totalAmount.toFixed(2));
-    if (Math.abs(watchedCashAmount + watchedCardAmount - total) < 0.005) return;
+    if (Math.abs(watchedCashAmount + watchedCardAmount - total) < MONEY_EPSILON)
+      return;
     form.setValue("cashAmount", total, { shouldDirty: false });
     form.setValue("cardAmount", 0, { shouldDirty: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -459,9 +461,7 @@ export function PurchaseEntryScreen() {
       const existing = cur.find((i) => i.productId === product.id);
       if (existing) {
         return cur.map((i) =>
-          i.productId === product.id
-            ? { ...i, quantity: i.quantity + 1 }
-            : i,
+          i.productId === product.id ? { ...i, quantity: i.quantity + 1 } : i,
         );
       }
       return [
@@ -510,7 +510,7 @@ export function PurchaseEntryScreen() {
     setDraftItems([]);
     setIsPaidAmountManuallyEdited(false);
     form.reset({
-      cashierName: settings?.cashierName ?? "Owner",
+      cashierName: settings?.cashierName ?? t("common.owner"),
       supplierName: "",
       supplierPhone: "",
       paymentMethod: "cash",
@@ -544,7 +544,7 @@ export function PurchaseEntryScreen() {
       setLastFinalized({ purchase, items: purchaseItems });
     } catch (error) {
       push(
-        error instanceof Error ? error.message : t("purchases.purchaseFailed"),
+        getServiceErrorMessage(error, t, t("purchases.purchaseFailed")),
         "error",
       );
     }
@@ -720,8 +720,18 @@ export function PurchaseEntryScreen() {
               variant="secondary"
               onClick={() => setScannerOpen(true)}
             >
-              {t("billing.scan")}
+              {t("common.scan")}
             </Button>
+          </div>
+
+          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            <p>{t("purchases.productMissingNote")}</p>
+            <Link
+              href="/products"
+              className="mt-2 inline-flex text-sm font-semibold text-blue-600 hover:text-blue-700"
+            >
+              {t("purchases.addProductInProducts")}
+            </Link>
           </div>
 
           {/* Items list */}

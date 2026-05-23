@@ -1,10 +1,12 @@
+import { AppError, AppErrorCode } from '@/lib/errors/app-error';
 import { db } from '@/lib/db/schema';
 import { nowIso } from '@/lib/utils/date';
 import { createId } from '@/lib/utils/id';
 import { buildSyncQueueItem } from '@/lib/services/sync-queue-service';
+import { logAudit } from '@/lib/services/audit-service';
 import { normalizeSupplierKey } from '@/lib/utils/supplier-key';
 import { netSplitField, normalizeBillSplit } from '@/lib/utils/bill-split';
-import type { Purchase, Supplier, SupplierPayment, Bill } from '@/types/domain';
+import type { Purchase, Supplier, SupplierPayment } from '@/types/domain';
 
 /**
  * Buy-side ledger row, mirror of CustomerLedgerRow.
@@ -76,10 +78,10 @@ function updateRowFromPurchase(row: SupplierLedgerRow, purchase: Purchase): Supp
   // Purchases share the bill-split shape, so the existing helpers apply.
   // We just rename "credit" semantically — for purchases, credit means
   // "owed to supplier" rather than "owed by customer".
-  const withSplit = normalizeBillSplit(purchase as unknown as Bill) as unknown as Purchase;
-  const netCredit = netSplitField(withSplit as unknown as Bill, withSplit.creditAmount);
-  const netCashAtPurchase = netSplitField(withSplit as unknown as Bill, withSplit.cashAmount);
-  const netCardAtPurchase = netSplitField(withSplit as unknown as Bill, withSplit.cardAmount);
+  const withSplit = normalizeBillSplit(purchase);
+  const netCredit = netSplitField(withSplit, withSplit.creditAmount);
+  const netCashAtPurchase = netSplitField(withSplit, withSplit.cashAmount);
+  const netCardAtPurchase = netSplitField(withSplit, withSplit.cardAmount);
   const netPaid = netCashAtPurchase + netCardAtPurchase;
   return {
     ...row,
@@ -103,29 +105,17 @@ function updateRowFromPayment(row: SupplierLedgerRow, payment: SupplierPayment):
   };
 }
 
-/**
- * List every supplier with their running balance. Suppliers that exist in the
- * directory but have no activity yet still appear (with zero balances and an
- * empty lastActivityAt) — symmetric with the customer ledger so the user can
- * always see who they have on file even before the first purchase.
- */
-export async function getSupplierLedger(): Promise<SupplierLedgerRow[]> {
-  const [purchases, payments, suppliers] = await Promise.all([
-    db.purchases.toArray(),
-    db.supplierPayments.toArray(),
-    db.suppliers.toArray(),
-  ]);
-
+function buildSupplierLedger(
+  purchases: Purchase[],
+  payments: SupplierPayment[],
+  suppliers: Supplier[],
+): SupplierLedgerRow[] {
   const legacyToSupplierId = buildLegacyKeyToSupplierId(suppliers);
   const suppliersById = new Map(suppliers.map((s) => [s.id, s]));
   const rows = new Map<string, SupplierLedgerRow>();
 
-  // Seed every known supplier so they appear even with zero activity.
   for (const supplier of suppliers) {
-    rows.set(
-      supplier.id,
-      createEmptyRow(supplier.id, supplier.name, supplier.phone),
-    );
+    rows.set(supplier.id, createEmptyRow(supplier.id, supplier.name, supplier.phone));
   }
 
   for (const purchase of purchases) {
@@ -165,16 +155,30 @@ export async function getSupplierLedger(): Promise<SupplierLedgerRow[]> {
     );
 }
 
+/**
+ * List every supplier with their running balance. Suppliers that exist in the
+ * directory but have no activity yet still appear (with zero balances and an
+ * empty lastActivityAt) — symmetric with the customer ledger.
+ */
+export async function getSupplierLedger(): Promise<SupplierLedgerRow[]> {
+  const [purchases, payments, suppliers] = await Promise.all([
+    db.purchases.toArray(),
+    db.supplierPayments.toArray(),
+    db.suppliers.toArray(),
+  ]);
+  return buildSupplierLedger(purchases, payments, suppliers);
+}
+
 export async function getSupplierLedgerDetails(
   supplierKey: string,
 ): Promise<SupplierLedgerDetails | null> {
-  const [ledger, purchases, payments, suppliers] = await Promise.all([
-    getSupplierLedger(),
+  const [purchases, payments, suppliers] = await Promise.all([
     db.purchases.toArray(),
     db.supplierPayments.toArray(),
     db.suppliers.toArray(),
   ]);
 
+  const ledger = buildSupplierLedger(purchases, payments, suppliers);
   const row = ledger.find((item) => item.key === supplierKey);
   if (!row) return null;
 
@@ -210,9 +214,9 @@ export async function recordSupplierPayment(input: {
   paymentMethod?: SupplierPayment['paymentMethod'];
 }): Promise<SupplierPayment> {
   const amount = Number(input.amount);
-  if (!input.supplierKey) throw new Error('Supplier is required.');
+  if (!input.supplierKey) throw new AppError(AppErrorCode.SUPPLIER_REQUIRED);
   if (!Number.isFinite(amount) || amount <= 0) {
-    throw new Error('Payment amount must be greater than zero.');
+    throw new AppError(AppErrorCode.PAYMENT_AMOUNT_INVALID);
   }
 
   const now = nowIso();
@@ -245,6 +249,16 @@ export async function recordSupplierPayment(input: {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event('shopkeeper:sync-requested'));
   }
+
+  void logAudit({
+    category: 'supplier',
+    action: 'payment',
+    entityId: input.supplierKey,
+    entityLabel: payment.supplierName,
+    summary: `${amount} (${payment.paymentMethod})`,
+    reason: payment.note,
+    shiftId: payment.shiftId,
+  });
 
   return payment;
 }

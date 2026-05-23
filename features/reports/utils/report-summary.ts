@@ -1,6 +1,8 @@
-import type { Bill, BillItem, PaymentMethod, Product, Purchase, SupplierPayment } from '@/types/domain';
+import type { Bill, BillItem, CashMovement, Expense, ExpenseCategory, PaymentMethod, Product, Purchase, SupplierPayment } from '@/types/domain';
 import { getBillNetProfit, getBillNetTotal } from '@/features/bills/utils/bill-summary';
+import { calculateBillItemNetContribution, calculateLineProfit, calculateLineSubtotal } from '@/lib/utils/calculations';
 import { roundMoney } from '@/lib/utils/money';
+import { localDateKey } from '@/lib/utils/date';
 import { netSplitField, normalizeBillSplit } from '@/lib/utils/bill-split';
 
 export type ReportRange = 'today' | 'week' | 'month' | 'all' | 'custom';
@@ -87,24 +89,23 @@ export function filterByDateRange<T extends { createdAt: string }>(
 }
 
 export function summarizeReportBills(bills: Bill[]) {
-  return bills.reduce(
-    (summary, bill) => {
+  const summary = bills.reduce(
+    (acc, bill) => {
       const billWithSplit = normalizeBillSplit(bill) as Bill;
       const netSales = getBillNetTotal(billWithSplit);
       const netProfit = getBillNetProfit(billWithSplit);
-      summary.billCount += 1;
-      summary.itemCount += billWithSplit.status === 'voided' ? 0 : billWithSplit.itemCount;
-      summary.sales += netSales;
-      summary.profit += netProfit;
-      summary.averageBill = summary.billCount ? summary.sales / summary.billCount : 0;
+      acc.billCount += 1;
+      acc.itemCount += billWithSplit.status === 'voided' ? 0 : billWithSplit.itemCount;
+      acc.sales += netSales;
+      acc.profit += netProfit;
       // Cash retained = the cashAmount portion of the bill, less the
       // proportional share of any returns/voids. Works for pure cash and the
       // cash leg of mixed bills uniformly, since both populate cashAmount.
-      summary.cashExpected += netSplitField(billWithSplit, billWithSplit.cashAmount);
-      summary.byPayment[billWithSplit.paymentMethod] += netSales;
-      if (billWithSplit.status === 'voided') summary.voidedBills += 1;
-      if (billWithSplit.status === 'returned' || billWithSplit.status === 'partially_returned') summary.returnedBills += 1;
-      return summary;
+      acc.cashExpected += netSplitField(billWithSplit, billWithSplit.cashAmount);
+      acc.byPayment[billWithSplit.paymentMethod] += netSales;
+      if (billWithSplit.status === 'voided') acc.voidedBills += 1;
+      if (billWithSplit.status === 'returned' || billWithSplit.status === 'partially_returned') acc.returnedBills += 1;
+      return acc;
     },
     {
       sales: 0,
@@ -118,6 +119,11 @@ export function summarizeReportBills(bills: Bill[]) {
       byPayment: { cash: 0, card: 0, mixed: 0, credit: 0 } as Record<PaymentMethod, number>,
     },
   );
+  // Average bill denominator excludes voided bills — a void contributes $0 to
+  // sales but would artificially deflate the average if counted.
+  const activeBillCount = summary.billCount - summary.voidedBills;
+  summary.averageBill = activeBillCount > 0 ? roundMoney(summary.sales / activeBillCount) : 0;
+  return summary;
 }
 
 /**
@@ -143,20 +149,17 @@ export function summarizeReportPurchases(
 ) {
   const summary = purchases.reduce(
     (acc, raw) => {
-      const p = normalizeBillSplit(raw as unknown as Bill) as unknown as Purchase;
+      const p = normalizeBillSplit(raw);
       const netCost = Math.max(0, p.totalAmount - (p.returnedAmount ?? 0));
-      const netCash = netSplitField(p as unknown as Bill, p.cashAmount);
-      const netCard = netSplitField(p as unknown as Bill, p.cardAmount);
-      const netCredit = netSplitField(p as unknown as Bill, p.creditAmount);
+      const netCash = netSplitField(p, p.cashAmount);
+      const netCard = netSplitField(p, p.cardAmount);
+      const netCredit = netSplitField(p, p.creditAmount);
       acc.purchaseCount += 1;
       acc.itemCount += p.status === 'voided' ? 0 : p.itemCount;
       acc.purchaseCost = roundMoney(acc.purchaseCost + netCost);
       acc.cashPaidOut = roundMoney(acc.cashPaidOut + netCash);
       acc.cardPaidOut = roundMoney(acc.cardPaidOut + netCard);
       acc.debtAccrued = roundMoney(acc.debtAccrued + netCredit);
-      acc.averagePurchase = acc.purchaseCount
-        ? acc.purchaseCost / acc.purchaseCount
-        : 0;
       if (p.status === 'voided') acc.voidedPurchases += 1;
       if (p.status === 'returned' || p.status === 'partially_returned') {
         acc.returnedPurchases += 1;
@@ -177,6 +180,10 @@ export function summarizeReportPurchases(
       netSupplierDebt: 0,
     },
   );
+  // Average purchase denominator excludes voided purchases — a void contributes
+  // $0 to purchaseCost but would artificially deflate the average if counted.
+  const activePurchaseCount = summary.purchaseCount - summary.voidedPurchases;
+  summary.averagePurchase = activePurchaseCount > 0 ? roundMoney(summary.purchaseCost / activePurchaseCount) : 0;
   summary.supplierPayments = roundMoney(
     supplierPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0),
   );
@@ -191,7 +198,9 @@ export function summarizeProductSales(
   billItems: BillItem[],
   products: Product[],
 ): ProductSalesRow[] {
-  const activeBillIds = new Set(bills.filter((bill) => bill.status !== 'voided').map((bill) => bill.id));
+  const activeBills = bills.filter((bill) => bill.status !== 'voided');
+  const activeBillIds = new Set(activeBills.map((bill) => bill.id));
+  const billById = new Map(activeBills.map((bill) => [bill.id, bill]));
   const productById = new Map(products.map((product) => [product.id, product]));
   const rows = new Map<string, ProductSalesRow>();
 
@@ -200,6 +209,15 @@ export function summarizeProductSales(
     const returnedQuantity = item.quantityReturned ?? 0;
     const netQuantity = Math.max(0, item.quantitySold - returnedQuantity);
     if (netQuantity <= 0) return;
+
+    const bill = billById.get(item.billId);
+    const lineAmount = calculateLineSubtotal(netQuantity, item.unitSellPriceAtSale);
+    const lineProfit = calculateLineProfit(netQuantity, item.unitBuyPriceAtSale, item.unitSellPriceAtSale);
+    // Allocate the bill's discount and tax proportionally to this line so
+    // product-level revenue matches the bill totals reported on the sales page.
+    const net = bill
+      ? calculateBillItemNetContribution(bill, lineAmount, lineProfit)
+      : { revenue: lineAmount, profit: lineProfit };
 
     const key = item.originalProductId || item.barcodeAtSale || item.id;
     const product = productById.get(item.originalProductId);
@@ -216,8 +234,8 @@ export function summarizeProductSales(
     };
 
     existing.quantity += netQuantity;
-    existing.revenue = roundMoney(existing.revenue + netQuantity * item.unitSellPriceAtSale);
-    existing.profit = roundMoney(existing.profit + netQuantity * (item.unitSellPriceAtSale - item.unitBuyPriceAtSale));
+    existing.revenue = roundMoney(existing.revenue + net.revenue);
+    existing.profit = roundMoney(existing.profit + net.profit);
     existing.currentStock = product?.quantityInStock ?? existing.currentStock;
     existing.minimumStockAlert = product?.minimumStockAlert ?? existing.minimumStockAlert;
     rows.set(key, existing);
@@ -242,13 +260,12 @@ export function buildDailyTrend(bills: Bill[], days = 7): TrendRow[] {
 
   for (let offset = days - 1; offset >= 0; offset -= 1) {
     const date = addDays(today, -offset);
-    const key = date.toISOString().slice(0, 10);
-    buckets.set(key, { label: trendLabel(date), sales: 0, profit: 0, bills: 0 });
+    buckets.set(localDateKey(date), { label: trendLabel(date), sales: 0, profit: 0, bills: 0 });
   }
 
   bills.forEach((bill) => {
     const created = new Date(bill.createdAt);
-    const key = startOfDay(created).toISOString().slice(0, 10);
+    const key = localDateKey(startOfDay(created));
     const bucket = buckets.get(key);
     if (!bucket) return;
     bucket.sales = roundMoney(bucket.sales + getBillNetTotal(bill));
@@ -257,4 +274,58 @@ export function buildDailyTrend(bills: Bill[], days = 7): TrendRow[] {
   });
 
   return Array.from(buckets.values());
+}
+
+/**
+ * Operational expenses summary.
+ *
+ *   total           — gross expense total across all categories + methods.
+ *   cashPaidOut     — only the cash-tendered expenses (drawer-affecting).
+ *   byCategory      — total per category, sorted descending. Used by Z-report
+ *                     and the by-category panel on the reports page.
+ *   byMethod        — total per payment method.
+ *   expenseCount    — number of expense rows in range.
+ */
+export function summarizeReportExpenses(expenses: Expense[]) {
+  const byCategory = new Map<ExpenseCategory, number>();
+  const byMethod = { cash: 0, card: 0, bank: 0, credit: 0 } as Record<Expense['paymentMethod'], number>;
+  let total = 0;
+  let cashPaidOut = 0;
+  for (const e of expenses) {
+    const amount = Number(e.amount) || 0;
+    total += amount;
+    if (e.paymentMethod === 'cash') cashPaidOut += amount;
+    byCategory.set(e.category, (byCategory.get(e.category) ?? 0) + amount);
+    byMethod[e.paymentMethod] = roundMoney((byMethod[e.paymentMethod] ?? 0) + amount);
+  }
+  return {
+    total: roundMoney(total),
+    cashPaidOut: roundMoney(cashPaidOut),
+    expenseCount: expenses.length,
+    byCategory: Array.from(byCategory.entries())
+      .map(([category, amount]) => ({ category, amount: roundMoney(amount) }))
+      .sort((a, b) => b.amount - a.amount),
+    byMethod,
+  };
+}
+
+/**
+ * Manual cash drawer movements summary. CashMovement.amount is already
+ * signed (+ in, − out), so we sum directly and split positive/negative for
+ * the Z-report display.
+ */
+export function summarizeReportCashMovements(movements: CashMovement[]) {
+  let cashIn = 0;
+  let cashOut = 0;
+  for (const m of movements) {
+    const amount = Number(m.amount) || 0;
+    if (amount >= 0) cashIn += amount;
+    else cashOut += amount; // negative
+  }
+  return {
+    cashIn: roundMoney(cashIn),
+    cashOut: roundMoney(Math.abs(cashOut)),
+    net: roundMoney(cashIn + cashOut),
+    count: movements.length,
+  };
 }

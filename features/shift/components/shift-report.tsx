@@ -3,7 +3,7 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db/schema";
 import { summarizeShiftBills } from "@/lib/services/shift-service";
-import { formatCurrency } from "@/lib/utils/money";
+import { formatCurrency, MONEY_EPSILON } from "@/lib/utils/money";
 import { formatDateTime } from "@/lib/utils/date";
 import { useLocale } from "@/components/providers/locale-context";
 import { Button } from "@/components/ui/button";
@@ -50,7 +50,7 @@ export function ShiftReport({
   settings?: Settings;
 }) {
   const { t } = useLocale();
-  const currency = settings?.currency ?? "USD";
+  const currency = settings?.currency ?? "ILS";
   const storeName = settings?.storeName || "Shopkeeper POS";
 
   const bills = useLiveQuery<Bill[]>(
@@ -70,9 +70,7 @@ export function ShiftReport({
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3 no-print">
         <p className="text-xs text-slate-500">
-          {isClosed
-            ? t("shift.shiftStatusClosed")
-            : t("shift.shiftStatusOpen")}
+          {isClosed ? t("shift.shiftStatusClosed") : t("shift.shiftStatusOpen")}
         </p>
         <Button
           type="button"
@@ -149,9 +147,9 @@ export function ShiftReport({
                 value={formatCurrency(difference, currency)}
                 emphasis
                 tone={
-                  difference > 0.005
+                  difference > MONEY_EPSILON
                     ? "positive"
-                    : difference < -0.005
+                    : difference < -MONEY_EPSILON
                       ? "warning"
                       : "neutral"
                 }
@@ -187,13 +185,17 @@ export function ShiftReport({
           <div className="space-y-1 text-xs text-slate-600">
             {shift.notes && (
               <p>
-                <span className="font-semibold">{t("shift.openShiftNotes")}:</span>{" "}
+                <span className="font-semibold">
+                  {t("shift.openShiftNotes")}:
+                </span>{" "}
                 {shift.notes}
               </p>
             )}
             {shift.closingNotes && (
               <p>
-                <span className="font-semibold">{t("shift.closingNotes")}:</span>{" "}
+                <span className="font-semibold">
+                  {t("shift.closingNotes")}:
+                </span>{" "}
                 {shift.closingNotes}
               </p>
             )}

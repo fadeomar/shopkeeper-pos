@@ -1,9 +1,11 @@
+import { AppError, AppErrorCode } from '@/lib/errors/app-error';
 import { db } from '@/lib/db/schema';
 import { nowIso } from '@/lib/utils/date';
 import { createId } from '@/lib/utils/id';
 import { netSplitField, normalizeBillSplit } from '@/lib/utils/bill-split';
 import { roundMoney } from '@/lib/utils/money';
 import { buildSyncQueueItem } from '@/lib/services/sync-queue-service';
+import { logAudit } from '@/lib/services/audit-service';
 import type { Bill, CustomerPayment, Purchase, Shift, SupplierPayment } from '@/types/domain';
 
 function requestSync(): void {
@@ -117,12 +119,16 @@ export async function computeExpectedCash(shift: Shift): Promise<{
   totals: ShiftTenderTotals;
   cashOut: ShiftCashOutTotals;
   customerPaymentCashIn: number;
+  cashMovementNet: number;
+  cashExpensesTotal: number;
 }> {
-  const [bills, purchases, supplierPayments, customerPayments] = await Promise.all([
+  const [bills, purchases, supplierPayments, customerPayments, cashMovements, expenses] = await Promise.all([
     db.bills.where('shiftId').equals(shift.id).toArray(),
     db.purchases.where('shiftId').equals(shift.id).toArray(),
     db.supplierPayments.where('shiftId').equals(shift.id).toArray(),
     db.customerPayments.where('shiftId').equals(shift.id).toArray(),
+    db.cashMovements.where('shiftId').equals(shift.id).toArray(),
+    db.expenses.where('shiftId').equals(shift.id).toArray(),
   ]);
   const totals = summarizeShiftBills(bills);
   const cashOut = summarizeShiftCashOut(purchases, supplierPayments);
@@ -131,13 +137,25 @@ export async function computeExpectedCash(shift: Shift): Promise<{
       .filter((p) => !p.paymentMethod || p.paymentMethod === 'cash')
       .reduce((sum, p) => sum + (Number(p.amount) || 0), 0),
   );
+  const cashMovementNet = roundMoney(
+    cashMovements.reduce((sum, m) => sum + (Number(m.amount) || 0), 0),
+  );
+  // Only cash-tendered expenses affect the drawer. Card/bank/credit are
+  // accounted for elsewhere or settle later, so they're ignored here.
+  const cashExpensesTotal = roundMoney(
+    expenses
+      .filter((e) => e.paymentMethod === 'cash')
+      .reduce((sum, e) => sum + (Number(e.amount) || 0), 0),
+  );
   return {
     expectedCash: roundMoney(
-      shift.openingCash + totals.cashCollected + customerPaymentCashIn - cashOut.totalCashOut,
+      shift.openingCash + totals.cashCollected + customerPaymentCashIn - cashOut.totalCashOut + cashMovementNet - cashExpensesTotal,
     ),
     totals,
     cashOut,
     customerPaymentCashIn,
+    cashMovementNet,
+    cashExpensesTotal,
   };
 }
 
@@ -148,14 +166,14 @@ export async function openShift(input: {
 }): Promise<Shift> {
   const openingCash = Number(input.openingCash);
   if (!Number.isFinite(openingCash) || openingCash < 0) {
-    throw new Error('Opening cash must be zero or greater.');
+    throw new AppError(AppErrorCode.SHIFT_OPENING_CASH_NEGATIVE);
   }
   const cashierName = input.cashierName.trim() || 'Owner';
 
   return db.transaction('rw', [db.shifts, db.syncQueue], async () => {
     const existing = await db.shifts.where('status').equals('open').first();
     if (existing) {
-      throw new Error('A shift is already open on this device. Close it before opening a new one.');
+      throw new AppError(AppErrorCode.SHIFT_ALREADY_OPEN);
     }
 
     const now = nowIso();
@@ -179,6 +197,15 @@ export async function openShift(input: {
     );
 
     requestSync();
+    void logAudit({
+      category: 'shift',
+      action: 'open',
+      entityId: shift.id,
+      entityLabel: cashierName,
+      summary: `opening cash: ${shift.openingCash}`,
+      reason: shift.notes,
+      shiftId: shift.id,
+    });
     return shift;
   });
 }
@@ -190,22 +217,24 @@ export async function closeShift(input: {
 }): Promise<Shift> {
   const countedCash = Number(input.countedCash);
   if (!Number.isFinite(countedCash) || countedCash < 0) {
-    throw new Error('Counted cash must be zero or greater.');
+    throw new AppError(AppErrorCode.SHIFT_COUNTED_CASH_NEGATIVE);
   }
 
   return db.transaction(
     'rw',
-    [db.shifts, db.bills, db.purchases, db.supplierPayments, db.customerPayments, db.syncQueue],
+    [db.shifts, db.bills, db.purchases, db.supplierPayments, db.customerPayments, db.cashMovements, db.expenses, db.syncQueue],
     async () => {
     const shift = await db.shifts.get(input.shiftId);
-    if (!shift) throw new Error('Shift not found.');
-    if (shift.status === 'closed') throw new Error('Shift is already closed.');
+    if (!shift) throw new AppError(AppErrorCode.SHIFT_NOT_FOUND);
+    if (shift.status === 'closed') throw new AppError(AppErrorCode.SHIFT_ALREADY_CLOSED);
 
-    const [bills, purchases, supplierPayments, customerPayments] = await Promise.all([
+    const [bills, purchases, supplierPayments, customerPayments, cashMovements, expenses] = await Promise.all([
       db.bills.where('shiftId').equals(shift.id).toArray(),
       db.purchases.where('shiftId').equals(shift.id).toArray(),
       db.supplierPayments.where('shiftId').equals(shift.id).toArray(),
       db.customerPayments.where('shiftId').equals(shift.id).toArray(),
+      db.cashMovements.where('shiftId').equals(shift.id).toArray(),
+      db.expenses.where('shiftId').equals(shift.id).toArray(),
     ]);
     const totals = summarizeShiftBills(bills);
     const cashOut = summarizeShiftCashOut(purchases, supplierPayments);
@@ -214,8 +243,19 @@ export async function closeShift(input: {
         .filter((p) => !p.paymentMethod || p.paymentMethod === 'cash')
         .reduce((sum, p) => sum + (Number(p.amount) || 0), 0),
     );
+    // CashMovement.amount is already signed (+ in, − out), so a plain sum
+    // is the net drawer effect.
+    const cashMovementNet = roundMoney(
+      cashMovements.reduce((sum, m) => sum + (Number(m.amount) || 0), 0),
+    );
+    // Operational expenses paid in cash also leave the drawer.
+    const cashExpensesTotal = roundMoney(
+      expenses
+        .filter((e) => e.paymentMethod === 'cash')
+        .reduce((sum, e) => sum + (Number(e.amount) || 0), 0),
+    );
     const expectedCash = roundMoney(
-      shift.openingCash + totals.cashCollected + customerPaymentCashIn - cashOut.totalCashOut,
+      shift.openingCash + totals.cashCollected + customerPaymentCashIn - cashOut.totalCashOut + cashMovementNet - cashExpensesTotal,
     );
     const safeCounted = roundMoney(countedCash);
 
@@ -241,6 +281,15 @@ export async function closeShift(input: {
     );
 
     requestSync();
+    void logAudit({
+      category: 'shift',
+      action: 'close',
+      entityId: closedShift.id,
+      entityLabel: closedShift.openedByCashierName,
+      summary: `expected ${expectedCash} / counted ${safeCounted} / diff ${closedShift.cashDifference}`,
+      reason: closedShift.closingNotes,
+      shiftId: closedShift.id,
+    });
     return closedShift;
   },
   );

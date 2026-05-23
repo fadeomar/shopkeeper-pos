@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useRef, useState } from 'react';
+import { getServiceErrorMessage } from '@/lib/errors/get-error-message';
 import { db } from '@/lib/db/schema';
 import {
   importProductsFromPreview,
@@ -82,7 +83,7 @@ export function ProductImportExport() {
       const nextPreview = await previewProductCsvImport(text);
       setPreview(nextPreview);
     } catch (error) {
-      push(error instanceof Error ? error.message : t('products.importFailed'), 'error');
+      push(getServiceErrorMessage(error, t, t('products.importFailed')), 'error');
       resetImport();
     } finally {
       setIsReading(false);
@@ -98,7 +99,7 @@ export function ProductImportExport() {
       resetImport();
       setOpen(false);
     } catch (error) {
-      push(error instanceof Error ? error.message : t('products.importFailed'), 'error');
+      push(getServiceErrorMessage(error, t, t('products.importFailed')), 'error');
     } finally {
       setIsImporting(false);
     }

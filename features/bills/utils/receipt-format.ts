@@ -39,7 +39,7 @@ export function buildReceiptText({
     paymentMethod: string;
   };
 }) {
-  const currency = settings?.currency ?? "USD";
+  const currency = settings?.currency ?? "ILS";
   const storeName = settings?.storeName || "Shopkeeper POS";
   const withSplit = normalizeBillSplit(bill) as Bill;
   // Show the split breakdown only when the bill exercises more than one
@@ -47,9 +47,15 @@ export function buildReceiptText({
   // section.
   const splitLines: string[] = [];
   const usedMethods = [
-    withSplit.cashAmount > 0 ? `${labels.cashLabel}: ${formatCurrency(withSplit.cashAmount, currency)}` : null,
-    withSplit.cardAmount > 0 ? `${labels.cardLabel}: ${formatCurrency(withSplit.cardAmount, currency)}` : null,
-    withSplit.creditAmount > 0 ? `${labels.creditLabel}: ${formatCurrency(withSplit.creditAmount, currency)}` : null,
+    withSplit.cashAmount > 0
+      ? `${labels.cashLabel}: ${formatCurrency(withSplit.cashAmount, currency)}`
+      : null,
+    withSplit.cardAmount > 0
+      ? `${labels.cardLabel}: ${formatCurrency(withSplit.cardAmount, currency)}`
+      : null,
+    withSplit.creditAmount > 0
+      ? `${labels.creditLabel}: ${formatCurrency(withSplit.creditAmount, currency)}`
+      : null,
   ].filter((line): line is string => line !== null);
   if (usedMethods.length > 1) splitLines.push(...usedMethods);
 

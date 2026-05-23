@@ -1,6 +1,6 @@
 import Dexie, { type Table } from 'dexie';
 import { db } from '@/lib/db/schema';
-import type { AuthCacheEntry, Bill, BillItem, Customer, CustomerPayment, Product, Purchase, PurchaseItem, Settings, Shift, StockMovement, Supplier, SupplierPayment, SyncConflict, SyncQueueItem } from '@/types/domain';
+import type { AuditEvent, AuthCacheEntry, Bill, BillItem, CashMovement, Customer, CustomerPayment, Expense, Product, Purchase, PurchaseItem, Settings, Shift, StockMovement, Supplier, SupplierPayment, SyncConflict, SyncQueueItem } from '@/types/domain';
 
 const ACTIVE_UID_KEY = 'shopkeeper_active_uid';
 const LEGACY_LAST_UID_KEY = 'shopkeeper_last_uid';
@@ -8,6 +8,10 @@ const DEVICE_ID_KEY = 'shopkeeper_device_id';
 
 export interface LocalDataSummary {
   products: number; bills: number; billItems: number; stockMovements: number; customerPayments: number; settings: number;
+  customers: number; suppliers: number; purchases: number; purchaseItems: number; supplierPayments: number; shifts: number;
+  auditEvents: number;
+  cashMovements: number;
+  expenses: number;
   pending: number; failed: number; syncing: number; blocked: number; conflicts: number; hasBusinessData: boolean; hasUnsyncedWork: boolean;
 }
 
@@ -20,6 +24,9 @@ interface AccountSnapshot {
   purchases: Purchase[];
   purchaseItems: PurchaseItem[];
   supplierPayments: SupplierPayment[];
+  auditEvents?: AuditEvent[];
+  cashMovements?: CashMovement[];
+  expenses?: Expense[];
   settings: Settings[]; authCache: AuthCacheEntry[]; syncQueue: SyncQueueItem[]; syncConflicts: SyncConflict[];
 }
 
@@ -37,26 +44,48 @@ export function setActiveUid(uid: string): void { if (typeof window === 'undefin
 
 export async function getLocalDataSummary(): Promise<LocalDataSummary> {
   if (!db.isOpen()) { try { await db.open(); } catch {} }
-  const [products,bills,billItems,stockMovements,customerPayments,settings,pending,failed,syncing,blocked,conflicts] = await Promise.all([
+  const [
+    products,bills,billItems,stockMovements,customerPayments,settings,
+    customers,suppliers,purchases,purchaseItems,supplierPayments,shifts,
+    auditEvents,cashMovements,expenses,
+    pending,failed,syncing,blocked,conflicts,
+  ] = await Promise.all([
     db.products.count(), db.bills.count(), db.billItems.count(), db.stockMovements.count(), db.customerPayments.count(), db.settings.count(),
+    db.customers.count(), db.suppliers.count(), db.purchases.count(), db.purchaseItems.count(), db.supplierPayments.count(), db.shifts.count(),
+    db.auditEvents.count().catch(() => 0),
+    db.cashMovements.count().catch(() => 0),
+    db.expenses.count().catch(() => 0),
     db.syncQueue.where('status').equals('pending').count(), db.syncQueue.where('status').equals('failed').count(), db.syncQueue.where('status').equals('syncing').count(), db.syncQueue.where('status').equals('blocked').count(),
     db.syncConflicts.where('status').equals('open').count().catch(() => 0),
   ]);
-  const hasBusinessData = products + bills + billItems + stockMovements + customerPayments > 0;
+  // hasBusinessData covers every persistable table so a user with only
+  // purchases/suppliers/customers/shifts (and no bills yet) is still detected
+  // as having local work — important for the safe sign-out + restore prompts.
+  // Audit events count too — a user with only history (after a wipe) still
+  // has data they probably care about.
+  const hasBusinessData =
+    products + bills + billItems + stockMovements + customerPayments +
+    customers + suppliers + purchases + purchaseItems + supplierPayments + shifts +
+    auditEvents + cashMovements + expenses > 0;
   const hasUnsyncedWork = pending + failed + syncing + blocked + conflicts > 0;
-  return { products,bills,billItems,stockMovements,customerPayments,settings,pending,failed,syncing,blocked,conflicts,hasBusinessData,hasUnsyncedWork };
+  return {
+    products,bills,billItems,stockMovements,customerPayments,settings,
+    customers,suppliers,purchases,purchaseItems,supplierPayments,shifts,
+    auditEvents,cashMovements,expenses,
+    pending,failed,syncing,blocked,conflicts,hasBusinessData,hasUnsyncedWork,
+  };
 }
 
-async function clearRuntimeDb(): Promise<void> { await Promise.all([db.products.clear(),db.bills.clear(),db.billItems.clear(),db.stockMovements.clear(),db.customerPayments.clear(),db.customers.clear(),db.shifts.clear(),db.suppliers.clear(),db.purchases.clear(),db.purchaseItems.clear(),db.supplierPayments.clear(),db.settings.clear(),db.authCache.clear(),db.syncQueue.clear(),db.syncConflicts.clear().catch(()=>undefined)]); }
+async function clearRuntimeDb(): Promise<void> { await Promise.all([db.products.clear(),db.bills.clear(),db.billItems.clear(),db.stockMovements.clear(),db.customerPayments.clear(),db.customers.clear(),db.shifts.clear(),db.suppliers.clear(),db.purchases.clear(),db.purchaseItems.clear(),db.supplierPayments.clear(),db.settings.clear(),db.authCache.clear(),db.syncQueue.clear(),db.syncConflicts.clear().catch(()=>undefined),db.auditEvents.clear().catch(()=>undefined),db.cashMovements.clear().catch(()=>undefined),db.expenses.clear().catch(()=>undefined)]); }
 async function buildSnapshot(uid: string): Promise<AccountSnapshot> {
-  const [products,bills,billItems,stockMovements,customerPayments,customers,shifts,suppliers,purchases,purchaseItems,supplierPayments,settings,authCache,syncQueue,syncConflicts] = await Promise.all([db.products.toArray(),db.bills.toArray(),db.billItems.toArray(),db.stockMovements.toArray(),db.customerPayments.toArray(),db.customers.toArray(),db.shifts.toArray(),db.suppliers.toArray(),db.purchases.toArray(),db.purchaseItems.toArray(),db.supplierPayments.toArray(),db.settings.toArray(),db.authCache.toArray(),db.syncQueue.toArray(),db.syncConflicts.toArray().catch(()=>[] as SyncConflict[])]);
-  return { uid, deviceId: getOrCreateDeviceId(), savedAt: new Date().toISOString(), summary: await getLocalDataSummary(), products,bills,billItems,stockMovements,customerPayments,customers,shifts,suppliers,purchases,purchaseItems,supplierPayments,settings,authCache,syncQueue,syncConflicts };
+  const [products,bills,billItems,stockMovements,customerPayments,customers,shifts,suppliers,purchases,purchaseItems,supplierPayments,settings,authCache,syncQueue,syncConflicts,auditEvents,cashMovements,expenses] = await Promise.all([db.products.toArray(),db.bills.toArray(),db.billItems.toArray(),db.stockMovements.toArray(),db.customerPayments.toArray(),db.customers.toArray(),db.shifts.toArray(),db.suppliers.toArray(),db.purchases.toArray(),db.purchaseItems.toArray(),db.supplierPayments.toArray(),db.settings.toArray(),db.authCache.toArray(),db.syncQueue.toArray(),db.syncConflicts.toArray().catch(()=>[] as SyncConflict[]),db.auditEvents.toArray().catch(()=>[] as AuditEvent[]),db.cashMovements.toArray().catch(()=>[] as CashMovement[]),db.expenses.toArray().catch(()=>[] as Expense[])]);
+  return { uid, deviceId: getOrCreateDeviceId(), savedAt: new Date().toISOString(), summary: await getLocalDataSummary(), products,bills,billItems,stockMovements,customerPayments,customers,shifts,suppliers,purchases,purchaseItems,supplierPayments,auditEvents,cashMovements,expenses,settings,authCache,syncQueue,syncConflicts };
 }
 export async function saveCurrentAccountSnapshot(uid: string): Promise<LocalDataSummary> { const snapshot = await buildSnapshot(uid); await vault.snapshots.put(snapshot); return snapshot.summary; }
 export async function restoreAccountSnapshot(uid: string): Promise<boolean> {
   const snapshot = await vault.snapshots.get(uid); await clearRuntimeDb(); if (!snapshot) return false;
-  await db.transaction('rw', [db.products,db.bills,db.billItems,db.stockMovements,db.customerPayments,db.customers,db.shifts,db.suppliers,db.purchases,db.purchaseItems,db.supplierPayments,db.settings,db.authCache,db.syncQueue,db.syncConflicts], async()=>{
-    if(snapshot.products.length) await db.products.bulkPut(snapshot.products); if(snapshot.bills.length) await db.bills.bulkPut(snapshot.bills); if(snapshot.billItems.length) await db.billItems.bulkPut(snapshot.billItems); if(snapshot.stockMovements.length) await db.stockMovements.bulkPut(snapshot.stockMovements); if(snapshot.customerPayments.length) await db.customerPayments.bulkPut(snapshot.customerPayments); if(snapshot.customers?.length) await db.customers.bulkPut(snapshot.customers); if(snapshot.shifts?.length) await db.shifts.bulkPut(snapshot.shifts); if(snapshot.suppliers?.length) await db.suppliers.bulkPut(snapshot.suppliers); if(snapshot.purchases?.length) await db.purchases.bulkPut(snapshot.purchases); if(snapshot.purchaseItems?.length) await db.purchaseItems.bulkPut(snapshot.purchaseItems); if(snapshot.supplierPayments?.length) await db.supplierPayments.bulkPut(snapshot.supplierPayments); if(snapshot.settings.length) await db.settings.bulkPut(snapshot.settings); if(snapshot.authCache.length) await db.authCache.bulkPut(snapshot.authCache); if(snapshot.syncQueue.length) await db.syncQueue.bulkPut(snapshot.syncQueue); if(snapshot.syncConflicts.length) await db.syncConflicts.bulkPut(snapshot.syncConflicts);
+  await db.transaction('rw', [db.products,db.bills,db.billItems,db.stockMovements,db.customerPayments,db.customers,db.shifts,db.suppliers,db.purchases,db.purchaseItems,db.supplierPayments,db.settings,db.authCache,db.syncQueue,db.syncConflicts,db.auditEvents,db.cashMovements,db.expenses], async()=>{
+    if(snapshot.products.length) await db.products.bulkPut(snapshot.products); if(snapshot.bills.length) await db.bills.bulkPut(snapshot.bills); if(snapshot.billItems.length) await db.billItems.bulkPut(snapshot.billItems); if(snapshot.stockMovements.length) await db.stockMovements.bulkPut(snapshot.stockMovements); if(snapshot.customerPayments.length) await db.customerPayments.bulkPut(snapshot.customerPayments); if(snapshot.customers?.length) await db.customers.bulkPut(snapshot.customers); if(snapshot.shifts?.length) await db.shifts.bulkPut(snapshot.shifts); if(snapshot.suppliers?.length) await db.suppliers.bulkPut(snapshot.suppliers); if(snapshot.purchases?.length) await db.purchases.bulkPut(snapshot.purchases); if(snapshot.purchaseItems?.length) await db.purchaseItems.bulkPut(snapshot.purchaseItems); if(snapshot.supplierPayments?.length) await db.supplierPayments.bulkPut(snapshot.supplierPayments); if(snapshot.auditEvents?.length) await db.auditEvents.bulkPut(snapshot.auditEvents); if(snapshot.cashMovements?.length) await db.cashMovements.bulkPut(snapshot.cashMovements); if(snapshot.expenses?.length) await db.expenses.bulkPut(snapshot.expenses); if(snapshot.settings.length) await db.settings.bulkPut(snapshot.settings); if(snapshot.authCache.length) await db.authCache.bulkPut(snapshot.authCache); if(snapshot.syncQueue.length) await db.syncQueue.bulkPut(snapshot.syncQueue); if(snapshot.syncConflicts.length) await db.syncConflicts.bulkPut(snapshot.syncConflicts);
   });
   return true;
 }

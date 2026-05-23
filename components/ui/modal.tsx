@@ -40,15 +40,14 @@ export function Modal({
   return (
     /* Backdrop */
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-3 sm:p-4 bg-slate-900/50 backdrop-blur-xs"
       role="dialog"
       aria-modal="true"
       aria-labelledby="modal-title"
       onClick={onClose}
     >
-      {/* Panel — stop propagation so clicking inside doesn't close */}
       <div
-        className="w-full max-w-lg bg-white rounded-2xl border border-slate-200 shadow-2xl"
+        className="my-4 flex max-h-[calc(100dvh-2rem)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -76,11 +75,13 @@ export function Modal({
         </div>
 
         {/* Body */}
-        <div className="px-5 py-4">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          {children}
+        </div>
 
         {/* Footer */}
         {footer && (
-          <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-slate-100">
+          <div className="shrink-0 flex items-center justify-end gap-2 px-5 py-4 border-t border-slate-100">
             {footer}
           </div>
         )}

@@ -16,7 +16,7 @@ import {
 } from 'firebase/firestore';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { auth, firestore, firebaseApp } from './config';
-import type { AppUser } from '@/types/domain';
+import type { AppUser, UserRole } from '@/types/domain';
 
 export function signIn(email: string, password: string) {
   return signInWithEmailAndPassword(auth, email, password);
@@ -100,7 +100,7 @@ export async function createAppUser(
   email: string,
   password: string,
   name: string,
-  role: 'admin' | 'cashier',
+  role: UserRole,
   phone?: string,
 ): Promise<void> {
   // Secondary app so creating a user doesn't sign out the current admin

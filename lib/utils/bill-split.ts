@@ -1,9 +1,25 @@
-import type { Bill, PaymentMethod } from '@/types/domain';
+import type { PaymentMethod } from '@/types/domain';
 
 export interface BillSplit {
   cashAmount: number;
   cardAmount: number;
   creditAmount: number;
+}
+
+/**
+ * Minimal structural interface satisfied by both Bill and Purchase.
+ * Use this instead of casting `purchase as unknown as Bill` when calling
+ * normalizeBillSplit or netSplitField.
+ */
+export interface SplitLike {
+  cashAmount?: number;
+  cardAmount?: number;
+  creditAmount?: number;
+  paymentMethod?: string;
+  totalAmount?: number;
+  paidAmount?: number;
+  returnedAmount?: number;
+  status?: string;
 }
 
 /**
@@ -41,7 +57,7 @@ export function deriveLegacySplit(
  * from an older device (cloud pull) and is missing the split fields. Returns
  * the bill object unmodified when the split is already present.
  */
-export function normalizeBillSplit<T extends Partial<Bill>>(bill: T): T & BillSplit {
+export function normalizeBillSplit<T extends SplitLike>(bill: T): T & BillSplit {
   if (
     typeof bill.cashAmount === 'number' &&
     typeof bill.cardAmount === 'number' &&
@@ -65,10 +81,10 @@ export function normalizeBillSplit<T extends Partial<Bill>>(bill: T): T & BillSp
  * Voided bills set returnedAmount = totalAmount, so the formula naturally
  * yields 0 for them.
  */
-export function netSplitField(bill: Bill, fieldAmount: number): number {
-  if (fieldAmount <= 0 || bill.totalAmount <= 0) return 0;
+export function netSplitField(bill: SplitLike, fieldAmount: number): number {
+  if (fieldAmount <= 0 || (bill.totalAmount ?? 0) <= 0) return 0;
   const returned = bill.returnedAmount ?? 0;
   if (returned <= 0) return fieldAmount;
-  const allocatedReturn = returned * (fieldAmount / bill.totalAmount);
+  const allocatedReturn = returned * (fieldAmount / (bill.totalAmount ?? 1));
   return Math.max(0, fieldAmount - allocatedReturn);
 }

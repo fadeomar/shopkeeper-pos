@@ -28,7 +28,6 @@ import {
   type TrendRow,
 } from "@/features/reports/utils/report-summary";
 
-
 function ProductRows({
   rows,
   currency,
@@ -121,12 +120,15 @@ export function ReportsWorkspace() {
     [],
   );
   const settings = useLiveQuery(() => settingsRepo.get(), []);
-  const customerPayments = useLiveQuery(() => db.customerPayments.toArray(), []);
+  const customerPayments = useLiveQuery(
+    () => db.customerPayments.toArray(),
+    [],
+  );
   const [range, setRange] = useState<ReportRange>("today");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
 
-  const currency = settings?.currency ?? "USD";
+  const currency = settings?.currency ?? "ILS";
   const loading = !bills || !billItems || !products;
 
   const filteredBills = useMemo(
@@ -153,11 +155,11 @@ export function ReportsWorkspace() {
   const customerPaymentsCashIn = useMemo(() => {
     const { from, to } = getReportRange({ range, customFrom, customTo });
     return (customerPayments ?? [])
-      .filter(p => {
+      .filter((p) => {
         const created = new Date(p.createdAt);
         if (from && created < from) return false;
         if (to && created >= to) return false;
-        return (p.paymentMethod ?? 'cash') === 'cash';
+        return (p.paymentMethod ?? "cash") === "cash";
       })
       .reduce((sum, p) => sum + p.amount, 0);
   }, [customerPayments, range, customFrom, customTo]);
@@ -197,6 +199,14 @@ export function ReportsWorkspace() {
         description={t("reports.subtitle")}
         actions={
           <>
+            <Link
+              // typed-routes hasn't been regenerated yet for the new /reports/z page;
+              // the route exists at app/reports/z/page.tsx so the cast is safe.
+              href={"/reports/z" as never}
+              className="inline-flex min-h-[42px] items-center justify-center rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-700"
+            >
+              {t("reports.openZReport")}
+            </Link>
             <Link
               href="/bills"
               className="inline-flex min-h-[42px] items-center justify-center rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-200"

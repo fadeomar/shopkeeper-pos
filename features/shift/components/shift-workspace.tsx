@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { getServiceErrorMessage } from "@/lib/errors/get-error-message";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db/schema";
@@ -25,7 +26,7 @@ import { useToast } from "@/components/ui/toast";
 import { useLocale } from "@/components/providers/locale-context";
 import { PageShell } from "@/components/ui/page-shell";
 import { PageHeader } from "@/components/ui/page-header";
-import { formatCurrency } from "@/lib/utils/money";
+import { formatCurrency, MONEY_EPSILON } from "@/lib/utils/money";
 import { formatDateTime } from "@/lib/utils/date";
 import { ShiftReport } from "./shift-report";
 import type {
@@ -80,7 +81,7 @@ export function ShiftWorkspace() {
         : Promise.resolve<CustomerPayment[]>([]),
     [activeShift?.id],
   );
-  const currency = settings?.currency ?? "USD";
+  const currency = settings?.currency ?? "ILS";
 
   const [openingCash, setOpeningCash] = useState("");
   const [openNotes, setOpenNotes] = useState("");
@@ -192,7 +193,7 @@ export function ShiftWorkspace() {
           const diff = row.original.cashDifference ?? 0;
           return (
             <span
-              className={`font-semibold tabular-nums ${diff > 0.005 ? "text-emerald-700" : diff < -0.005 ? "text-red-700" : "text-slate-700"}`}
+              className={`font-semibold tabular-nums ${diff > MONEY_EPSILON ? "text-emerald-700" : diff < -MONEY_EPSILON ? "text-red-700" : "text-slate-700"}`}
             >
               {formatCurrency(diff, currency)}
             </span>
@@ -226,7 +227,11 @@ export function ShiftWorkspace() {
     try {
       await openShift({
         openingCash: Number(openingCash || 0),
-        cashierName: (cashierName || settings?.cashierName || "Owner").trim(),
+        cashierName: (
+          cashierName ||
+          settings?.cashierName ||
+          t("common.owner")
+        ).trim(),
         notes: openNotes,
       });
       setOpeningCash("");
@@ -235,7 +240,7 @@ export function ShiftWorkspace() {
       push(t("shift.openShiftSuccess"));
     } catch (error) {
       push(
-        error instanceof Error ? error.message : t("shift.openShiftFailed"),
+        getServiceErrorMessage(error, t, t("shift.openShiftFailed")),
         "error",
       );
     } finally {
@@ -259,7 +264,7 @@ export function ShiftWorkspace() {
       setReportShift(closed);
     } catch (error) {
       push(
-        error instanceof Error ? error.message : t("shift.closeShiftFailed"),
+        getServiceErrorMessage(error, t, t("shift.closeShiftFailed")),
         "error",
       );
     } finally {
@@ -310,7 +315,7 @@ export function ShiftWorkspace() {
               <Input
                 value={cashierName}
                 onChange={(e) => setCashierName(e.target.value)}
-                placeholder={settings?.cashierName || "Owner"}
+                placeholder={settings?.cashierName || t("common.owner")}
               />
               <span className="text-xs text-slate-500">
                 {t("shift.cashierNameHelper")}
@@ -377,7 +382,9 @@ export function ShiftWorkspace() {
               label={t("shift.cashPaidOut")}
               value={formatCurrency(cashOut.totalCashOut, currency)}
               helper={t("shift.cashPaidOutHelper")}
-              tone={cashOut.totalCashOut > 0.005 ? "warning" : "neutral"}
+              tone={
+                cashOut.totalCashOut > MONEY_EPSILON ? "warning" : "neutral"
+              }
             />
             <StatCard
               label={t("shift.expectedCash")}
@@ -498,9 +505,9 @@ export function ShiftWorkspace() {
                 label={t("shift.cashDifference")}
                 value={formatCurrency(liveDifference, currency)}
                 tone={
-                  liveDifference > 0.005
+                  liveDifference > MONEY_EPSILON
                     ? "positive"
-                    : liveDifference < -0.005
+                    : liveDifference < -MONEY_EPSILON
                       ? "warning"
                       : "neutral"
                 }

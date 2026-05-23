@@ -1,3 +1,4 @@
+import { AppError, AppErrorCode } from '@/lib/errors/app-error';
 import { productSchema, type ProductSchema } from '@/features/products/schema';
 import { db } from '@/lib/db/schema';
 import { buildSyncQueueItem } from '@/lib/services/sync-queue-service';
@@ -237,7 +238,7 @@ export async function importProductsFromPreview(preview: ProductImportPreview): 
   await db.transaction('rw', db.products, db.stockMovements, db.syncQueue, async () => {
     const existing = await db.products.where('barcode').anyOf(products.map((product) => product.barcode)).count();
     if (existing > 0) {
-      throw new Error('Some products already exist. Preview the CSV again and retry.');
+      throw new AppError(AppErrorCode.IMPORT_DUPLICATES);
     }
 
     await db.products.bulkAdd(products);

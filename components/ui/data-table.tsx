@@ -57,17 +57,22 @@ export function DataTable<TData>({
   toolbar,
   className,
   loading,
-  emptyTitle = 'No results',
+  emptyTitle,
   emptyDescription,
   enableGlobalSearch = true,
-  searchPlaceholder = 'Search…',
+  searchPlaceholder,
   pageSize = 10,
   pageSizeOptions = [10, 25, 50, 100],
   getRowId,
   labels,
 }: DataTableProps<TData>) {
+  const { t } = useLocale();
   const [globalFilter, setGlobalFilter] = useState('');
   const [sorting, setSorting] = useState<SortingState>([]);
+  // Pull every default from the locale dict so a caller that forgets to pass
+  // labels still gets the user's language, not hardcoded English.
+  const resolvedEmptyTitle = emptyTitle ?? t('dataTable.noResults');
+  const resolvedSearchPlaceholder = searchPlaceholder ?? t('dataTable.search');
 
   const table = useReactTable({
     data,
@@ -84,15 +89,15 @@ export function DataTable<TData>({
   });
 
   const tableLabels = {
-    searchPlaceholder: labels?.searchPlaceholder ?? searchPlaceholder,
-    loading: labels?.loading ?? 'Loading…',
-    page: labels?.page ?? 'Page',
-    of: labels?.of ?? 'of',
-    rowsPerPage: labels?.rowsPerPage ?? 'Rows per page',
-    first: labels?.first ?? 'First',
-    previous: labels?.previous ?? 'Previous',
-    next: labels?.next ?? 'Next',
-    last: labels?.last ?? 'Last',
+    searchPlaceholder: labels?.searchPlaceholder ?? resolvedSearchPlaceholder,
+    loading: labels?.loading ?? t('dataTable.loading'),
+    page: labels?.page ?? t('dataTable.page'),
+    of: labels?.of ?? t('dataTable.of'),
+    rowsPerPage: labels?.rowsPerPage ?? t('dataTable.rowsPerPage'),
+    first: labels?.first ?? t('dataTable.first'),
+    previous: labels?.previous ?? t('dataTable.previous'),
+    next: labels?.next ?? t('dataTable.next'),
+    last: labels?.last ?? t('dataTable.last'),
   };
 
   const rows = table.getRowModel().rows;
@@ -164,7 +169,7 @@ export function DataTable<TData>({
             ) : rows.length === 0 ? (
               <tr>
                 <td colSpan={colSpan} className="px-4 py-10">
-                  <EmptyState title={emptyTitle} description={emptyDescription} compact />
+                  <EmptyState title={resolvedEmptyTitle} description={emptyDescription} compact />
                 </td>
               </tr>
             ) : (

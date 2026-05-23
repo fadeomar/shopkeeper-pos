@@ -1,7 +1,9 @@
+import { AppError, AppErrorCode } from '@/lib/errors/app-error';
 import { db } from '@/lib/db/schema';
 import { createId } from '@/lib/utils/id';
 import { nowIso } from '@/lib/utils/date';
 import { buildSyncQueueItem } from '@/lib/services/sync-queue-service';
+import { logAudit } from '@/lib/services/audit-service';
 import type { Product, StockMovement, StockMovementType } from '@/types/domain';
 
 function requestSync(): void {
@@ -70,20 +72,24 @@ export async function adjustProductStock(
   // countProductStock both enforce Number.isInteger). Matching here keeps
   // adjustment movements consistent and prevents fractional stock drift.
   if (!Number.isInteger(quantityChange) || quantityChange === 0) {
-    throw new Error('Stock adjustment must be a non-zero whole number.');
+    throw new AppError(AppErrorCode.STOCK_ADJ_ZERO_OR_WHOLE);
   }
 
   const createdAt = nowIso();
 
+  // Captured inside the transaction for the post-commit audit log entry.
+  let auditProductName = '';
+
   await db.transaction('rw', db.products, db.stockMovements, db.syncQueue, async () => {
     const liveProduct = await db.products.get(product.id);
     if (!liveProduct) {
-      throw new Error('Product not found.');
+      throw new AppError(AppErrorCode.PRODUCT_NOT_FOUND);
     }
+    auditProductName = liveProduct.name;
 
     const nextQuantity = liveProduct.quantityInStock + quantityChange;
     if (nextQuantity < 0) {
-      throw new Error('Stock adjustment would make inventory negative.');
+      throw new AppError(AppErrorCode.STOCK_ADJ_NEGATIVE_RESULT);
     }
 
     const movement: StockMovement = {
@@ -112,6 +118,14 @@ export async function adjustProductStock(
     ]);
   });
   requestSync();
+  void logAudit({
+    category: 'inventory',
+    action: 'stock_adjust',
+    entityId: product.id,
+    entityLabel: auditProductName,
+    summary: `${quantityChange > 0 ? '+' : ''}${quantityChange}`,
+    reason: note,
+  });
 }
 
 
@@ -123,16 +137,19 @@ export async function receiveProductStock(
   supplierName?: string,
 ) {
   if (!Number.isInteger(quantityReceived) || quantityReceived <= 0) {
-    throw new Error('Received quantity must be a positive whole number.');
+    throw new AppError(AppErrorCode.STOCK_RECEIVED_QTY_INVALID);
   }
 
   const createdAt = nowIso();
 
+  let auditProductName = '';
+
   await db.transaction('rw', db.products, db.stockMovements, db.syncQueue, async () => {
     const liveProduct = await db.products.get(product.id);
     if (!liveProduct) {
-      throw new Error('Product not found.');
+      throw new AppError(AppErrorCode.PRODUCT_NOT_FOUND);
     }
+    auditProductName = liveProduct.name;
 
     const changes: Partial<Product> = {
       quantityInStock: liveProduct.quantityInStock + quantityReceived,
@@ -168,6 +185,14 @@ export async function receiveProductStock(
     ]);
   });
   requestSync();
+  void logAudit({
+    category: 'inventory',
+    action: 'stock_adjust',
+    entityId: product.id,
+    entityLabel: auditProductName,
+    summary: `+${quantityReceived} (received)`,
+    reason: note.trim() || undefined,
+  });
 }
 
 export async function countProductStock(
@@ -176,21 +201,25 @@ export async function countProductStock(
   note: string,
 ) {
   if (!Number.isInteger(countedQuantity) || countedQuantity < 0) {
-    throw new Error('Counted quantity must be a non-negative whole number.');
+    throw new AppError(AppErrorCode.STOCK_COUNTED_QTY_INVALID);
   }
 
   const createdAt = nowIso();
+  let auditDelta = 0;
+  let auditProductName = product.name;
 
   await db.transaction('rw', db.products, db.stockMovements, db.syncQueue, async () => {
     const liveProduct = await db.products.get(product.id);
     if (!liveProduct) {
-      throw new Error('Product not found.');
+      throw new AppError(AppErrorCode.PRODUCT_NOT_FOUND);
     }
+    auditProductName = liveProduct.name;
 
     const quantityChange = countedQuantity - liveProduct.quantityInStock;
     if (quantityChange === 0) {
       return;
     }
+    auditDelta = quantityChange;
 
     const movement: StockMovement = {
       id: createId('move'),
@@ -217,4 +246,14 @@ export async function countProductStock(
     ]);
   });
   requestSync();
+  if (auditDelta !== 0) {
+    void logAudit({
+      category: 'inventory',
+      action: 'stock_adjust',
+      entityId: product.id,
+      entityLabel: auditProductName,
+      summary: `counted: ${countedQuantity} (${auditDelta > 0 ? '+' : ''}${auditDelta})`,
+      reason: note.trim() || undefined,
+    });
+  }
 }

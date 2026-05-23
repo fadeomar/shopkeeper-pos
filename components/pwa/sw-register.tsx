@@ -200,9 +200,10 @@ export function ServiceWorkerRegister() {
           }
         }
 
-        // Keep showing "Preparing offline cache" instead of claiming readiness.
+        // All 8 warm attempts exhausted without success — surface an error
+        // so the user knows to reconnect rather than waiting indefinitely.
         setReady(false);
-        setCacheUnavailable(false);
+        setCacheUnavailable(true);
       } catch (err) {
         if (!cancelled) {
           setReady(true);
@@ -299,8 +300,11 @@ export function ServiceWorkerRegister() {
 
       cleanupDevWorker();
     } else {
-      const swUrl =
-        process.env.NODE_ENV === "production" ? "/sw.js" : "/sw.js?dev-sw=1";
+      // On HTTP (local testing with `next start`) the SW's DEV_HOST guard
+      // self-destructs unless ?dev-sw=1 is present. Use HTTPS as the signal
+      // for "real production" rather than NODE_ENV.
+      const isHttps = window.location.protocol === "https:";
+      const swUrl = isHttps ? "/sw.js" : "/sw.js?dev-sw=1";
 
       const onControllerChange = () => {
         // First install: reload once to become definitely controlled. Later

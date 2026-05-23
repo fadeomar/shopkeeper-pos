@@ -1,10 +1,11 @@
-'use client';
+"use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import clsx from 'clsx';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { EmptyState } from '@/components/ui/empty-state';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import clsx from "clsx";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { EmptyState } from "@/components/ui/empty-state";
+import { useLocale } from "@/components/providers/locale-context";
 
 export type SearchableSelectOption = {
   value: string;
@@ -34,9 +35,9 @@ export function SearchableSelect({
   options,
   value,
   onValueChange,
-  placeholder = 'Select…',
-  searchPlaceholder = 'Search…',
-  emptyMessage = 'No options found',
+  placeholder,
+  searchPlaceholder,
+  emptyMessage,
   disabled,
   loading,
   clearable,
@@ -45,8 +46,14 @@ export function SearchableSelect({
   name,
   id,
 }: SearchableSelectProps) {
+  const { t } = useLocale();
+  // Defaults pulled from the locale dict so the component can never leak
+  // English into Arabic UI even if a caller forgets to pass a prop.
+  const resolvedPlaceholder = placeholder ?? t("searchableSelect.select");
+  const resolvedSearchPlaceholder = searchPlaceholder ?? t("searchableSelect.search");
+  const resolvedEmptyMessage = emptyMessage ?? t("searchableSelect.noOptions");
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -55,7 +62,13 @@ export function SearchableSelect({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return options;
-    return options.filter((option) => [option.label, option.description].filter(Boolean).join(' ').toLowerCase().includes(q));
+    return options.filter((option) =>
+      [option.label, option.description]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(q),
+    );
   }, [options, query]);
 
   useEffect(() => {
@@ -63,8 +76,8 @@ export function SearchableSelect({
     function handlePointerDown(event: MouseEvent) {
       if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
     }
-    document.addEventListener('mousedown', handlePointerDown);
-    return () => document.removeEventListener('mousedown', handlePointerDown);
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
   }, [open]);
 
   useEffect(() => {
@@ -72,7 +85,7 @@ export function SearchableSelect({
       setHighlightedIndex(0);
       window.setTimeout(() => inputRef.current?.focus(), 0);
     } else {
-      setQuery('');
+      setQuery("");
     }
   }, [open]);
 
@@ -83,21 +96,29 @@ export function SearchableSelect({
   }
 
   return (
-    <div ref={rootRef} className={clsx('relative', className)}>
-      <input type="hidden" name={name} value={value ?? ''} />
+    <div ref={rootRef} className={clsx("relative", className)}>
+      <input type="hidden" name={name} value={value ?? ""} />
       <Button
         id={id}
         type="button"
         variant="outline"
         fullWidth
         disabled={disabled}
-        className={clsx('justify-between text-start font-medium', !selected && 'text-slate-400', buttonClassName)}
+        className={clsx(
+          "justify-between text-start font-medium",
+          !selected && "text-slate-400",
+          buttonClassName,
+        )}
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
       >
-        <span className="min-w-0 truncate">{selected?.label ?? placeholder}</span>
-        <span aria-hidden="true" className="text-slate-400">⌄</span>
+        <span className="min-w-0 truncate">
+          {selected?.label ?? resolvedPlaceholder}
+        </span>
+        <span aria-hidden="true" className="text-slate-400">
+          ⌄
+        </span>
       </Button>
 
       {open && (
@@ -105,20 +126,36 @@ export function SearchableSelect({
           <Input
             ref={inputRef}
             value={query}
-            placeholder={searchPlaceholder}
+            placeholder={resolvedSearchPlaceholder}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === 'Escape') setOpen(false);
-              if (event.key === 'ArrowDown') { event.preventDefault(); setHighlightedIndex((index) => Math.min(index + 1, Math.max(filtered.length - 1, 0))); }
-              if (event.key === 'ArrowUp') { event.preventDefault(); setHighlightedIndex((index) => Math.max(index - 1, 0)); }
-              if (event.key === 'Enter') { event.preventDefault(); selectOption(filtered[highlightedIndex] ?? filtered[0]); }
+              if (event.key === "Escape") setOpen(false);
+              if (event.key === "ArrowDown") {
+                event.preventDefault();
+                setHighlightedIndex((index) =>
+                  Math.min(index + 1, Math.max(filtered.length - 1, 0)),
+                );
+              }
+              if (event.key === "ArrowUp") {
+                event.preventDefault();
+                setHighlightedIndex((index) => Math.max(index - 1, 0));
+              }
+              if (event.key === "Enter") {
+                event.preventDefault();
+                selectOption(filtered[highlightedIndex] ?? filtered[0]);
+              }
             }}
           />
-          <div role="listbox" className="mt-2 max-h-72 overflow-y-auto rounded-xl">
+          <div
+            role="listbox"
+            className="mt-2 max-h-72 overflow-y-auto rounded-xl"
+          >
             {loading ? (
-              <div className="px-3 py-6 text-center text-sm text-slate-500">Loading…</div>
+              <div className="px-3 py-6 text-center text-sm text-slate-500">
+                {t("common.loading")}
+              </div>
             ) : filtered.length === 0 ? (
-              <EmptyState title={emptyMessage} compact />
+              <EmptyState title={resolvedEmptyMessage} compact />
             ) : (
               filtered.map((option, index) => (
                 <button
@@ -128,26 +165,44 @@ export function SearchableSelect({
                   aria-selected={option.value === value}
                   disabled={option.disabled}
                   className={clsx(
-                    'flex w-full items-start justify-between gap-3 rounded-xl px-3 py-2 text-start text-sm transition-colors',
-                    index === highlightedIndex && 'bg-slate-50',
-                    option.value === value && 'bg-blue-50 text-blue-700',
-                    option.disabled && 'cursor-not-allowed opacity-50',
+                    "flex w-full items-start justify-between gap-3 rounded-xl px-3 py-2 text-start text-sm transition-colors",
+                    index === highlightedIndex && "bg-slate-50",
+                    option.value === value && "bg-blue-50 text-blue-700",
+                    option.disabled && "cursor-not-allowed opacity-50",
                   )}
                   onMouseEnter={() => setHighlightedIndex(index)}
                   onClick={() => selectOption(option)}
                 >
                   <span className="min-w-0">
-                    <span className="block truncate font-medium">{option.label}</span>
-                    {option.description && <span className="mt-0.5 block truncate text-xs text-slate-500">{option.description}</span>}
+                    <span className="block truncate font-medium">
+                      {option.label}
+                    </span>
+                    {option.description && (
+                      <span className="mt-0.5 block truncate text-xs text-slate-500">
+                        {option.description}
+                      </span>
+                    )}
                   </span>
-                  {option.meta && <span className="shrink-0">{option.meta}</span>}
+                  {option.meta && (
+                    <span className="shrink-0">{option.meta}</span>
+                  )}
                 </button>
               ))
             )}
           </div>
           {clearable && value && (
-            <Button type="button" variant="ghost" size="sm" fullWidth className="mt-2" onClick={() => { onValueChange(null); setOpen(false); }}>
-              Clear
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              fullWidth
+              className="mt-2"
+              onClick={() => {
+                onValueChange(null);
+                setOpen(false);
+              }}
+            >
+              {t("common.clear")}
             </Button>
           )}
         </div>

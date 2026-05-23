@@ -1,13 +1,16 @@
+import { AppError, AppErrorCode } from "@/lib/errors/app-error";
 import { db } from "@/lib/db/schema";
+import { logAudit } from "@/lib/services/audit-service";
 import { SETTINGS_ID, customerRepo } from "@/lib/db/repositories";
 import {
+  calculateBillItemNetContribution,
   calculateBillTotals,
   calculateChange,
   calculateLineProfit,
   calculateLineSubtotal,
 } from "@/lib/utils/calculations";
 import { nowIso } from "@/lib/utils/date";
-import { addMoney, allocateMoney, roundMoney, subtractMoney } from "@/lib/utils/money";
+import { MONEY_EPSILON, addMoney, roundMoney } from "@/lib/utils/money";
 import type { BillSplit } from "@/lib/utils/bill-split";
 import { createBillNumber, createId } from "@/lib/utils/id";
 import { buildSyncQueueItem, getSyncQueueId } from "@/lib/services/sync-queue-service";
@@ -34,15 +37,15 @@ function validateDraftLine(
   requestedQuantity: number,
 ) {
   if (product.status !== "active")
-    throw new Error(`Product ${product.name} is inactive.`);
+    throw new AppError(AppErrorCode.PRODUCT_INACTIVE, { name: product.name });
   if (!Number.isInteger(line.quantity))
-    throw new Error(`Quantity for ${product.name} must be a whole number.`);
+    throw new AppError(AppErrorCode.PRODUCT_QTY_WHOLE, { name: product.name });
   if (line.quantity <= 0)
-    throw new Error(`Quantity for ${product.name} must be greater than zero.`);
+    throw new AppError(AppErrorCode.PRODUCT_QTY_POSITIVE, { name: product.name });
   if (requestedQuantity > product.quantityInStock)
-    throw new Error(`Not enough stock for ${product.name}.`);
+    throw new AppError(AppErrorCode.PRODUCT_INSUFFICIENT_STOCK, { name: product.name });
   if (!settings.allowLossSale && line.unitSellPrice < line.unitBuyPrice) {
-    throw new Error(`Loss-making sale is not allowed for ${product.name}.`);
+    throw new AppError(AppErrorCode.PRODUCT_LOSS_SALE_BLOCKED, { name: product.name });
   }
 }
 
@@ -103,10 +106,8 @@ function derivePaymentSplit(
     case "mixed": {
       const cashAmount = roundMoney(Math.max(0, Number(form.cashAmount) || 0));
       const cardAmount = roundMoney(Math.max(0, Number(form.cardAmount) || 0));
-      if (Math.abs(cashAmount + cardAmount - total) > 0.005) {
-        throw new Error(
-          "Mixed payment cash + card must equal bill total.",
-        );
+      if (Math.abs(cashAmount + cardAmount - total) > MONEY_EPSILON) {
+        throw new AppError(AppErrorCode.BILL_MIXED_SPLIT_MISMATCH);
       }
       return {
         cashAmount,
@@ -124,7 +125,7 @@ export async function createFinalizedBill(input: {
   form: BillFormValues;
 }): Promise<{ bill: Bill; billItems: BillItem[] }> {
   if (input.items.length === 0) {
-    throw new Error("Add at least one product before finalizing the bill.");
+    throw new AppError(AppErrorCode.BILL_NO_ITEMS);
   }
 
   const totalAmountPreview = calculateBillTotals(
@@ -138,21 +139,21 @@ export async function createFinalizedBill(input: {
   ).totalAmount;
 
   if (totalAmountPreview < 0) {
-    throw new Error("Discount cannot be greater than subtotal plus tax.");
+    throw new AppError(AppErrorCode.DISCOUNT_TOO_HIGH);
   }
 
   const isCreditSalePreview = input.form.paymentMethod === 'credit';
   if (isCreditSalePreview && !input.form.customerName?.trim() && !input.form.customerPhone?.trim()) {
-    throw new Error('Customer name or phone is required for credit bills.');
+    throw new AppError(AppErrorCode.BILL_CREDIT_NEEDS_CUSTOMER);
   }
   if (input.form.paymentMethod === 'cash' && calculateChange(input.form.paidAmount, totalAmountPreview) < 0) {
-    throw new Error("Paid amount is lower than bill total.");
+    throw new AppError(AppErrorCode.BILL_PAID_TOO_LOW);
   }
   if (input.form.paymentMethod === 'mixed') {
     const cashPreview = Math.max(0, Number(input.form.cashAmount) || 0);
     const cardPreview = Math.max(0, Number(input.form.cardAmount) || 0);
-    if (Math.abs(cashPreview + cardPreview - totalAmountPreview) > 0.005) {
-      throw new Error("Mixed payment cash + card must equal bill total.");
+    if (Math.abs(cashPreview + cardPreview - totalAmountPreview) > MONEY_EPSILON) {
+      throw new AppError(AppErrorCode.BILL_MIXED_SPLIT_MISMATCH);
     }
   }
 
@@ -179,7 +180,7 @@ export async function createFinalizedBill(input: {
       const liveProducts = await db.products.bulkGet(productIds);
 
       if (liveProducts.some((product) => !product)) {
-        throw new Error("Some products could not be found in inventory.");
+        throw new AppError(AppErrorCode.PRODUCTS_MISSING);
       }
 
       const createdAt = nowIso();
@@ -193,7 +194,7 @@ export async function createFinalizedBill(input: {
         const product = products.find(
           (candidate) => candidate.id === line.productId,
         );
-        if (!product) throw new Error(`Product ${line.name} not found.`);
+        if (!product) throw new AppError(AppErrorCode.LINE_PRODUCT_NOT_FOUND, { name: line.name });
         validateDraftLine(settings, line, product, requestedQuantities.get(line.productId) ?? line.quantity);
       }
 
@@ -228,11 +229,11 @@ export async function createFinalizedBill(input: {
 
       const totalAmount = totals.totalAmount;
       if (totalAmount < 0) {
-        throw new Error("Discount cannot be greater than subtotal plus tax.");
+        throw new AppError(AppErrorCode.DISCOUNT_TOO_HIGH);
       }
       const isCreditSale = input.form.paymentMethod === 'credit';
       if (isCreditSale && !input.form.customerName?.trim() && !input.form.customerPhone?.trim()) {
-        throw new Error('Customer name or phone is required for credit bills.');
+        throw new AppError(AppErrorCode.BILL_CREDIT_NEEDS_CUSTOMER);
       }
 
       const split = derivePaymentSplit(input.form.paymentMethod, input.form, totalAmount);
@@ -243,9 +244,9 @@ export async function createFinalizedBill(input: {
       if (
         Math.abs(
           split.cashAmount + split.cardAmount + split.creditAmount - totalAmount,
-        ) > 0.005
+        ) > MONEY_EPSILON
       ) {
-        throw new Error("Payment split does not sum to bill total.");
+        throw new AppError(AppErrorCode.BILL_PAYMENT_SPLIT_INVALID);
       }
 
       // Resolve the customer once per bill. If the cashier supplied a phone
@@ -351,7 +352,8 @@ export async function createFinalizedBill(input: {
       const isExistingSettingsActive =
         existingSettingsJob &&
         existingSettingsJob.status !== "synced" &&
-        existingSettingsSource !== "bill-sequence";
+        existingSettingsSource !== "bill-sequence" &&
+        existingSettingsSource !== "purchase-sequence";
 
       const syncJobs = [
         buildSyncQueueItem({
@@ -407,19 +409,9 @@ function appendBillNote(existing: string | undefined, note: string): string {
 
 function calculateReturnedLineValue(bill: Bill, item: BillItem, quantity: number) {
   const lineAmount = calculateLineSubtotal(quantity, item.unitSellPriceAtSale);
-  const lineProfit = calculateLineProfit(
-    quantity,
-    item.unitBuyPriceAtSale,
-    item.unitSellPriceAtSale,
-  );
-  const subtotalRatio = bill.subtotal > 0 ? lineAmount / bill.subtotal : 0;
-  const discountShare = allocateMoney(bill.discountAmount, subtotalRatio);
-  const taxShare = allocateMoney(bill.taxAmount, subtotalRatio);
-
-  return {
-    amount: addMoney(subtractMoney(lineAmount, discountShare), taxShare),
-    profit: subtractMoney(lineProfit, discountShare),
-  };
+  const lineProfit = calculateLineProfit(quantity, item.unitBuyPriceAtSale, item.unitSellPriceAtSale);
+  const net = calculateBillItemNetContribution(bill, lineAmount, lineProfit);
+  return { amount: net.revenue, profit: net.profit };
 }
 
 function getRemainingItemQuantity(item: BillItem): number {
@@ -431,17 +423,23 @@ export async function voidBill(input: {
   reason: string;
 }): Promise<void> {
   const reason = input.reason.trim();
-  if (!reason) throw new Error("Void reason is required.");
+  if (!reason) throw new AppError(AppErrorCode.VOID_REASON_REQUIRED);
+
+  // Captured inside the transaction for the post-commit audit log entry.
+  let auditBillNumber = '';
+  let auditShiftId: string | undefined;
 
   await db.transaction(
     "rw",
     [db.bills, db.billItems, db.products, db.stockMovements, db.syncQueue],
     async () => {
       const bill = await db.bills.get(input.billId);
-      if (!bill) throw new Error("Bill not found.");
-      if (bill.status === "voided") throw new Error("Bill is already voided.");
+      if (!bill) throw new AppError(AppErrorCode.BILL_NOT_FOUND);
+      if (bill.status === "voided") throw new AppError(AppErrorCode.BILL_ALREADY_VOIDED);
       if (bill.status !== "finalized")
-        throw new Error("Only finalized bills can be voided.");
+        throw new AppError(AppErrorCode.BILL_NOT_FINALIZED);
+      auditBillNumber = bill.billNumber;
+      auditShiftId = bill.shiftId;
 
       const items = await db.billItems
         .where("billId")
@@ -527,6 +525,14 @@ export async function voidBill(input: {
     },
   );
   requestSync();
+  void logAudit({
+    category: 'bill',
+    action: 'void',
+    entityId: input.billId,
+    entityLabel: auditBillNumber,
+    reason,
+    shiftId: auditShiftId,
+  });
 }
 
 export async function returnBillItem(input: {
@@ -537,9 +543,13 @@ export async function returnBillItem(input: {
 }): Promise<void> {
   const reason = input.reason.trim();
   const quantity = Number(input.quantity);
-  if (!reason) throw new Error("Return reason is required.");
+  if (!reason) throw new AppError(AppErrorCode.RETURN_REASON_REQUIRED);
   if (!Number.isInteger(quantity) || quantity <= 0)
-    throw new Error("Return quantity must be a positive whole number.");
+    throw new AppError(AppErrorCode.RETURN_QTY_INVALID);
+
+  let auditBillNumber = '';
+  let auditProductName = '';
+  let auditShiftId: string | undefined;
 
   await db.transaction(
     "rw",
@@ -550,20 +560,21 @@ export async function returnBillItem(input: {
         db.billItems.get(input.itemId),
       ]);
 
-      if (!bill) throw new Error("Bill not found.");
+      if (!bill) throw new AppError(AppErrorCode.BILL_NOT_FOUND);
       if (!item || item.billId !== bill.id)
-        throw new Error("Bill item not found.");
+        throw new AppError(AppErrorCode.BILL_ITEM_NOT_FOUND);
       if (bill.status === "voided")
-        throw new Error("Voided bills cannot receive returns.");
+        throw new AppError(AppErrorCode.BILL_VOIDED_NO_RETURN);
 
       const remainingQuantity = getRemainingItemQuantity(item);
       if (quantity > remainingQuantity)
-        throw new Error(
-          "Return quantity is higher than the remaining sold quantity.",
-        );
+        throw new AppError(AppErrorCode.RETURN_EXCEEDS_QTY);
 
       const product = await db.products.get(item.originalProductId);
-      if (!product) throw new Error("Product not found.");
+      if (!product) throw new AppError(AppErrorCode.PRODUCT_NOT_FOUND);
+      auditBillNumber = bill.billNumber;
+      auditProductName = item.productNameAtSale;
+      auditShiftId = bill.shiftId;
 
       const now = nowIso();
       const returnedValues = calculateReturnedLineValue(bill, item, quantity);
@@ -639,4 +650,13 @@ export async function returnBillItem(input: {
     },
   );
   requestSync();
+  void logAudit({
+    category: 'bill',
+    action: 'return',
+    entityId: input.billId,
+    entityLabel: auditBillNumber,
+    reason,
+    summary: `${quantity} × ${auditProductName}`,
+    shiftId: auditShiftId,
+  });
 }

@@ -10,12 +10,14 @@ import {
   updateProductDetails,
 } from "@/lib/services/inventory-service";
 import { createId } from "@/lib/utils/id";
+import { localDateKey } from "@/lib/utils/date";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useToast } from "@/components/ui/toast";
 import { BarcodeScannerModal } from "@/components/barcode/barcode-scanner-modal";
 import { useLocale } from "@/components/providers/locale-context";
+import { usePermissions } from "@/lib/hooks/use-permissions";
 import type { Product } from "@/types/domain";
 import clsx from "clsx";
 
@@ -35,7 +37,7 @@ const emptyDefaults: ProductSchema = {
   sellPrice: 0,
   minimumStockAlert: 0,
   supplierName: "",
-  dateAdded: new Date().toISOString().slice(0, 10),
+  dateAdded: localDateKey(),
   expiryDate: "",
   shelfLocation: "",
   notes: "",
@@ -65,6 +67,7 @@ function FormField({
 export function ProductForm({ product, onSaved }: Props) {
   const { t } = useLocale();
   const { push } = useToast();
+  const { canEditCost } = usePermissions();
   const [lossWarning, setLossWarning] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
 
@@ -161,9 +164,11 @@ export function ProductForm({ product, onSaved }: Props) {
           />
         </FormField>
 
-        <FormField label={t("products.buyPrice")}>
-          <Input type="number" step="0.01" {...form.register("buyPrice")} />
-        </FormField>
+        {canEditCost && (
+          <FormField label={t("products.buyPrice")}>
+            <Input type="number" step="0.01" {...form.register("buyPrice")} />
+          </FormField>
+        )}
 
         <FormField label={t("products.sellPrice")}>
           <Input type="number" step="0.01" {...form.register("sellPrice")} />

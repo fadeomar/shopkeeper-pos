@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie';
-import type { Bill, BillItem, Customer, Product, Purchase, PurchaseItem, Settings, Shift, StockMovement, AuthCacheEntry, SyncQueueItem, CustomerPayment, Supplier, SupplierPayment, SyncConflict, PaymentMethod } from '@/types/domain';
+import type { AuditEvent, Bill, BillItem, CashMovement, Customer, Expense, Product, Purchase, PurchaseItem, Settings, Shift, StockMovement, AuthCacheEntry, SyncQueueItem, CustomerPayment, Supplier, SupplierPayment, SyncConflict, PaymentMethod } from '@/types/domain';
 import { deriveLegacySplit } from '@/lib/utils/bill-split';
 import { normalizeCustomerKey, normalizePhone } from '@/lib/utils/customer-key';
 import { createId } from '@/lib/utils/id';
@@ -20,6 +20,9 @@ export class ShopkeeperDB extends Dexie {
   authCache!: Table<AuthCacheEntry, string>;
   syncQueue!: Table<SyncQueueItem, string>;
   syncConflicts!: Table<SyncConflict, string>;
+  auditEvents!: Table<AuditEvent, string>;
+  cashMovements!: Table<CashMovement, string>;
+  expenses!: Table<Expense, string>;
 
   constructor() {
     super('shopkeeper-pos-db');
@@ -236,6 +239,41 @@ export class ShopkeeperDB extends Dexie {
     // payments can be queried by shift for cash drawer reconciliation.
     this.version(10).stores({
       customerPayments: 'id, customerKey, createdAt, syncStatus, shiftId',
+    });
+
+    // v11: split bill and purchase sequences so INV-XXXXXX and PO-XXXXXX
+    // counters advance independently. Existing settings rows are backfilled
+    // with nextPurchaseSequence = nextBillSequence so any PO numbers already
+    // issued from the shared counter are not repeated.
+    this.version(11).stores({}).upgrade(async (tx) => {
+      await tx.table('settings').toCollection().modify((s: Record<string, unknown>) => {
+        if (typeof s.nextPurchaseSequence !== 'number') {
+          s.nextPurchaseSequence = typeof s.nextBillSequence === 'number' ? s.nextBillSequence : 1;
+        }
+      });
+    });
+
+    // v12: append-only audit event log. Index category + createdAt for the
+    // /audit page's filter UI, entityId so the bill/product detail pages can
+    // show their own slice of the history, and syncStatus so the sync engine
+    // can find pending rows. No data migration — table starts empty.
+    this.version(12).stores({
+      auditEvents: 'id, category, action, entityId, actorUid, shiftId, createdAt, syncStatus',
+    });
+
+    // v13: manual cash drawer movements. Index type for the /cash filter UI,
+    // shiftId so closeShift can sum the shift's movements without scanning
+    // every row, and createdAt for the page's "newest first" sort.
+    this.version(13).stores({
+      cashMovements: 'id, type, shiftId, createdAt, syncStatus',
+    });
+
+    // v14: operational expenses (rent, utilities, salaries, etc.). Indexed
+    // by category for the reports filter, paymentMethod so closeShift can
+    // efficiently pull just the cash ones, and shiftId so per-shift cash-out
+    // calculation matches what the cashier sees in the drawer.
+    this.version(14).stores({
+      expenses: 'id, category, paymentMethod, shiftId, expenseDate, createdAt, syncStatus',
     });
   }
 }

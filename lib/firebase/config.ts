@@ -28,6 +28,13 @@ export const firebaseApp = isNewApp ? initializeApp(firebaseConfig) : getApp();
  *   causes onAuthStateChanged to never fire on the client.
  * - On the CLIENT: try persistent cache first; fall back gracefully if IndexedDB is
  *   unavailable (iOS private mode, some Android WebViews, etc.).
+ *
+ * IMPORTANT: this module must initialize Firebase EAGERLY (not via a Proxy)
+ * because the Firebase modular SDK does `instanceof Firestore` checks
+ * internally on every `doc()` / `collection()` / `getDocs()` call. A Proxy
+ * with `{}` as its target fails those checks even with a `getPrototypeOf`
+ * trap, which silently breaks cloud sync (no error — Firebase just returns
+ * empty results or rejects the operation).
  */
 export const firestore = (() => {
   // Already initialized — just return the existing instance

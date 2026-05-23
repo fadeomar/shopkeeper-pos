@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { useLocale } from '@/components/providers/locale-context';
 
 async function clearOfflineCaches() {
   if (typeof window === 'undefined' || !('caches' in window)) return;
@@ -10,6 +11,7 @@ async function clearOfflineCaches() {
 }
 
 export default function AppError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+  const { t } = useLocale();
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -48,14 +50,12 @@ export default function AppError({ error, reset }: { error: Error & { digest?: s
         <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-red-600">
           <span className="text-xl font-bold">!</span>
         </div>
-        <h1 className="text-center text-lg font-bold text-slate-900">This page could not load</h1>
-        <p className="mt-2 text-center text-sm text-slate-500">
-          Your local data is still safe on this device. Try again first. If the issue remains, clear the offline cache and reload.
-        </p>
+        <h1 className="text-center text-lg font-bold text-slate-900">{t('errorPage.pageTitle')}</h1>
+        <p className="mt-2 text-center text-sm text-slate-500">{t('errorPage.pageDesc')}</p>
         <div className="mt-5 flex flex-col gap-2">
-          <Button type="button" onClick={reset}>Try again</Button>
-          <Button type="button" variant="secondary" onClick={handleHardReload}>Clear cache & reload</Button>
-          <Button type="button" variant="ghost" onClick={handleCopy}>{copied ? 'Copied' : 'Copy error details'}</Button>
+          <Button type="button" onClick={reset}>{t('errorPage.tryAgain')}</Button>
+          <Button type="button" variant="secondary" onClick={handleHardReload}>{t('errorPage.clearAndReload')}</Button>
+          <Button type="button" variant="ghost" onClick={handleCopy}>{copied ? t('errorPage.copied') : t('errorPage.copyDetails')}</Button>
         </div>
         <pre className="mt-4 max-h-32 overflow-auto rounded-2xl bg-slate-50 p-3 text-xs text-slate-500 whitespace-pre-wrap break-words">
           {details}

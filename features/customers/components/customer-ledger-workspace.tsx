@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { getServiceErrorMessage } from "@/lib/errors/get-error-message";
 import Link from "next/link";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db/schema";
@@ -21,7 +22,8 @@ import { Input } from "@/components/ui/input";
 import { DataTable } from "@/components/ui/data-table";
 // import { EmptyState } from "@/components/ui/empty-state";
 import { Modal } from "@/components/ui/modal";
-import { formatCurrency } from "@/lib/utils/money";
+import { formatCurrency, MONEY_EPSILON } from "@/lib/utils/money";
+import { netSplitField, normalizeBillSplit } from "@/lib/utils/bill-split";
 import { settingsRepo } from "@/lib/db/repositories";
 import type { ColumnDef } from "@tanstack/react-table";
 
@@ -42,7 +44,7 @@ export function CustomerLedgerWorkspace() {
   const [paymentMethod, setPaymentMethod] = useState<
     "cash" | "card" | "bank" | "other"
   >("cash");
-  const currency = settings?.currency ?? "USD";
+  const currency = settings?.currency ?? "ILS";
 
   const rows = ledger ?? [];
   const filteredRows = useMemo(() => {
@@ -82,7 +84,7 @@ export function CustomerLedgerWorkspace() {
     safePaymentAmount > Math.max(0, balanceDueAtModal)
       ? safePaymentAmount - Math.max(0, balanceDueAtModal)
       : 0;
-  const isOverpayment = overpaymentExtra > 0.005;
+  const isOverpayment = overpaymentExtra > MONEY_EPSILON;
 
   async function openDetails(row: CustomerLedgerRow) {
     const details = await getCustomerLedgerDetails(row.key);
@@ -128,10 +130,10 @@ export function CustomerLedgerWorkspace() {
       accessorKey: "balanceDue",
       cell: ({ row }) => (
         <span
-          className={`tabular-nums font-semibold ${row.original.balanceDue > 0.005 ? "text-red-600" : row.original.balanceDue < -0.005 ? "text-blue-600" : "text-green-600"}`}
+          className={`tabular-nums font-semibold ${row.original.balanceDue > MONEY_EPSILON ? "text-red-600" : row.original.balanceDue < -MONEY_EPSILON ? "text-blue-600" : "text-green-600"}`}
         >
           {formatCurrency(row.original.balanceDue, currency)}
-          {row.original.balanceDue < -0.005 && (
+          {row.original.balanceDue < -MONEY_EPSILON && (
             <span className="ms-1 text-[10px] font-medium uppercase tracking-wide text-blue-500">
               {t("customers.creditBalanceNote")}
             </span>
@@ -167,12 +169,16 @@ export function CustomerLedgerWorkspace() {
 
   async function savePayment() {
     if (!selected) return;
+    if (!safePaymentAmount || safePaymentAmount <= 0) {
+      push(t("common.invalidAmount"), "error");
+      return;
+    }
     try {
       await recordCustomerPayment({
         customerKey: selected.key,
         customerName: selected.name,
         customerPhone: selected.phone,
-        amount: Number(amount),
+        amount: safePaymentAmount,
         note,
         paymentMethod,
         shiftId: activeShift?.id,
@@ -186,7 +192,7 @@ export function CustomerLedgerWorkspace() {
       push(t("customers.paymentSaved"));
     } catch (error) {
       push(
-        error instanceof Error ? error.message : t("customers.paymentFailed"),
+        getServiceErrorMessage(error, t, t("customers.paymentFailed")),
         "error",
       );
     }
@@ -300,11 +306,17 @@ export function CustomerLedgerWorkspace() {
                   </p>
                 ) : (
                   selected.bills.map((bill) => {
+                    // Use the split-aware helper so partial returns and deposits
+                    // are handled consistently with the customer balance summary.
+                    const withSplit = normalizeBillSplit(bill);
                     const netTotal = Math.max(
                       0,
                       bill.totalAmount - (bill.returnedAmount ?? 0),
                     );
-                    const due = Math.max(0, netTotal - bill.paidAmount);
+                    const due = netSplitField(
+                      withSplit,
+                      withSplit.creditAmount,
+                    );
                     return (
                       <div
                         key={bill.id}

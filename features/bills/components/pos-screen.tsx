@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { getServiceErrorMessage } from "@/lib/errors/get-error-message";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useForm } from "react-hook-form";
@@ -16,7 +17,7 @@ import {
   calculateChange,
   calculateLineSubtotal,
 } from "@/lib/utils/calculations";
-import { formatCurrency } from "@/lib/utils/money";
+import { MONEY_EPSILON, formatCurrency } from "@/lib/utils/money";
 import { createFinalizedBill } from "@/lib/services/billing-service";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +33,7 @@ import { QuickProductModal } from "./quick-product-modal";
 import { ReceiptView } from "./receipt-view";
 import { normalizeBarcode } from "@/lib/utils/barcode";
 import { useAuth } from "@/components/providers/auth-context";
+import { usePermissions } from "@/lib/hooks/use-permissions";
 import type {
   Bill,
   BillDraftItem,
@@ -178,6 +180,7 @@ export function PosScreen() {
   const { t, dir } = useLocale();
   const tableLabels = useDataTableLabels();
   const { user } = useAuth();
+  const { canDiscount } = usePermissions();
   const products = useLiveQuery(
     () => db.products.where("status").equals("active").sortBy("name"),
     [],
@@ -186,7 +189,7 @@ export function PosScreen() {
   const activeShift = useLiveQuery(() => getActiveShift(), []);
   const settings = useLiveQuery(() => settingsRepo.get(), []);
   const { push } = useToast();
-  const currency = settings?.currency ?? "USD";
+  const currency = settings?.currency ?? "ILS";
   const draftKey = user?.uid ? `${POS_DRAFT_KEY_PREFIX}:${user.uid}` : null;
 
   // Mobile UX: tapping a numeric input opens the soft keyboard and leaves it
@@ -204,6 +207,7 @@ export function PosScreen() {
   }
 
   const [draftItems, setDraftItems] = useState<BillDraftItem[]>([]);
+  const staleDraftChecked = useRef(false);
   const [productId, setProductId] = useState("");
   const [barcodeQuery, setBarcodeQuery] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -243,12 +247,12 @@ export function PosScreen() {
   const [helpOpen, setHelpOpen] = useState(false);
 
   const barcodeInputRef = useRef<HTMLInputElement | null>(null);
-  const lastAppliedCashierNameRef = useRef("Owner");
+  const lastAppliedCashierNameRef = useRef(t("common.owner"));
 
   const form = useForm<BillFormSchema>({
     resolver: zodResolver(billFormSchema),
     defaultValues: {
-      cashierName: settings?.cashierName ?? "Owner",
+      cashierName: settings?.cashierName ?? t("common.owner"),
       customerName: "",
       customerPhone: "",
       paymentMethod: "cash",
@@ -267,7 +271,7 @@ export function PosScreen() {
 
   useEffect(() => {
     if (!settings) return;
-    const nextDefault = settings.cashierName || "Owner";
+    const nextDefault = settings.cashierName || t("common.owner");
     const current = form.getValues("cashierName");
     if (!current || current === lastAppliedCashierNameRef.current) {
       form.setValue("cashierName", nextDefault, { shouldDirty: false });
@@ -306,6 +310,70 @@ export function PosScreen() {
       window.localStorage.removeItem(draftKey);
     }
   }, [draftKey, form]);
+
+  // Once — after products load, reconcile draft prices/stock against live data.
+  // Runs only on the first render where both products and a non-empty cart are
+  // available. The ref gate prevents it from re-running on every cart change.
+  useEffect(() => {
+    if (staleDraftChecked.current || !products || draftItems.length === 0)
+      return;
+    staleDraftChecked.current = true;
+
+    let priceCount = 0;
+    let removedCount = 0;
+    let stockCount = 0;
+
+    const next = draftItems.reduce<BillDraftItem[]>((acc, item) => {
+      const live = products.find((p) => p.id === item.productId);
+      if (!live || live.status !== "active") {
+        removedCount += 1;
+        return acc; // drop the item
+      }
+      // Out-of-stock: drop the item entirely. Keeping it at qty=1 with stock=0
+      // would show a "1 / 0 in stock" line that the user can't act on and the
+      // service rejects on submit. Better to surface it now and let them rescan
+      // when the product is restocked.
+      if (live.quantityInStock <= 0) {
+        removedCount += 1;
+        return acc;
+      }
+      const priceChanged =
+        live.sellPrice !== item.unitSellPrice ||
+        live.buyPrice !== item.unitBuyPrice;
+      if (priceChanged) priceCount += 1;
+
+      const cappedQty = Math.min(item.quantity, live.quantityInStock);
+      if (cappedQty < item.quantity) stockCount += 1;
+
+      acc.push({
+        ...item,
+        unitSellPrice: live.sellPrice,
+        unitBuyPrice: live.buyPrice,
+        availableStock: live.quantityInStock,
+        quantity: Math.max(1, cappedQty),
+      });
+      return acc;
+    }, []);
+
+    const changed =
+      next.length !== draftItems.length || priceCount > 0 || stockCount > 0;
+    if (!changed) return;
+
+    setDraftItems(next);
+    if (removedCount > 0)
+      push(
+        t("billing.draftProductsRemoved", { count: String(removedCount) }),
+        "error",
+      );
+    if (priceCount > 0)
+      push(t("billing.draftPricesRefreshed", { count: String(priceCount) }));
+    if (stockCount > 0)
+      push(
+        t("billing.draftStockAdjusted", { count: String(stockCount) }),
+        "error",
+      );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [products, draftItems]);
 
   // Watch all form fields for draft persistence
   const watchedCashierName = form.watch("cashierName");
@@ -396,7 +464,7 @@ export function PosScreen() {
       billSummary.totalAmount,
     ],
   );
-  const isMixedSplitValid = !isMixedSale || mixedSumDelta < 0.005;
+  const isMixedSplitValid = !isMixedSale || mixedSumDelta < MONEY_EPSILON;
   const hasCreditCustomer = Boolean(
     watchedCustomerName?.trim() || watchedCustomerPhone?.trim(),
   );
@@ -467,7 +535,8 @@ export function PosScreen() {
   useEffect(() => {
     if (!isMixedSale) return;
     const total = Number(billSummary.totalAmount.toFixed(2));
-    if (Math.abs(watchedCashAmount + watchedCardAmount - total) < 0.005) return;
+    if (Math.abs(watchedCashAmount + watchedCardAmount - total) < MONEY_EPSILON)
+      return;
     form.setValue("cashAmount", total, {
       shouldDirty: false,
       shouldValidate: false,
@@ -642,7 +711,7 @@ export function PosScreen() {
     setDraftItems([]);
     setIsPaidAmountManuallyEdited(false);
     form.reset({
-      cashierName: settings?.cashierName ?? "Owner",
+      cashierName: settings?.cashierName ?? t("common.owner"),
       customerName: "",
       customerPhone: "",
       paymentMethod: "cash",
@@ -676,10 +745,7 @@ export function PosScreen() {
       setConfirmOpen(false);
       setLastFinalized({ bill, items: billItems });
     } catch (error) {
-      push(
-        error instanceof Error ? error.message : t("billing.billFailed"),
-        "error",
-      );
+      push(getServiceErrorMessage(error, t, t("billing.billFailed")), "error");
     }
   }
 
@@ -793,7 +859,7 @@ export function PosScreen() {
         >
           <span className="font-medium">{t("billing.noShiftOpenWarning")}</span>
           <span className="text-xs font-semibold uppercase tracking-wide">
-            {t("billing.openShift")} {dir === 'rtl' ? '←' : '→'}
+            {t("billing.openShift")} {dir === "rtl" ? "←" : "→"}
           </span>
         </Link>
       )}
@@ -952,7 +1018,10 @@ export function PosScreen() {
                       </div>
                       <div className="rounded-xl bg-slate-50 p-2">
                         <p className="text-slate-500">{t("billing.sell")}</p>
-                        <p className="font-bold text-slate-800 tabular-nums" dir="ltr">
+                        <p
+                          className="font-bold text-slate-800 tabular-nums"
+                          dir="ltr"
+                        >
                           {formatCurrency(item.unitSellPrice, currency)}
                         </p>
                       </div>
@@ -960,7 +1029,10 @@ export function PosScreen() {
                         <p className="text-slate-500">
                           {t("billing.subtotalCol")}
                         </p>
-                        <p className="font-bold text-slate-800 tabular-nums" dir="ltr">
+                        <p
+                          className="font-bold text-slate-800 tabular-nums"
+                          dir="ltr"
+                        >
                           {formatCurrency(
                             calculateLineSubtotal(
                               item.quantity,
@@ -1104,18 +1176,20 @@ export function PosScreen() {
                 </FormField>
 
                 <div className="grid grid-cols-2 gap-3">
-                  <FormField label={t("billing.discount")}>
-                    <Input
-                      type="number"
-                      inputMode="decimal"
-                      enterKeyHint="done"
-                      step="0.01"
-                      onKeyDown={dismissKeyboardOnEnter}
-                      {...form.register("discountAmount", {
-                        valueAsNumber: true,
-                      })}
-                    />
-                  </FormField>
+                  {canDiscount && (
+                    <FormField label={t("billing.discount")}>
+                      <Input
+                        type="number"
+                        inputMode="decimal"
+                        enterKeyHint="done"
+                        step="0.01"
+                        onKeyDown={dismissKeyboardOnEnter}
+                        {...form.register("discountAmount", {
+                          valueAsNumber: true,
+                        })}
+                      />
+                    </FormField>
+                  )}
                   <FormField label={t("billing.tax")}>
                     <Input
                       type="number"
@@ -1361,7 +1435,10 @@ export function PosScreen() {
               <p className="text-xs font-medium text-slate-500">
                 {draftItems.length} {t("billing.items")}
               </p>
-              <p className="truncate text-lg font-black text-slate-900 tabular-nums" dir="ltr">
+              <p
+                className="truncate text-lg font-black text-slate-900 tabular-nums"
+                dir="ltr"
+              >
                 {formatCurrency(billSummary.totalAmount, currency)}
               </p>
             </div>

@@ -1,8 +1,10 @@
+import { AppError, AppErrorCode } from '@/lib/errors/app-error';
 import { db } from "@/lib/db/schema";
+import { logAudit } from "@/lib/services/audit-service";
 import { SETTINGS_ID, supplierRepo } from "@/lib/db/repositories";
 import { calculateBillTotals, calculateChange, calculateLineSubtotal } from "@/lib/utils/calculations";
 import { nowIso } from "@/lib/utils/date";
-import { addMoney, allocateMoney, roundMoney, subtractMoney } from "@/lib/utils/money";
+import { MONEY_EPSILON, addMoney, allocateMoney, roundMoney, subtractMoney } from "@/lib/utils/money";
 import { createId, createPurchaseNumber } from "@/lib/utils/id";
 import { buildSyncQueueItem, getSyncQueueId } from "@/lib/services/sync-queue-service";
 import type { BillSplit } from "@/lib/utils/bill-split";
@@ -24,15 +26,13 @@ function requestSync(): void {
 
 function validatePurchaseLine(line: PurchaseDraftItem, product: Product) {
   if (product.status !== "active") {
-    throw new Error(`Product ${product.name} is inactive.`);
+    throw new AppError(AppErrorCode.PRODUCT_INACTIVE, { name: product.name });
   }
   if (!Number.isInteger(line.quantity) || line.quantity <= 0) {
-    throw new Error(
-      `Quantity for ${product.name} must be a positive whole number.`,
-    );
+    throw new AppError(AppErrorCode.PRODUCT_QTY_POSITIVE_WHOLE, { name: product.name });
   }
   if (!Number.isFinite(line.unitCost) || line.unitCost < 0) {
-    throw new Error(`Unit cost for ${product.name} cannot be negative.`);
+    throw new AppError(AppErrorCode.PRODUCT_UNIT_COST_NEGATIVE, { name: product.name });
   }
 }
 
@@ -87,8 +87,8 @@ function derivePurchaseSplit(
     case "mixed": {
       const cashAmount = roundMoney(Math.max(0, Number(form.cashAmount) || 0));
       const cardAmount = roundMoney(Math.max(0, Number(form.cardAmount) || 0));
-      if (Math.abs(cashAmount + cardAmount - total) > 0.005) {
-        throw new Error("Mixed payment cash + card must equal purchase total.");
+      if (Math.abs(cashAmount + cardAmount - total) > MONEY_EPSILON) {
+        throw new AppError(AppErrorCode.PURCHASE_MIXED_SPLIT_MISMATCH);
       }
       return {
         cashAmount,
@@ -106,7 +106,7 @@ export async function createFinalizedPurchase(input: {
   form: PurchaseFormValues;
 }): Promise<{ purchase: Purchase; purchaseItems: PurchaseItem[] }> {
   if (input.items.length === 0) {
-    throw new Error("Add at least one product before saving the purchase.");
+    throw new AppError(AppErrorCode.PURCHASE_NO_ITEMS);
   }
 
   const totalAmountPreview = calculateBillTotals(
@@ -123,7 +123,7 @@ export async function createFinalizedPurchase(input: {
   ).totalAmount;
 
   if (totalAmountPreview < 0) {
-    throw new Error("Discount cannot be greater than subtotal plus tax.");
+    throw new AppError(AppErrorCode.DISCOUNT_TOO_HIGH);
   }
 
   // Pre-transaction validation: cash and mixed must satisfy their split
@@ -132,13 +132,13 @@ export async function createFinalizedPurchase(input: {
     input.form.paymentMethod === "cash" &&
     calculateChange(input.form.paidAmount, totalAmountPreview) < 0
   ) {
-    throw new Error("Paid amount is lower than the purchase total.");
+    throw new AppError(AppErrorCode.PURCHASE_PAID_TOO_LOW);
   }
   if (input.form.paymentMethod === "mixed") {
     const c = Math.max(0, Number(input.form.cashAmount) || 0);
     const k = Math.max(0, Number(input.form.cardAmount) || 0);
-    if (Math.abs(c + k - totalAmountPreview) > 0.005) {
-      throw new Error("Mixed payment cash + card must equal purchase total.");
+    if (Math.abs(c + k - totalAmountPreview) > MONEY_EPSILON) {
+      throw new AppError(AppErrorCode.PURCHASE_MIXED_SPLIT_MISMATCH);
     }
   }
   const isCreditPurchase = input.form.paymentMethod === "credit";
@@ -147,7 +147,7 @@ export async function createFinalizedPurchase(input: {
     !input.form.supplierName?.trim() &&
     !input.form.supplierPhone?.trim()
   ) {
-    throw new Error("Supplier name or phone is required for credit purchases.");
+    throw new AppError(AppErrorCode.PURCHASE_CREDIT_NEEDS_SUPPLIER);
   }
 
   const result = await db.transaction(
@@ -173,23 +173,22 @@ export async function createFinalizedPurchase(input: {
       const productIds = input.items.map((item) => item.productId);
       const liveProducts = await db.products.bulkGet(productIds);
       if (liveProducts.some((product) => !product)) {
-        throw new Error("Some products could not be found in inventory.");
+        throw new AppError(AppErrorCode.PRODUCTS_MISSING);
       }
       const products = liveProducts as Product[];
 
       for (const line of input.items) {
         const product = products.find((p) => p.id === line.productId);
-        if (!product) throw new Error(`Product ${line.name} not found.`);
+        if (!product) throw new AppError(AppErrorCode.LINE_PRODUCT_NOT_FOUND, { name: line.name });
         validatePurchaseLine(line, product);
       }
 
       const createdAt = nowIso();
-      // Share Settings.nextBillSequence with bills — PO numbers and INV
-      // numbers come from the same monotonic counter, which means the human-
-      // readable numbers are unique but not sequential within a single
-      // document type. A future migration can split sequences if accountants
-      // need pure per-type numbering.
-      const sequence = settings.nextBillSequence;
+      // PO-XXXXXX numbers now use their own counter (nextPurchaseSequence)
+      // so purchase and bill sequences advance independently. The v11 DB
+      // migration seeds nextPurchaseSequence = nextBillSequence for existing
+      // installs, so no PO number already in the DB will repeat.
+      const sequence = settings.nextPurchaseSequence ?? settings.nextBillSequence;
       const purchaseId = createId("purchase");
       const purchaseNumber = createPurchaseNumber(sequence);
 
@@ -205,7 +204,7 @@ export async function createFinalizedPurchase(input: {
 
       const totalAmount = totals.totalAmount;
       if (totalAmount < 0) {
-        throw new Error("Discount cannot be greater than subtotal plus tax.");
+        throw new AppError(AppErrorCode.DISCOUNT_TOO_HIGH);
       }
 
       const split = derivePurchaseSplit(input.form.paymentMethod, input.form, totalAmount);
@@ -303,7 +302,7 @@ export async function createFinalizedPurchase(input: {
       await db.products.bulkPut(updatedProducts);
       await db.stockMovements.bulkAdd(stockMovements);
       await db.settings.update(settings.id, {
-        nextBillSequence: sequence + 1,
+        nextPurchaseSequence: sequence + 1,
         updatedAt: createdAt,
         syncStatus: "pending",
         lastSyncError: undefined,
@@ -313,10 +312,13 @@ export async function createFinalizedPurchase(input: {
       const existingSettingsJob = await db.syncQueue.get(settingsJobId);
       const existingSettingsSource =
         (existingSettingsJob?.payload as { source?: string } | undefined)?.source;
+      // Treat both sequence-only jobs as non-blocking; a manual settings edit
+      // takes precedence over either auto-increment.
       const isExistingSettingsActive =
         existingSettingsJob &&
         existingSettingsJob.status !== "synced" &&
-        existingSettingsSource !== "bill-sequence";
+        existingSettingsSource !== "bill-sequence" &&
+        existingSettingsSource !== "purchase-sequence";
 
       const syncJobs = [
         buildSyncQueueItem({
@@ -331,7 +333,7 @@ export async function createFinalizedPurchase(input: {
             operation: "upsert",
             payload: isExistingSettingsActive
               ? existingSettingsJob?.payload
-              : { source: "bill-sequence" },
+              : { source: "purchase-sequence" },
           },
           existingSettingsJob,
         ),
@@ -394,20 +396,26 @@ export async function voidPurchase(input: {
   reason: string;
 }): Promise<void> {
   const reason = input.reason.trim();
-  if (!reason) throw new Error("Void reason is required.");
+  if (!reason) throw new AppError(AppErrorCode.VOID_REASON_REQUIRED);
+
+  // Captured inside the transaction for the post-commit audit log entry.
+  let auditPurchaseNumber = '';
+  let auditShiftId: string | undefined;
 
   await db.transaction(
     "rw",
     [db.purchases, db.purchaseItems, db.products, db.stockMovements, db.syncQueue],
     async () => {
       const purchase = await db.purchases.get(input.purchaseId);
-      if (!purchase) throw new Error("Purchase not found.");
+      if (!purchase) throw new AppError(AppErrorCode.PURCHASE_NOT_FOUND);
       if (purchase.status === "voided") {
-        throw new Error("Purchase is already voided.");
+        throw new AppError(AppErrorCode.PURCHASE_ALREADY_VOIDED);
       }
       if (purchase.status !== "finalized") {
-        throw new Error("Only finalized purchases can be voided.");
+        throw new AppError(AppErrorCode.PURCHASE_NOT_FINALIZED);
       }
+      auditPurchaseNumber = purchase.purchaseNumber;
+      auditShiftId = purchase.shiftId;
 
       const items = await db.purchaseItems
         .where("purchaseId")
@@ -428,9 +436,7 @@ export async function voidPurchase(input: {
           .filter((item) => item.originalProductId === product.id)
           .reduce((sum, item) => sum + getRemainingPurchaseItemQuantity(item), 0);
         if (removeQuantity > 0 && product.quantityInStock < removeQuantity) {
-          throw new Error(
-            `Cannot void: only ${product.quantityInStock} unit(s) of "${product.name}" remain in stock, but ${removeQuantity} need to be reversed. Sell or adjust the remaining stock first.`,
-          );
+          throw new AppError(AppErrorCode.PURCHASE_VOID_INSUFFICIENT_STOCK, { name: product.name, stock: product.quantityInStock, required: removeQuantity });
         }
       }
 
@@ -505,6 +511,14 @@ export async function voidPurchase(input: {
     },
   );
   requestSync();
+  void logAudit({
+    category: 'purchase',
+    action: 'void',
+    entityId: input.purchaseId,
+    entityLabel: auditPurchaseNumber,
+    reason,
+    shiftId: auditShiftId,
+  });
 }
 
 /**
@@ -520,10 +534,14 @@ export async function returnPurchaseItem(input: {
 }): Promise<void> {
   const reason = input.reason.trim();
   const quantity = Number(input.quantity);
-  if (!reason) throw new Error("Return reason is required.");
+  if (!reason) throw new AppError(AppErrorCode.RETURN_REASON_REQUIRED);
   if (!Number.isInteger(quantity) || quantity <= 0) {
-    throw new Error("Return quantity must be a positive whole number.");
+    throw new AppError(AppErrorCode.RETURN_QTY_INVALID);
   }
+
+  let auditPurchaseNumber = '';
+  let auditProductName = '';
+  let auditShiftId: string | undefined;
 
   await db.transaction(
     "rw",
@@ -533,28 +551,27 @@ export async function returnPurchaseItem(input: {
         db.purchases.get(input.purchaseId),
         db.purchaseItems.get(input.itemId),
       ]);
-      if (!purchase) throw new Error("Purchase not found.");
+      if (!purchase) throw new AppError(AppErrorCode.PURCHASE_NOT_FOUND);
       if (!item || item.purchaseId !== purchase.id) {
-        throw new Error("Purchase item not found.");
+        throw new AppError(AppErrorCode.PURCHASE_ITEM_NOT_FOUND);
       }
       if (purchase.status === "voided") {
-        throw new Error("Voided purchases cannot receive returns.");
+        throw new AppError(AppErrorCode.PURCHASE_VOIDED_NO_RETURN);
       }
 
       const remainingQuantity = getRemainingPurchaseItemQuantity(item);
       if (quantity > remainingQuantity) {
-        throw new Error(
-          "Return quantity is higher than the remaining purchased quantity.",
-        );
+        throw new AppError(AppErrorCode.RETURN_EXCEEDS_QTY);
       }
 
       const product = await db.products.get(item.originalProductId);
-      if (!product) throw new Error("Product not found.");
+      if (!product) throw new AppError(AppErrorCode.PRODUCT_NOT_FOUND);
       if (product.quantityInStock < quantity) {
-        throw new Error(
-          "Not enough stock to return — some units were sold or adjusted out already.",
-        );
+        throw new AppError(AppErrorCode.PURCHASE_RETURN_INSUFFICIENT_STOCK);
       }
+      auditPurchaseNumber = purchase.purchaseNumber;
+      auditProductName = item.productNameAtPurchase;
+      auditShiftId = purchase.shiftId;
 
       const now = nowIso();
       const returnedAmount = calculateReturnedPurchaseLineValue(purchase, item, quantity);
@@ -632,4 +649,13 @@ export async function returnPurchaseItem(input: {
     },
   );
   requestSync();
+  void logAudit({
+    category: 'purchase',
+    action: 'return',
+    entityId: input.purchaseId,
+    entityLabel: auditPurchaseNumber,
+    reason,
+    summary: `${quantity} × ${auditProductName}`,
+    shiftId: auditShiftId,
+  });
 }
