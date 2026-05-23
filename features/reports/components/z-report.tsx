@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { PageShell } from "@/components/ui/page-shell";
 import { PageHeader } from "@/components/ui/page-header";
 import { useLocale } from "@/components/providers/locale-context";
+import { usePermissions } from "@/lib/hooks/use-permissions";
 import { formatCurrency, roundMoney } from "@/lib/utils/money";
 import { formatDateTime, localDateKey } from "@/lib/utils/date";
 import {
@@ -76,6 +77,7 @@ function categoryKey(c: ExpenseCategory): string {
 
 export function ZReport() {
   const { t } = useLocale();
+  const { canViewProfit } = usePermissions();
 
   const [range, setRange] = useState<ReportRange>("today");
   const [customFrom, setCustomFrom] = useState(localDateKey());
@@ -84,7 +86,7 @@ export function ZReport() {
   const filters: ReportFilters = { range, customFrom, customTo };
 
   const settings = useLiveQuery(() => settingsRepo.get(), []);
-  const currency = settings?.currency ?? "₪";
+  const currency = settings?.currency ?? "ILS";
 
   const bills = useLiveQuery(() => db.bills.toArray(), [], [] as Bill[]);
   const purchases = useLiveQuery(
@@ -291,10 +293,12 @@ export function ZReport() {
             value={formatCurrency(result.salesSummary.sales, currency)}
             bold
           />
-          <Row
-            label={t("reports.zSalesProfit")}
-            value={formatCurrency(result.salesSummary.profit, currency)}
-          />
+          {canViewProfit && (
+            <Row
+              label={t("reports.zSalesProfit")}
+              value={formatCurrency(result.salesSummary.profit, currency)}
+            />
+          )}
           <Row
             label={t("reports.zSalesBillCount")}
             value={String(result.salesSummary.billCount)}

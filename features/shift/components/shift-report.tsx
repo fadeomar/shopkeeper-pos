@@ -50,7 +50,7 @@ export function ShiftReport({
   settings?: Settings;
 }) {
   const { t } = useLocale();
-  const currency = settings?.currency ?? "₪";
+  const currency = settings?.currency ?? "ILS";
   const storeName = settings?.storeName || "Shopkeeper POS";
 
   const bills = useLiveQuery<Bill[]>(

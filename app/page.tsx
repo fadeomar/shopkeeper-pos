@@ -46,7 +46,7 @@ export default function DashboardPage() {
     (sum, row) => sum + Math.max(0, row.balanceOwed),
     0,
   );
-  const currency = settings?.currency ?? "₪";
+  const currency = settings?.currency ?? "ILS";
 
   async function initializeDemo() {
     const result = await seedDemoData();

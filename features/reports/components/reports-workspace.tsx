@@ -128,7 +128,7 @@ export function ReportsWorkspace() {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
 
-  const currency = settings?.currency ?? "₪";
+  const currency = settings?.currency ?? "ILS";
   const loading = !bills || !billItems || !products;
 
   const filteredBills = useMemo(

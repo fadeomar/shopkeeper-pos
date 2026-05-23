@@ -85,7 +85,7 @@ export function InventoryWorkspace() {
     })
     .sort((a, b) => String(a.expiryDate).localeCompare(String(b.expiryDate)));
 
-  const currency = settings?.currency ?? "₪";
+  const currency = settings?.currency ?? "ILS";
   const stockValue = activeProducts.reduce(
     (sum, product) => sum + product.quantityInStock * product.buyPrice,
     0,

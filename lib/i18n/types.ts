@@ -705,6 +705,8 @@ export interface TranslationDict {
     syncNow: string;
     syncSuccess: string;
     syncFailed: string;
+    syncResolveConflictFirst: string;
+    syncPendingRetry: string;
     lastSynced: string;
     bills: string;
     products: string;
@@ -734,6 +736,56 @@ export interface TranslationDict {
     clearCacheConflictsWarning: string;
     clearCacheConfirmButton: string;
     clearCacheDataNote: string;
+    // Business profile
+    businessProfile: string;
+    businessProfileDesc: string;
+    businessAddress: string;
+    businessPhone: string;
+    // POS behaviour
+    posSettings: string;
+    posSettingsDesc: string;
+    taxMode: string;
+    taxModeNone: string;
+    taxModeInclusive: string;
+    taxModeExclusive: string;
+    defaultDiscountLimit: string;
+    defaultDiscountLimitHint: string;
+    requireShift: string;
+    // Payment methods
+    paymentMethods: string;
+    paymentMethodsDesc: string;
+    enableCash: string;
+    enableCard: string;
+    enableCredit: string;
+    // Receipt
+    receiptSettings: string;
+    receiptSettingsDesc: string;
+    receiptHeader: string;
+    receiptHeaderHint: string;
+    receiptFooter: string;
+    receiptFooterHint: string;
+    // Inventory
+    inventoryAlerts: string;
+    inventoryAlertsDesc: string;
+    lowStockThreshold: string;
+    lowStockThresholdHint: string;
+    expiryWarningDays: string;
+    expiryWarningDaysHint: string;
+    // Role permissions
+    rolePermissions: string;
+    rolePermissionsDesc: string;
+    roleOwner: string;
+    roleManager: string;
+    roleCashier: string;
+    roleAccountant: string;
+    permCanVoid: string;
+    permCanReturn: string;
+    permCanDiscount: string;
+    permCanViewProfit: string;
+    permCanEditCost: string;
+    permCanExport: string;
+    resetToDefaults: string;
+    permissionsSaved: string;
   };
   scanner: {
     requesting: string;

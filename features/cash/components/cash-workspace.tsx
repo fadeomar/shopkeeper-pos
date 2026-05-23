@@ -66,7 +66,7 @@ export function CashWorkspace() {
     [],
     [] as CashMovement[],
   );
-  const currency = settings?.currency ?? "₪";
+  const currency = settings?.currency ?? "ILS";
 
   const [open, setOpen] = useState(false);
   const [type, setType] = useState<CashMovementType>("cash_in");

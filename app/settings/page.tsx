@@ -6,8 +6,10 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { settingsRepo } from "@/lib/db/repositories";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { FormField } from "@/components/ui/form-field";
 import { Card } from "@/components/ui/card";
+import { SectionCard } from "@/components/ui/section-card";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { useLocale } from "@/components/providers/locale-context";
@@ -23,6 +25,9 @@ import {
   retryFailedSyncJobs,
 } from "@/lib/services/sync-queue-service";
 import type { Locale } from "@/lib/i18n";
+import type { UserRole, RolePermissions } from "@/types/domain";
+import { DEFAULT_ROLE_PERMISSIONS } from "@/types/domain";
+import { usePermissions } from "@/lib/hooks/use-permissions";
 import { db } from "@/lib/db/schema";
 import {
   createLocalBackupSnapshot,
@@ -32,13 +37,63 @@ import clsx from "clsx";
 import { PageShell } from "@/components/ui/page-shell";
 import { PageHeader } from "@/components/ui/page-header";
 
+// ─── Form types ──────────────────────────────────────────────────────────────
+
 interface SettingsFormValues {
+  // Business profile
   storeName: string;
+  businessAddress: string;
+  businessPhone: string;
   cashierName: string;
+  // POS
   currency: string;
+  taxMode: "none" | "inclusive" | "exclusive";
+  defaultDiscountLimit: number;
   allowLossSale: boolean;
+  requireShift: boolean;
+  // Payment methods
+  enableCash: boolean;
+  enableCard: boolean;
+  enableCredit: boolean;
+  // Receipt
+  receiptHeader: string;
+  receiptFooter: string;
+  // Inventory alerts
   lowStockHighlight: boolean;
+  lowStockThreshold: number;
+  expiryWarningDays: number;
 }
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function ToggleRow({
+  label,
+  hint,
+  checked,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <label className="flex items-start gap-3 cursor-pointer select-none">
+      <input
+        type="checkbox"
+        className="mt-0.5 h-4 w-4 shrink-0 rounded accent-blue-600"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+      <span className="flex flex-col gap-0.5">
+        <span className="text-sm font-medium text-slate-700">{label}</span>
+        {hint && <span className="text-xs text-slate-400">{hint}</span>}
+      </span>
+    </label>
+  );
+}
+
+// ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
   const { t, locale, setLocale } = useLocale();
@@ -49,10 +104,22 @@ export default function SettingsPage() {
   const form = useForm<SettingsFormValues>({
     defaultValues: {
       storeName: "",
+      businessAddress: "",
+      businessPhone: "",
       cashierName: "",
-      currency: "₪",
+      currency: "ILS",
+      taxMode: "none",
+      defaultDiscountLimit: 0,
       allowLossSale: false,
+      requireShift: false,
+      enableCash: true,
+      enableCard: true,
+      enableCredit: true,
+      receiptHeader: "",
+      receiptFooter: "",
       lowStockHighlight: true,
+      lowStockThreshold: 5,
+      expiryWarningDays: 30,
     },
   });
 
@@ -60,17 +127,26 @@ export default function SettingsPage() {
     if (!settings) return;
     form.reset({
       storeName: settings.storeName,
-      cashierName: settings.cashierName || "",
+      businessAddress: settings.businessAddress ?? "",
+      businessPhone: settings.businessPhone ?? "",
+      cashierName: settings.cashierName ?? "",
       currency: settings.currency,
+      taxMode: settings.taxMode ?? "none",
+      defaultDiscountLimit: settings.defaultDiscountLimit ?? 0,
       allowLossSale: settings.allowLossSale,
+      requireShift: settings.requireShift ?? false,
+      enableCash: settings.enableCash !== false,
+      enableCard: settings.enableCard !== false,
+      enableCredit: settings.enableCredit !== false,
+      receiptHeader: settings.receiptHeader ?? "",
+      receiptFooter: settings.receiptFooter ?? "",
       lowStockHighlight: settings.lowStockHighlight,
+      lowStockThreshold: settings.lowStockThreshold ?? 5,
+      expiryWarningDays: settings.expiryWarningDays ?? 30,
     });
   }, [settings, form]);
 
   async function onSubmit(values: SettingsFormValues) {
-    // Normalize and validate the currency code so it can be safely passed to
-    // Intl.NumberFormat across the app. Free-text values like "us" or "$"
-    // would throw inside formatCurrency on any view that renders money.
     const normalizedCurrency = (values.currency ?? "").trim().toUpperCase();
     if (!/^[A-Z]{3}$/.test(normalizedCurrency)) {
       push(t("settings.invalidCurrency"), "error");
@@ -96,6 +172,18 @@ export default function SettingsPage() {
     { value: "ar", label: t("settings.arabic") },
   ];
 
+  const taxOptions = [
+    { value: "none", label: t("settings.taxModeNone") },
+    { value: "inclusive", label: t("settings.taxModeInclusive") },
+    { value: "exclusive", label: t("settings.taxModeExclusive") },
+  ];
+
+  const watchEnable = {
+    cash: form.watch("enableCash"),
+    card: form.watch("enableCard"),
+    credit: form.watch("enableCredit"),
+  };
+
   return (
     <PageShell>
       <PageHeader
@@ -103,14 +191,11 @@ export default function SettingsPage() {
         description={t("settings.subtitle")}
       />
 
-      {/* Language switcher */}
-      <Card>
-        <h3 className="text-sm font-semibold text-slate-700 mb-1">
-          {t("settings.language")}
-        </h3>
-        <p className="text-xs text-slate-500 mb-4">
-          {t("settings.languageDesc")}
-        </p>
+      {/* ── Language ─────────────────────────────────────────────────────── */}
+      <SectionCard
+        title={t("settings.language")}
+        description={t("settings.languageDesc")}
+      >
         <div className="flex flex-wrap gap-2">
           {languages.map(({ value, label }) => (
             <button
@@ -128,11 +213,16 @@ export default function SettingsPage() {
             </button>
           ))}
         </div>
-      </Card>
+      </SectionCard>
 
-      {/* Store settings form */}
-      <form onSubmit={form.handleSubmit(onSubmit)}>
-        <Card className="flex flex-col gap-5">
+      {/* ── Main settings form ───────────────────────────────────────────── */}
+      <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-5">
+
+        {/* Business profile */}
+        <SectionCard
+          title={t("settings.businessProfile")}
+          description={t("settings.businessProfileDesc")}
+        >
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <FormField label={t("settings.storeName")}>
               <Input {...form.register("storeName")} />
@@ -140,6 +230,21 @@ export default function SettingsPage() {
             <FormField label={t("settings.cashierName")}>
               <Input {...form.register("cashierName")} />
             </FormField>
+            <FormField label={t("settings.businessAddress")}>
+              <Input {...form.register("businessAddress")} />
+            </FormField>
+            <FormField label={t("settings.businessPhone")}>
+              <Input {...form.register("businessPhone")} type="tel" />
+            </FormField>
+          </div>
+        </SectionCard>
+
+        {/* Point of Sale */}
+        <SectionCard
+          title={t("settings.posSettings")}
+          description={t("settings.posSettingsDesc")}
+        >
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
             <FormField
               label={t("settings.currency")}
               hint={t("settings.currencyHint")}
@@ -150,52 +255,159 @@ export default function SettingsPage() {
                 maxLength={3}
               />
             </FormField>
+
+            <FormField label={t("settings.taxMode")}>
+              <Select {...form.register("taxMode")}>
+                {taxOptions.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+
+            <FormField
+              label={t("settings.defaultDiscountLimit")}
+              hint={t("settings.defaultDiscountLimitHint")}
+            >
+              <Input
+                {...form.register("defaultDiscountLimit", {
+                  valueAsNumber: true,
+                  min: 0,
+                  max: 100,
+                })}
+                type="number"
+                min={0}
+                max={100}
+                step={1}
+              />
+            </FormField>
           </div>
 
           <div className="flex flex-col gap-3">
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                className="w-4 h-4 rounded accent-blue-600"
-                {...form.register("allowLossSale")}
-              />
-              <span className="text-sm font-medium text-slate-700">
-                {t("settings.allowLossSale")}
-              </span>
-            </label>
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                className="w-4 h-4 rounded accent-blue-600"
-                {...form.register("lowStockHighlight")}
-              />
-              <span className="text-sm font-medium text-slate-700">
-                {t("settings.lowStockHighlight")}
-              </span>
-            </label>
+            <ToggleRow
+              label={t("settings.allowLossSale")}
+              checked={form.watch("allowLossSale")}
+              onChange={(v) => form.setValue("allowLossSale", v)}
+            />
+            <ToggleRow
+              label={t("settings.requireShift")}
+              checked={form.watch("requireShift")}
+              onChange={(v) => form.setValue("requireShift", v)}
+            />
           </div>
+        </SectionCard>
 
-          <div className="flex justify-end pt-1">
-            <Button type="submit">{t("settings.save")}</Button>
+        {/* Payment methods */}
+        <SectionCard
+          title={t("settings.paymentMethods")}
+          description={t("settings.paymentMethodsDesc")}
+        >
+          <div className="flex flex-col gap-3">
+            <ToggleRow
+              label={t("settings.enableCash")}
+              checked={watchEnable.cash}
+              onChange={(v) => form.setValue("enableCash", v)}
+            />
+            <ToggleRow
+              label={t("settings.enableCard")}
+              checked={watchEnable.card}
+              onChange={(v) => form.setValue("enableCard", v)}
+            />
+            <ToggleRow
+              label={t("settings.enableCredit")}
+              checked={watchEnable.credit}
+              onChange={(v) => form.setValue("enableCredit", v)}
+            />
           </div>
-        </Card>
+        </SectionCard>
+
+        {/* Receipt */}
+        <SectionCard
+          title={t("settings.receiptSettings")}
+          description={t("settings.receiptSettingsDesc")}
+        >
+          <div className="flex flex-col gap-4">
+            <FormField
+              label={t("settings.receiptHeader")}
+              hint={t("settings.receiptHeaderHint")}
+            >
+              <Input {...form.register("receiptHeader")} />
+            </FormField>
+            <FormField
+              label={t("settings.receiptFooter")}
+              hint={t("settings.receiptFooterHint")}
+            >
+              <Input {...form.register("receiptFooter")} />
+            </FormField>
+          </div>
+        </SectionCard>
+
+        {/* Inventory alerts */}
+        <SectionCard
+          title={t("settings.inventoryAlerts")}
+          description={t("settings.inventoryAlertsDesc")}
+        >
+          <div className="mb-4">
+            <ToggleRow
+              label={t("settings.lowStockHighlight")}
+              checked={form.watch("lowStockHighlight")}
+              onChange={(v) => form.setValue("lowStockHighlight", v)}
+            />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <FormField
+              label={t("settings.lowStockThreshold")}
+              hint={t("settings.lowStockThresholdHint")}
+            >
+              <Input
+                {...form.register("lowStockThreshold", {
+                  valueAsNumber: true,
+                  min: 0,
+                })}
+                type="number"
+                min={0}
+                step={1}
+              />
+            </FormField>
+            <FormField
+              label={t("settings.expiryWarningDays")}
+              hint={t("settings.expiryWarningDaysHint")}
+            >
+              <Input
+                {...form.register("expiryWarningDays", {
+                  valueAsNumber: true,
+                  min: 0,
+                })}
+                type="number"
+                min={0}
+                step={1}
+              />
+            </FormField>
+          </div>
+        </SectionCard>
+
+        <div className="flex justify-end">
+          <Button type="submit">{t("settings.save")}</Button>
+        </div>
       </form>
 
-      {/* Cloud Backup */}
+      {/* ── Role permissions ─────────────────────────────────────────────── */}
+      <RolePermissionsCard />
+
+      {/* ── Cloud Backup ─────────────────────────────────────────────────── */}
       <CloudBackupCard />
 
-      {/* Device health / release safety */}
+      {/* ── Device health ────────────────────────────────────────────────── */}
       <DeviceHealthCard />
 
-      {/* About */}
+      {/* ── About ────────────────────────────────────────────────────────── */}
       <Card>
         <h3 className="text-sm font-semibold text-slate-700 mb-3">
           {t("settings.about")}
         </h3>
         <div className="flex items-center justify-between">
-          <span className="text-sm text-slate-500">
-            {t("settings.version")}
-          </span>
+          <span className="text-sm text-slate-500">{t("settings.version")}</span>
           <span className="text-sm font-mono font-medium text-slate-700">
             v{process.env.NEXT_PUBLIC_APP_VERSION ?? "—"}
           </span>
@@ -205,6 +417,166 @@ export default function SettingsPage() {
   );
 }
 
+// ─── Role Permissions Card ───────────────────────────────────────────────────
+
+const ROLES: UserRole[] = ["owner", "manager", "cashier", "accountant"];
+const PERM_KEYS: Array<keyof RolePermissions> = [
+  "canVoid",
+  "canReturn",
+  "canDiscount",
+  "canViewProfit",
+  "canEditCost",
+  "canExport",
+];
+
+type PermOverride = Partial<Record<UserRole, Partial<RolePermissions>>>;
+
+function RolePermissionsCard() {
+  const { t } = useLocale();
+  const settings = useLiveQuery(() => settingsRepo.get(), []);
+  const { setSettings } = useSettings();
+  const { push } = useToast();
+  const [saving, setSaving] = useState(false);
+  const [overrides, setOverrides] = useState<PermOverride>({});
+
+  useEffect(() => {
+    if (!settings) return;
+    setOverrides(settings.rolePermissions ?? {});
+  }, [settings]);
+
+  function getEffective(role: UserRole, perm: keyof RolePermissions): boolean {
+    const base = DEFAULT_ROLE_PERMISSIONS[role][perm];
+    return overrides[role]?.[perm] ?? base;
+  }
+
+  function toggle(role: UserRole, perm: keyof RolePermissions) {
+    if (role === "owner") return; // owner always has full access
+    const current = getEffective(role, perm);
+    setOverrides((prev) => ({
+      ...prev,
+      [role]: {
+        ...prev[role],
+        [perm]: !current,
+      },
+    }));
+  }
+
+  function resetToDefaults() {
+    setOverrides({});
+  }
+
+  async function save() {
+    setSaving(true);
+    try {
+      const saved = await settingsRepo.update({
+        rolePermissions: overrides,
+        syncStatus: "pending",
+        lastSyncError: undefined,
+      });
+      setSettings(saved);
+      await enqueueSyncJob({
+        entity: "settings",
+        entityId: saved.id,
+        operation: "upsert",
+      });
+      push(t("settings.permissionsSaved"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const roleLabels: Record<UserRole, string> = {
+    owner: t("settings.roleOwner"),
+    manager: t("settings.roleManager"),
+    cashier: t("settings.roleCashier"),
+    accountant: t("settings.roleAccountant"),
+  };
+
+  const permLabels: Record<keyof RolePermissions, string> = {
+    canVoid: t("settings.permCanVoid"),
+    canReturn: t("settings.permCanReturn"),
+    canDiscount: t("settings.permCanDiscount"),
+    canViewProfit: t("settings.permCanViewProfit"),
+    canEditCost: t("settings.permCanEditCost"),
+    canExport: t("settings.permCanExport"),
+  };
+
+  return (
+    <SectionCard
+      title={t("settings.rolePermissions")}
+      description={t("settings.rolePermissionsDesc")}
+      actions={
+        <button
+          type="button"
+          onClick={resetToDefaults}
+          className="text-xs text-slate-500 hover:text-slate-700 underline"
+        >
+          {t("settings.resetToDefaults")}
+        </button>
+      }
+    >
+      {/* Scrollable table on mobile */}
+      <div className="overflow-x-auto -mx-1">
+        <table className="w-full text-sm">
+          <thead>
+            <tr>
+              <th className="text-start text-xs font-semibold text-slate-500 pb-3 pe-4 min-w-[140px]">
+                {/* empty — permission names in rows */}
+              </th>
+              {ROLES.map((role) => (
+                <th
+                  key={role}
+                  className="text-center text-xs font-semibold text-slate-600 pb-3 px-3 min-w-[80px]"
+                >
+                  {roleLabels[role]}
+                  {role === "owner" && (
+                    <span className="block text-[10px] font-normal text-slate-400">
+                      (full)
+                    </span>
+                  )}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {PERM_KEYS.map((perm) => (
+              <tr key={perm} className="hover:bg-slate-50 transition-colors">
+                <td className="py-2.5 pe-4 text-sm text-slate-700 font-medium">
+                  {permLabels[perm]}
+                </td>
+                {ROLES.map((role) => {
+                  const checked = getEffective(role, perm);
+                  const isOwner = role === "owner";
+                  return (
+                    <td key={role} className="py-2.5 px-3 text-center">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded accent-blue-600 cursor-pointer disabled:cursor-not-allowed"
+                        checked={checked}
+                        disabled={isOwner}
+                        onChange={() => toggle(role, perm)}
+                        aria-label={`${roleLabels[role]} — ${permLabels[perm]}`}
+                      />
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="mt-5 flex justify-end">
+        <Button type="button" onClick={save} disabled={saving}>
+          {saving ? t("common.loading") : t("settings.save")}
+        </Button>
+      </div>
+    </SectionCard>
+  );
+}
+
+// ─── Cloud Backup Card ───────────────────────────────────────────────────────
+
 function CloudBackupCard() {
   const { user } = useAuth();
   const { push } = useToast();
@@ -213,7 +585,6 @@ function CloudBackupCard() {
   const [syncing, setSyncing] = useState(false);
   const [syncMeta, setSyncMeta] = useState<SyncMeta | null>(null);
 
-  // Load last sync info from localStorage (no Firestore read needed)
   useEffect(() => {
     if (!uid) return;
     try {
@@ -237,16 +608,13 @@ function CloudBackupCard() {
       ]);
 
       if (openConflicts.length > 0) {
-        push("Resolve the open conflict first, then sync again.", "error");
+        push(t("settings.syncResolveConflictFirst"), "error");
         return;
       }
 
       if (pendingCount > 0) {
         window.dispatchEvent(new Event("shopkeeper:sync-requested"));
-        push(
-          `${pendingCount} change(s) are still waiting to sync. Try again after the sync badge becomes green.`,
-          "error",
-        );
+        push(t("settings.syncPendingRetry", { count: pendingCount }), "error");
         return;
       }
 
@@ -273,16 +641,10 @@ function CloudBackupCard() {
     : null;
 
   return (
-    <Card>
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h3 className="text-sm font-semibold text-slate-700 mb-1">
-            {t("settings.cloudBackup")}
-          </h3>
-          <p className="text-xs text-slate-500 max-w-xs">
-            {t("settings.cloudBackupDesc")}
-          </p>
-        </div>
+    <SectionCard
+      title={t("settings.cloudBackup")}
+      description={t("settings.cloudBackupDesc")}
+      actions={
         <Button
           type="button"
           onClick={handleSync}
@@ -291,10 +653,10 @@ function CloudBackupCard() {
         >
           {syncing ? t("sync.syncing") : t("settings.syncNow")}
         </Button>
-      </div>
-
+      }
+    >
       {syncMeta ? (
-        <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <SyncStat
             label={t("settings.lastSynced")}
             value={lastSyncDisplay ?? "—"}
@@ -314,17 +676,18 @@ function CloudBackupCard() {
           />
         </div>
       ) : (
-        <p className="mt-3 text-xs text-slate-400">
-          {t("settings.neverSynced")}
-        </p>
+        <p className="text-xs text-slate-400">{t("settings.neverSynced")}</p>
       )}
-    </Card>
+    </SectionCard>
   );
 }
+
+// ─── Device Health Card ──────────────────────────────────────────────────────
 
 function DeviceHealthCard() {
   const { t } = useLocale();
   const { push } = useToast();
+  const { canExport } = usePermissions();
   const [loading, setLoading] = useState(true);
   const [repairing, setRepairing] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -346,29 +709,16 @@ function DeviceHealthCard() {
   async function refreshHealth() {
     setLoading(true);
     try {
-      const [
-        products,
-        bills,
-        billItems,
-        stockMovements,
-        customerPayments,
-        queue,
-      ] = await Promise.all([
-        db.products.count(),
-        db.bills.count(),
-        db.billItems.count(),
-        db.stockMovements.count(),
-        db.customerPayments.count(),
-        getSyncQueueCounts(),
-      ]);
-      setStats({
-        products,
-        bills,
-        billItems,
-        stockMovements,
-        customerPayments,
-        ...queue,
-      });
+      const [products, bills, billItems, stockMovements, customerPayments, queue] =
+        await Promise.all([
+          db.products.count(),
+          db.bills.count(),
+          db.billItems.count(),
+          db.stockMovements.count(),
+          db.customerPayments.count(),
+          getSyncQueueCounts(),
+        ]);
+      setStats({ products, bills, billItems, stockMovements, customerPayments, ...queue });
     } finally {
       setLoading(false);
     }
@@ -436,25 +786,15 @@ function DeviceHealthCard() {
   }
 
   const waiting = stats
-    ? stats.pending +
-      stats.syncing +
-      stats.failed +
-      stats.conflict +
-      stats.blocked
+    ? stats.pending + stats.syncing + stats.failed + stats.conflict + stats.blocked
     : 0;
   const blocked = stats?.blocked ?? 0;
 
   return (
-    <Card>
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h3 className="text-sm font-semibold text-slate-700 mb-1">
-            {t("settings.deviceHealth")}
-          </h3>
-          <p className="text-xs text-slate-500 max-w-xl">
-            {t("settings.deviceHealthDesc")}
-          </p>
-        </div>
+    <SectionCard
+      title={t("settings.deviceHealth")}
+      description={t("settings.deviceHealthDesc")}
+      actions={
         <Button
           type="button"
           variant="secondary"
@@ -464,18 +804,12 @@ function DeviceHealthCard() {
         >
           {loading ? t("common.loading") : t("settings.refreshHealth")}
         </Button>
-      </div>
-
-      <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <SyncStat
-          label={t("settings.products")}
-          value={stats?.products ?? "—"}
-        />
+      }
+    >
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <SyncStat label={t("settings.products")} value={stats?.products ?? "—"} />
         <SyncStat label={t("settings.bills")} value={stats?.bills ?? "—"} />
-        <SyncStat
-          label={t("settings.movements")}
-          value={stats?.stockMovements ?? "—"}
-        />
+        <SyncStat label={t("settings.movements")} value={stats?.stockMovements ?? "—"} />
         <SyncStat label={t("settings.pendingSync")} value={waiting} />
       </div>
 
@@ -499,17 +833,17 @@ function DeviceHealthCard() {
         )}
       </div>
 
-      <div className="mt-4 flex flex-col sm:flex-row gap-2">
-        <Button
-          type="button"
-          variant="secondary"
-          onClick={handleExportBackup}
-          disabled={exporting}
-        >
-          {exporting
-            ? t("settings.exportingBackup")
-            : t("settings.exportLocalBackup")}
-        </Button>
+      <div className="mt-4 flex flex-col sm:flex-row gap-2 flex-wrap">
+        {canExport && (
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={handleExportBackup}
+            disabled={exporting}
+          >
+            {exporting ? t("settings.exportingBackup") : t("settings.exportLocalBackup")}
+          </Button>
+        )}
         <Button
           type="button"
           variant="secondary"
@@ -534,7 +868,7 @@ function DeviceHealthCard() {
         waitingCount={waiting}
         conflictCount={stats?.conflict ?? 0}
       />
-    </Card>
+    </SectionCard>
   );
 }
 
@@ -553,8 +887,6 @@ function ClearCacheConfirmModal({
 }) {
   const { t } = useLocale();
   const offline = typeof navigator !== "undefined" && !navigator.onLine;
-  // Block confirm only on the hardest warning (unresolved conflicts).
-  // Offline and unsynced are informational — local data is safe in IndexedDB.
   const blocked = conflictCount > 0;
   return (
     <Modal
@@ -612,16 +944,9 @@ function SyncStat({
   wide?: boolean;
 }) {
   return (
-    <div
-      className={clsx(
-        "flex flex-col gap-0.5",
-        wide && "col-span-2 sm:col-span-1",
-      )}
-    >
+    <div className={clsx("flex flex-col gap-0.5", wide && "col-span-2 sm:col-span-1")}>
       <span className="text-xs text-slate-400">{label}</span>
-      <span className="text-sm font-medium text-slate-700 tabular-nums">
-        {value}
-      </span>
+      <span className="text-sm font-medium text-slate-700 tabular-nums">{value}</span>
     </div>
   );
 }

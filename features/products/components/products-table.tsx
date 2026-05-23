@@ -61,7 +61,7 @@ export function ProductsTable({
   );
   const settings = useLiveQuery(() => settingsRepo.get(), []);
   const { push } = useToast();
-  const currency = settings?.currency ?? "₪";
+  const currency = settings?.currency ?? "ILS";
 
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");

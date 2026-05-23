@@ -484,7 +484,7 @@ function buildRestoredDefaultSettings(
     id: SETTINGS_ID,
     storeName: "My Shop",
     cashierName: "",
-    currency: "₪",
+    currency: "ILS",
     allowLossSale: false,
     nextBillSequence,
     nextPurchaseSequence: nextBillSequence,

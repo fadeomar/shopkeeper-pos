@@ -33,6 +33,7 @@ import { QuickProductModal } from "./quick-product-modal";
 import { ReceiptView } from "./receipt-view";
 import { normalizeBarcode } from "@/lib/utils/barcode";
 import { useAuth } from "@/components/providers/auth-context";
+import { usePermissions } from "@/lib/hooks/use-permissions";
 import type {
   Bill,
   BillDraftItem,
@@ -179,6 +180,7 @@ export function PosScreen() {
   const { t, dir } = useLocale();
   const tableLabels = useDataTableLabels();
   const { user } = useAuth();
+  const { canDiscount } = usePermissions();
   const products = useLiveQuery(
     () => db.products.where("status").equals("active").sortBy("name"),
     [],
@@ -187,7 +189,7 @@ export function PosScreen() {
   const activeShift = useLiveQuery(() => getActiveShift(), []);
   const settings = useLiveQuery(() => settingsRepo.get(), []);
   const { push } = useToast();
-  const currency = settings?.currency ?? "₪";
+  const currency = settings?.currency ?? "ILS";
   const draftKey = user?.uid ? `${POS_DRAFT_KEY_PREFIX}:${user.uid}` : null;
 
   // Mobile UX: tapping a numeric input opens the soft keyboard and leaves it
@@ -1174,18 +1176,20 @@ export function PosScreen() {
                 </FormField>
 
                 <div className="grid grid-cols-2 gap-3">
-                  <FormField label={t("billing.discount")}>
-                    <Input
-                      type="number"
-                      inputMode="decimal"
-                      enterKeyHint="done"
-                      step="0.01"
-                      onKeyDown={dismissKeyboardOnEnter}
-                      {...form.register("discountAmount", {
-                        valueAsNumber: true,
-                      })}
-                    />
-                  </FormField>
+                  {canDiscount && (
+                    <FormField label={t("billing.discount")}>
+                      <Input
+                        type="number"
+                        inputMode="decimal"
+                        enterKeyHint="done"
+                        step="0.01"
+                        onKeyDown={dismissKeyboardOnEnter}
+                        {...form.register("discountAmount", {
+                          valueAsNumber: true,
+                        })}
+                      />
+                    </FormField>
+                  )}
                   <FormField label={t("billing.tax")}>
                     <Input
                       type="number"

@@ -49,7 +49,7 @@ export function AuthenticatedShell({
   if (status === "inactive") return <InactiveScreen onLogout={logout} />;
 
   // Authenticated — split by role
-  if (user?.role === "admin") return <AdminShell>{children}</AdminShell>;
+  if (user?.role === "owner") return <AdminShell>{children}</AdminShell>;
   return <CashierShell>{children}</CashierShell>;
 }
 
@@ -157,6 +157,21 @@ function CashierShell({ children }: { children: React.ReactNode }) {
 
   async function runRestoreCheck(userId: string) {
     try {
+      // Account-switch guard: if the device was last used by a different UID,
+      // wipe local Dexie so the incoming user starts fresh and gets a fair
+      // restore offer — rather than briefly seeing the previous user's data.
+      try {
+        const lastUid = localStorage.getItem('shopkeeper_last_active_uid');
+        if (lastUid && lastUid !== userId) {
+          await db.transaction('rw', db.tables, async () => {
+            await Promise.all(db.tables.map((t) => t.clear()));
+          });
+          localStorage.setItem('shopkeeper_last_active_uid', userId);
+        }
+      } catch {
+        // Non-fatal — if the wipe fails, proceed with whatever is in IndexedDB.
+      }
+
       const empty = await isLocalDbEmpty();
       if (empty) {
         const meta = await fetchSyncMeta(userId);
@@ -878,7 +893,12 @@ function SafeSignOutButton({ className }: { className?: string }) {
   async function signOutKeepingDeviceData() {
     setSigningOut(true);
     try {
-      if (user?.uid) await saveCurrentAccountSnapshot(user.uid);
+      if (user?.uid) {
+        await saveCurrentAccountSnapshot(user.uid);
+        // Stamp the UID so runRestoreCheck can wipe local Dexie if a different
+        // account signs in on the same device next time.
+        try { localStorage.setItem('shopkeeper_last_active_uid', user.uid); } catch { /* non-fatal */ }
+      }
       await logout();
     } finally {
       setSigningOut(false);

@@ -39,7 +39,7 @@ export function buildReceiptText({
     paymentMethod: string;
   };
 }) {
-  const currency = settings?.currency ?? "₪";
+  const currency = settings?.currency ?? "ILS";
   const storeName = settings?.storeName || "Shopkeeper POS";
   const withSplit = normalizeBillSplit(bill) as Bill;
   // Show the split breakdown only when the bill exercises more than one

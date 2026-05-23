@@ -16,7 +16,7 @@ import {
   type SupportHealth,
   type UserSummary,
 } from "@/lib/firebase/admin-service";
-import type { AppUser } from "@/types/domain";
+import type { AppUser, UserRole } from "@/types/domain";
 import { PageShell } from "@/components/ui/page-shell";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionCard } from "@/components/ui/section-card";
@@ -480,7 +480,7 @@ function CreateUserForm({
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<"admin" | "cashier">("cashier");
+  const [role, setRole] = useState<UserRole>("cashier");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -554,11 +554,13 @@ function CreateUserForm({
           <SearchableSelect
             value={role}
             onValueChange={(value) =>
-              setRole((value as "admin" | "cashier") ?? "cashier")
+              setRole((value as UserRole) ?? "cashier")
             }
             options={[
               { value: "cashier", label: "Cashier" },
-              { value: "admin", label: "Admin" },
+              { value: "manager", label: "Manager" },
+              { value: "accountant", label: "Accountant" },
+              { value: "owner", label: "Owner" },
             ]}
             placeholder="Select role"
             searchPlaceholder="Search roles…"

@@ -1,5 +1,49 @@
 export type EntityStatus = 'active' | 'inactive';
-export type UserRole = 'admin' | 'cashier';
+export type UserRole = 'owner' | 'manager' | 'cashier' | 'accountant';
+
+export interface RolePermissions {
+  canVoid: boolean;
+  canReturn: boolean;
+  canDiscount: boolean;
+  canViewProfit: boolean;
+  canEditCost: boolean;
+  canExport: boolean;
+}
+
+export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
+  owner: {
+    canVoid: true,
+    canReturn: true,
+    canDiscount: true,
+    canViewProfit: true,
+    canEditCost: true,
+    canExport: true,
+  },
+  manager: {
+    canVoid: true,
+    canReturn: true,
+    canDiscount: true,
+    canViewProfit: true,
+    canEditCost: false,
+    canExport: true,
+  },
+  cashier: {
+    canVoid: false,
+    canReturn: true,
+    canDiscount: true,
+    canViewProfit: false,
+    canEditCost: false,
+    canExport: false,
+  },
+  accountant: {
+    canVoid: false,
+    canReturn: false,
+    canDiscount: false,
+    canViewProfit: true,
+    canEditCost: false,
+    canExport: true,
+  },
+};
 
 export type SyncStatus = 'pending' | 'syncing' | 'synced' | 'failed' | 'conflict' | 'blocked';
 export type SyncEntity = 'bill' | 'product' | 'settings' | 'stockMovement' | 'customerPayment' | 'customer' | 'shift' | 'supplier' | 'purchase' | 'supplierPayment' | 'auditEvent' | 'cashMovement' | 'expense';
@@ -333,6 +377,25 @@ export interface Settings {
   nextBillSequence: number;
   nextPurchaseSequence: number;
   lowStockHighlight: boolean;
+  // Business profile
+  businessAddress?: string;
+  businessPhone?: string;
+  // POS behaviour
+  taxMode?: 'inclusive' | 'exclusive' | 'none';
+  defaultDiscountLimit?: number;
+  requireShift?: boolean;
+  // Receipt
+  receiptHeader?: string;
+  receiptFooter?: string;
+  // Payment method toggles (undefined = enabled)
+  enableCash?: boolean;
+  enableCard?: boolean;
+  enableCredit?: boolean;
+  // Inventory alerts
+  lowStockThreshold?: number;
+  expiryWarningDays?: number;
+  // Role-level permission overrides. Values override DEFAULT_ROLE_PERMISSIONS.
+  rolePermissions?: Partial<Record<UserRole, Partial<RolePermissions>>>;
   createdAt: string;
   updatedAt: string;
   syncStatus?: SyncStatus;

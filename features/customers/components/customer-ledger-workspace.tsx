@@ -44,7 +44,7 @@ export function CustomerLedgerWorkspace() {
   const [paymentMethod, setPaymentMethod] = useState<
     "cash" | "card" | "bank" | "other"
   >("cash");
-  const currency = settings?.currency ?? "₪";
+  const currency = settings?.currency ?? "ILS";
 
   const rows = ledger ?? [];
   const filteredRows = useMemo(() => {

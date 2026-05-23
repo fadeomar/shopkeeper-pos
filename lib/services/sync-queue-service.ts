@@ -64,16 +64,20 @@ const SYNC_ENTITY_PRIORITY: Record<SyncEntity, number> = {
   customerPayment: 5,
   supplierPayment: 6,
   stockMovement: 7,
-  product: 8,
+  // settings comes before product so bill-sequence settings (priority 8 in
+  // sync-provider) are pushed before manual product edits (priority 11).
+  // Non-sequence settings use priority 10 in sync-provider; we use 9 here as
+  // the midpoint since queue-service can't distinguish the two sub-types.
   settings: 9,
+  product: 11,
   // Audit events are append-only history with no foreign-key dependencies in
   // either direction, so they can sync last without blocking anything else.
-  auditEvent: 10,
+  auditEvent: 13,
   // Cash movements attach to a shift but don't drive any cascade — they can
   // sync after shifts are reconciled.
-  cashMovement: 11,
+  cashMovement: 14,
   // Operational expenses — same story, no downstream dependencies.
-  expense: 12,
+  expense: 15,
 };
 
 export async function getPendingSyncJobs(): Promise<SyncQueueItem[]> {

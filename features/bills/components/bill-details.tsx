@@ -17,6 +17,7 @@ import { Modal } from "@/components/ui/modal";
 import { DataTable, useDataTableLabels } from "@/components/ui/data-table";
 import { useToast } from "@/components/ui/toast";
 import { useLocale } from "@/components/providers/locale-context";
+import { usePermissions } from "@/lib/hooks/use-permissions";
 import { returnBillItem, voidBill } from "@/lib/services/billing-service";
 import {
   getBillNetProfit,
@@ -80,13 +81,14 @@ export function BillDetails({ billId }: { billId: string }) {
   const { t } = useLocale();
   const tableLabels = useDataTableLabels();
   const toast = useToast();
+  const { canVoid: permCanVoid, canReturn: permCanReturn, canViewProfit } = usePermissions();
   const bill = useLiveQuery(() => db.bills.get(billId), [billId]);
   const items = useLiveQuery(
     () => db.billItems.where("billId").equals(billId).toArray(),
     [billId],
   );
   const settings = useLiveQuery(() => settingsRepo.get(), []);
-  const currency = settings?.currency ?? "₪";
+  const currency = settings?.currency ?? "ILS";
   const [voidOpen, setVoidOpen] = useState(false);
   const [voidReason, setVoidReason] = useState("");
   const [returnItem, setReturnItem] = useState<BillItem | null>(null);
@@ -113,8 +115,8 @@ export function BillDetails({ billId }: { billId: string }) {
     );
   }
 
-  const canVoid = bill.status === "finalized";
-  const canReturn = bill.status !== "voided";
+  const billCanVoid = bill.status === "finalized";
+  const billCanReturn = bill.status !== "voided";
   const selectedRemaining = returnItem ? remainingQuantity(returnItem) : 0;
 
   const itemColumns: ColumnDef<BillItem, unknown>[] = [
@@ -182,15 +184,19 @@ export function BillDetails({ billId }: { billId: string }) {
         </span>
       ),
     },
-    {
-      accessorKey: "lineProfit",
-      header: t("bills.lineProfit"),
-      cell: ({ row }) => (
-        <span className="font-medium tabular-nums text-green-600" dir="ltr">
-          {formatCurrency(row.original.lineProfit, currency)}
-        </span>
-      ),
-    },
+    ...(canViewProfit
+      ? [
+          {
+            accessorKey: "lineProfit",
+            header: t("bills.lineProfit"),
+            cell: ({ row }: { row: { original: BillItem } }) => (
+              <span className="font-medium tabular-nums text-green-600" dir="ltr">
+                {formatCurrency(row.original.lineProfit, currency)}
+              </span>
+            ),
+          } satisfies ColumnDef<BillItem, unknown>,
+        ]
+      : []),
     {
       id: "actions",
       header: t("bills.action"),
@@ -198,12 +204,12 @@ export function BillDetails({ billId }: { billId: string }) {
       cell: ({ row }) => {
         const item = row.original;
         const remaining = remainingQuantity(item);
-        return (
+        return permCanReturn ? (
           <Button
             type="button"
             size="sm"
             variant="secondary"
-            disabled={!canReturn || remaining <= 0}
+            disabled={!billCanReturn || remaining <= 0}
             onClick={() => {
               setReturnItem(item);
               setReturnQuantity(String(remaining));
@@ -211,7 +217,7 @@ export function BillDetails({ billId }: { billId: string }) {
           >
             {t("bills.returnItem")}
           </Button>
-        );
+        ) : null;
       },
     },
   ];
@@ -317,31 +323,33 @@ export function BillDetails({ billId }: { billId: string }) {
         </div>
       </Card>
 
-      <Card>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h3 className="text-base font-bold text-slate-900">
-              {t("bills.actions")}
-            </h3>
-            <p className="mt-1 text-sm text-slate-500">
-              {t("bills.actionsDesc")}
-            </p>
+      {permCanVoid && (
+        <Card>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 className="text-base font-bold text-slate-900">
+                {t("bills.actions")}
+              </h3>
+              <p className="mt-1 text-sm text-slate-500">
+                {t("bills.actionsDesc")}
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="danger"
+              disabled={!billCanVoid}
+              onClick={() => setVoidOpen(true)}
+            >
+              {t("bills.voidBill")}
+            </Button>
           </div>
-          <Button
-            type="button"
-            variant="danger"
-            disabled={!canVoid}
-            onClick={() => setVoidOpen(true)}
-          >
-            {t("bills.voidBill")}
-          </Button>
-        </div>
-        {!canVoid && bill.status !== "voided" && (
-          <p className="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
-            {t("bills.voidOnlyFinalized")}
-          </p>
-        )}
-      </Card>
+          {!billCanVoid && bill.status !== "voided" && (
+            <p className="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
+              {t("bills.voidOnlyFinalized")}
+            </p>
+          )}
+        </Card>
+      )}
 
       <DataTable
         columns={itemColumns}
@@ -391,21 +399,25 @@ export function BillDetails({ billId }: { billId: string }) {
             label={t("bills.change")}
             value={formatCurrency(bill.changeAmount, currency)}
           />
-          <SummaryRow
-            label={t("bills.totalProfit")}
-            value={formatCurrency(bill.totalProfit, currency)}
-          />
-          {(bill.returnedProfit ?? 0) > 0 && (
-            <SummaryRow
-              label={t("bills.returnedProfit")}
-              value={`-${formatCurrency(bill.returnedProfit ?? 0, currency)}`}
-            />
+          {canViewProfit && (
+            <>
+              <SummaryRow
+                label={t("bills.totalProfit")}
+                value={formatCurrency(bill.totalProfit, currency)}
+              />
+              {(bill.returnedProfit ?? 0) > 0 && (
+                <SummaryRow
+                  label={t("bills.returnedProfit")}
+                  value={`-${formatCurrency(bill.returnedProfit ?? 0, currency)}`}
+                />
+              )}
+              <SummaryRow
+                label={t("bills.netProfit")}
+                value={formatCurrency(netProfit, currency)}
+                highlight
+              />
+            </>
           )}
-          <SummaryRow
-            label={t("bills.netProfit")}
-            value={formatCurrency(netProfit, currency)}
-            highlight
-          />
         </div>
         {bill.notes && (
           <p className="mt-4 pt-4 border-t border-slate-100 text-sm text-slate-500 whitespace-pre-line">

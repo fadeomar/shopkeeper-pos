@@ -67,7 +67,7 @@ export function ExpensesWorkspace() {
   const settings = useLiveQuery(() => settingsRepo.get(), []);
 
   const expenses = useLiveQuery(() => listExpenses({}), [], [] as Expense[]);
-  const currency = settings?.currency ?? "₪";
+  const currency = settings?.currency ?? "ILS";
 
   const [open, setOpen] = useState(false);
   const [category, setCategory] = useState<ExpenseCategory>("rent");

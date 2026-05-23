@@ -41,7 +41,7 @@ export function CartSummaryCard({
   discount = 0,
   tax = 0,
   total,
-  currency = "₪",
+  currency = "ILS",
   className,
 }: {
   subtotal: number;

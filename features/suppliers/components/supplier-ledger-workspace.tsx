@@ -37,7 +37,7 @@ export function SupplierLedgerWorkspace() {
   const [paymentMethod, setPaymentMethod] = useState<
     "cash" | "card" | "bank" | "other"
   >("cash");
-  const currency = settings?.currency ?? "₪";
+  const currency = settings?.currency ?? "ILS";
 
   const paymentAmountNumeric = Number(amount);
   const safePaymentAmount = Number.isFinite(paymentAmountNumeric)

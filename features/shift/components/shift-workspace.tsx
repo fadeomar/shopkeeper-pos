@@ -81,7 +81,7 @@ export function ShiftWorkspace() {
         : Promise.resolve<CustomerPayment[]>([]),
     [activeShift?.id],
   );
-  const currency = settings?.currency ?? "₪";
+  const currency = settings?.currency ?? "ILS";
 
   const [openingCash, setOpeningCash] = useState("");
   const [openNotes, setOpenNotes] = useState("");

@@ -194,7 +194,7 @@ export function PurchaseEntryScreen() {
   const suppliers = useLiveQuery(() => supplierRepo.list(), []);
   const settings = useLiveQuery(() => settingsRepo.get(), []);
   const { push } = useToast();
-  const currency = settings?.currency ?? "₪";
+  const currency = settings?.currency ?? "ILS";
   const draftKey = user?.uid
     ? `${PURCHASE_DRAFT_KEY_PREFIX}:${user.uid}`
     : null;

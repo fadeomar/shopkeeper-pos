@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
     // Verify the caller is an admin by reading their Firestore user doc.
     // Role is stored at users/{uid}.role — set during createAppUser/registerUser.
     const callerDoc = await getAdminFirestore().doc(`users/${decoded.uid}`).get();
-    if (!callerDoc.exists || (callerDoc.data() as { role?: string } | undefined)?.role !== 'admin') {
+    if (!callerDoc.exists || (callerDoc.data() as { role?: string } | undefined)?.role !== 'owner') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
