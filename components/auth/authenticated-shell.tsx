@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useId, useRef } from "react";
 import Link from "next/link";
 import type { Route } from "next";
 import { useRouter, usePathname } from "next/navigation";
@@ -23,19 +23,28 @@ import { DbBootstrap } from "@/components/providers/db-bootstrap";
 import { AppSidebarBrand } from "@/components/app-sidebar-brand";
 import { SidebarNav } from "@/components/sidebar-nav";
 import { useSettings } from "@/components/providers/settings-context";
-import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import {
-  getLocalDataSummary,
-  saveCurrentAccountSnapshot,
-} from "@/lib/services/account-data-service";
 import { setRestoreDecisionPending } from "@/lib/services/sync-gate";
 import { SyncStatusBadge } from "@/components/sync/sync-status-badge";
+import { SafeSignOutButton } from "@/components/auth/safe-sign-out-button";
 import { ConflictResolverModal } from "@/components/sync/conflict-resolver-modal";
+import { MobileBottomNav } from "@/components/mobile-bottom-nav";
+import { PublicShell } from "@/components/auth/public-shell";
+
+// Routes reachable WITHOUT authentication. Prefix-matched, allowlist-only: only
+// these paths bypass the auth gate; every other route keeps its existing
+// behaviour. Public pages render in PublicShell (no DB, no sync).
+const PUBLIC_PATHS = ["/guide"] as const;
+
+function isPublicPath(pathname: string): boolean {
+  return PUBLIC_PATHS.some(
+    (p) => pathname === p || pathname.startsWith(p + "/"),
+  );
+}
 
 export function AuthenticatedShell({
   children,
@@ -43,6 +52,12 @@ export function AuthenticatedShell({
   children: React.ReactNode;
 }) {
   const { status, user, logout } = useAuth();
+  const pathname = usePathname();
+
+  // Public allowlist takes precedence over the auth gate so /guide is reachable
+  // when logged out. Checked before status so it never flashes the login screen.
+  if (isPublicPath(pathname)) return <PublicShell>{children}</PublicShell>;
+
   if (status === "loading") return <LoadingScreen />;
   if (status === "unauthenticated") return <AuthScreen />;
   if (status === "pending") return <PendingScreen onLogout={logout} />;
@@ -74,6 +89,14 @@ function AdminShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen grid grid-cols-1 lg:grid-cols-[260px_1fr] bg-slate-50">
+      {/* Skip-to-content: visually hidden until focused by keyboard users */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:start-2 focus:z-[200] focus:px-4 focus:py-2 focus:bg-brand focus:text-white focus:rounded-xl focus:font-medium focus:text-sm"
+      >
+        {t("nav.skipToContent")}
+      </a>
+
       <aside className="bg-slate-900 text-white flex flex-col lg:min-h-screen lg:sticky lg:top-0">
         <div className="hidden lg:block px-5 pt-6 pb-4">
           <AppSidebarBrand />
@@ -88,13 +111,17 @@ function AdminShell({ children }: { children: React.ReactNode }) {
           <SafeSignOutButton className="ms-auto rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700 hover:text-white transition-colors" />
         </div>
 
-        <nav className="flex flex-row overflow-x-auto gap-1 px-3 py-2 lg:flex-col lg:overflow-x-visible lg:flex-1">
+        <nav
+          aria-label={t("nav.adminNavLabel")}
+          className="flex flex-row overflow-x-auto gap-1 px-3 py-2 lg:flex-col lg:overflow-x-visible lg:flex-1"
+        >
           <Link
             href={"/admin/users" as Route}
+            aria-current={pathname.startsWith("/admin") ? "page" : undefined}
             className={clsx(
               "whitespace-nowrap px-3 py-2 rounded-xl text-sm font-medium transition-colors lg:w-full",
               pathname.startsWith("/admin")
-                ? "bg-blue-600 text-white"
+                ? "bg-brand text-white"
                 : "text-slate-300 hover:bg-white/10 hover:text-white",
             )}
           >
@@ -118,7 +145,10 @@ function AdminShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <main className="min-w-0 p-3 pb-24 sm:p-4 sm:pb-24 lg:p-6 lg:pb-6">
+      <main
+        id="main-content"
+        className="min-w-0 p-3 pb-24 sm:p-4 sm:pb-24 lg:p-6 lg:pb-6"
+      >
         {children}
       </main>
     </div>
@@ -131,7 +161,8 @@ function AdminShell({ children }: { children: React.ReactNode }) {
 
 function CashierShell({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
-  const { setSettings } = useSettings();
+  const { t } = useLocale();
+  const { settings, setSettings } = useSettings();
   const uid = user?.uid;
 
   // Restore flow state
@@ -161,12 +192,12 @@ function CashierShell({ children }: { children: React.ReactNode }) {
       // wipe local Dexie so the incoming user starts fresh and gets a fair
       // restore offer — rather than briefly seeing the previous user's data.
       try {
-        const lastUid = localStorage.getItem('shopkeeper_last_active_uid');
+        const lastUid = localStorage.getItem("shopkeeper_last_active_uid");
         if (lastUid && lastUid !== userId) {
-          await db.transaction('rw', db.tables, async () => {
+          await db.transaction("rw", db.tables, async () => {
             await Promise.all(db.tables.map((t) => t.clear()));
           });
-          localStorage.setItem('shopkeeper_last_active_uid', userId);
+          localStorage.setItem("shopkeeper_last_active_uid", userId);
         }
       } catch {
         // Non-fatal — if the wipe fails, proceed with whatever is in IndexedDB.
@@ -183,7 +214,7 @@ function CashierShell({ children }: { children: React.ReactNode }) {
         const hasCloudData =
           !!meta &&
           Object.values(meta.recordCounts).some(
-            (count) => typeof count === 'number' && count > 0,
+            (count) => typeof count === "number" && count > 0,
           );
         if (hasCloudData && meta) {
           const skippedBackup = readSkippedRestoreMeta(userId);
@@ -332,51 +363,80 @@ function CashierShell({ children }: { children: React.ReactNode }) {
   }, [uid, restoreChecked, restoreSkipped, setSettings]);
 
   return (
-    <div className="min-h-screen grid grid-cols-1 lg:grid-cols-[260px_1fr] bg-slate-50">
-      <aside className="bg-slate-900 text-white flex flex-col lg:min-h-screen lg:sticky lg:top-0">
-        <div className="hidden lg:block px-5 pt-6 pb-4">
-          <AppSidebarBrand />
-        </div>
-        <div className="flex lg:hidden items-center gap-3 px-4 py-3 border-b border-white/10">
-          <span className="font-bold text-base tracking-tight">
-            Shopkeeper POS
-          </span>
-          <div className="ms-auto flex items-center gap-2">
-            <div className="block max-w-[220px]">
+    <>
+      <div className="min-h-screen grid grid-cols-1 lg:grid-cols-[260px_1fr] bg-slate-50">
+        {/* Skip-to-content: visually hidden until focused by keyboard users */}
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:start-2 focus:z-[200] focus:px-4 focus:py-2 focus:bg-brand focus:text-white focus:rounded-xl focus:font-medium focus:text-sm"
+        >
+          {t("nav.skipToContent")}
+        </a>
+
+        <aside className="bg-slate-900 text-white flex flex-col lg:min-h-screen lg:sticky lg:top-0">
+          {/* Desktop: logo at top of the sidebar */}
+          <div className="hidden lg:block px-5 pt-6 pb-4">
+            <AppSidebarBrand />
+          </div>
+
+          {/* Mobile: compact header bar — store name + sync state only. Sign-out
+              lives in the More → Account section (it is risky offline and not a
+              frequent cashier action, so it shouldn't sit in the working header). */}
+          <div className="flex lg:hidden items-center gap-2 px-4 py-3 border-b border-white/10">
+            {/* Store name gives the cashier working context; falls back to the
+                product brand only until settings load. */}
+            <span className="font-bold text-sm tracking-tight truncate">
+              {settings?.storeName?.trim() || "Shopkeeper POS"}
+            </span>
+            <div className="ms-auto flex items-center gap-2 shrink-0">
               <SyncStatusBadge compact />
             </div>
-            <SafeSignOutButton className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700 hover:text-white transition-colors" />
           </div>
-        </div>
-        <SidebarNav />
-        <div className="hidden lg:block px-4 pb-5 mt-auto">
-          <div className="text-xs text-slate-400 mb-1 truncate">
-            {user?.name}
+
+          {/* Desktop-only nav — MobileBottomNav handles mobile routing */}
+          <SidebarNav />
+
+          {/* Desktop: user info + sync badge at the foot of the sidebar */}
+          <div className="hidden lg:block px-4 pb-5 mt-auto">
+            <div className="text-xs text-slate-400 mb-1 truncate">
+              {user?.name}
+            </div>
+            <div className="text-xs text-slate-500 mb-3 truncate">
+              {user?.email}
+            </div>
+            <SyncStatusBadge />
+            <SafeSignOutButton className="w-full text-start text-xs text-slate-400 hover:text-white transition-colors" />
           </div>
-          <div className="text-xs text-slate-500 mb-3 truncate">
-            {user?.email}
-          </div>
-          <SyncStatusBadge />
-          <SafeSignOutButton className="w-full text-start text-xs text-slate-400 hover:text-white transition-colors" />
-        </div>
-      </aside>
-      <main className="min-w-0 p-3 pb-24 sm:p-4 sm:pb-24 lg:p-6 lg:pb-6">
-        <DbBootstrap>
-          <ConflictResolverModal userId={uid} />
-          {cloudMeta && (
-            <RestoreModal
-              meta={cloudMeta}
-              restoring={restoring}
-              step={restoreStep}
-              error={restoreError}
-              onRestore={handleRestore}
-              onSkip={handleSkipRestore}
-            />
-          )}
-          {children}
-        </DbBootstrap>
-      </main>
-    </div>
+        </aside>
+
+        {/*
+          pb-24 on mobile keeps content above the fixed bottom nav.
+          lg:pb-6 reverts to normal desktop padding once the sidebar takes over.
+        */}
+        <main
+          id="main-content"
+          className="min-w-0 p-3 pb-24 sm:p-4 sm:pb-24 lg:p-6 lg:pb-6"
+        >
+          <DbBootstrap>
+            <ConflictResolverModal userId={uid} />
+            {cloudMeta && (
+              <RestoreModal
+                meta={cloudMeta}
+                restoring={restoring}
+                step={restoreStep}
+                error={restoreError}
+                onRestore={handleRestore}
+                onSkip={handleSkipRestore}
+              />
+            )}
+            {children}
+          </DbBootstrap>
+        </main>
+      </div>
+
+      {/* Fixed mobile bottom navigation — hidden on desktop */}
+      <MobileBottomNav />
+    </>
   );
 }
 
@@ -398,6 +458,8 @@ function RestoreModal({
   onSkip: () => void;
 }) {
   const { t } = useLocale();
+  const uid = useId();
+  const titleId = `restore-title-${uid}`;
   const { bills, products, stockMovements } = meta.recordCounts;
   const date = new Date(meta.lastSyncedAt).toLocaleDateString(undefined, {
     year: "numeric",
@@ -406,8 +468,16 @@ function RestoreModal({
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
-      <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-xl p-6">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4"
+      role="presentation"
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        className="relative w-full max-w-sm bg-white rounded-2xl shadow-xl p-6"
+      >
         <button
           type="button"
           aria-label={t("auth.closeRestorePrompt")}
@@ -425,9 +495,9 @@ function RestoreModal({
           </svg>
         </button>
         {/* Icon */}
-        <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+        <div className="w-12 h-12 bg-brand-soft rounded-full flex items-center justify-center mx-auto mb-4">
           <svg
-            className="w-6 h-6 text-blue-600"
+            className="w-6 h-6 text-brand"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -441,7 +511,10 @@ function RestoreModal({
           </svg>
         </div>
 
-        <h2 className="text-base font-bold text-slate-800 text-center mb-1">
+        <h2
+          id={titleId}
+          className="text-base font-bold text-slate-800 text-center mb-1"
+        >
           {t("auth.useExistingTitle")}
         </h2>
         <p className="text-sm text-slate-500 text-center mb-4">
@@ -457,12 +530,12 @@ function RestoreModal({
 
         {/* Progress / error */}
         {restoring && step && (
-          <p className="text-xs text-blue-600 text-center mb-3 animate-pulse">
+          <p className="text-xs text-info text-center mb-3 animate-pulse">
             {step}
           </p>
         )}
         {error && (
-          <div className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2 mb-3 text-center">
+          <div className="text-xs text-danger bg-danger-soft border border-danger/20 rounded-xl px-3 py-2 mb-3 text-center">
             <p className="select-text">{error}</p>
             <button
               type="button"
@@ -471,7 +544,7 @@ function RestoreModal({
                   void navigator.clipboard.writeText(error);
                 }
               }}
-              className="mt-2 font-medium text-red-700 underline underline-offset-2"
+              className="mt-2 font-medium text-danger underline underline-offset-2"
             >
               {t("auth.copyError")}
             </button>
@@ -483,7 +556,7 @@ function RestoreModal({
           <button
             onClick={onRestore}
             disabled={restoring}
-            className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm font-medium rounded-xl transition-colors"
+            className="w-full py-2.5 bg-brand hover:bg-brand-hover disabled:opacity-60 text-white text-sm font-medium rounded-xl transition-colors"
           >
             {restoring ? t("auth.syncing") : t("auth.syncCloudData")}
           </button>
@@ -516,7 +589,7 @@ function LoadingScreen() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50">
       <div className="p-8 bg-white rounded-2xl shadow-sm border border-slate-200 text-center">
-        <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+        <div className="w-8 h-8 border-2 border-brand border-t-transparent rounded-full animate-spin mx-auto mb-4" />
         <p className="text-sm text-slate-500">{t("auth.appLoading")}</p>
       </div>
     </div>
@@ -541,9 +614,9 @@ function PendingScreen({ onLogout }: { onLogout: () => void }) {
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
       <div className="max-w-sm w-full bg-white rounded-2xl shadow-sm border border-slate-200 p-8 text-center">
-        <div className="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+        <div className="w-12 h-12 bg-warning-soft rounded-full flex items-center justify-center mx-auto mb-4">
           <svg
-            className="w-6 h-6 text-amber-600"
+            className="w-6 h-6 text-warning"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -556,11 +629,15 @@ function PendingScreen({ onLogout }: { onLogout: () => void }) {
             />
           </svg>
         </div>
-        <h2 className="font-semibold text-slate-800 mb-2">{t("auth.pendingTitle")}</h2>
+        <h2 className="font-semibold text-slate-800 mb-2">
+          {t("auth.pendingTitle")}
+        </h2>
         <p className="text-sm text-slate-500 mb-2">{t("auth.pendingDesc")}</p>
-        <p className="text-xs text-slate-400 mb-6">{t("auth.pendingContactAdmin")}</p>
+        <p className="text-xs text-slate-400 mb-6">
+          {t("auth.pendingContactAdmin")}
+        </p>
         {checked && (
-          <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 mb-4">
+          <p className="text-xs text-warning bg-warning-soft border border-warning/30 rounded-xl px-3 py-2 mb-4">
             {t("auth.pendingStillWaiting")}
           </p>
         )}
@@ -568,7 +645,7 @@ function PendingScreen({ onLogout }: { onLogout: () => void }) {
           <button
             onClick={handleCheck}
             disabled={checking}
-            className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm font-medium rounded-xl transition-colors"
+            className="w-full py-2.5 px-4 bg-brand hover:bg-brand-hover disabled:opacity-60 text-white text-sm font-medium rounded-xl transition-colors"
           >
             {checking ? t("auth.checking") : t("auth.checkApproval")}
           </button>
@@ -578,6 +655,12 @@ function PendingScreen({ onLogout }: { onLogout: () => void }) {
           >
             {t("auth.signOut")}
           </button>
+          <Link
+            href={"/guide" as Route}
+            className="w-full text-center text-sm text-info hover:underline font-medium pt-1"
+          >
+            {t("guide.common.learnHow")}
+          </Link>
         </div>
       </div>
     </div>
@@ -598,9 +681,9 @@ function InactiveScreen({ onLogout }: { onLogout: () => void }) {
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
       <div className="max-w-sm w-full bg-white rounded-2xl shadow-sm border border-slate-200 p-8 text-center">
-        <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+        <div className="w-12 h-12 bg-danger-soft rounded-full flex items-center justify-center mx-auto mb-4">
           <svg
-            className="w-6 h-6 text-red-600"
+            className="w-6 h-6 text-danger"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -613,13 +696,15 @@ function InactiveScreen({ onLogout }: { onLogout: () => void }) {
             />
           </svg>
         </div>
-        <h2 className="font-semibold text-slate-800 mb-2">{t("auth.inactiveTitle")}</h2>
+        <h2 className="font-semibold text-slate-800 mb-2">
+          {t("auth.inactiveTitle")}
+        </h2>
         <p className="text-sm text-slate-500 mb-6">{t("auth.inactiveDesc")}</p>
         <div className="flex flex-col gap-2">
           <button
             onClick={handleCheck}
             disabled={checking}
-            className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm font-medium rounded-xl transition-colors"
+            className="w-full py-2.5 px-4 bg-brand hover:bg-brand-hover disabled:opacity-60 text-white text-sm font-medium rounded-xl transition-colors"
           >
             {checking ? t("auth.checking") : t("auth.checkStatus")}
           </button>
@@ -629,6 +714,12 @@ function InactiveScreen({ onLogout }: { onLogout: () => void }) {
           >
             {t("auth.signOut")}
           </button>
+          <Link
+            href={"/guide" as Route}
+            className="w-full text-center text-sm text-info hover:underline font-medium pt-1"
+          >
+            {t("guide.common.learnHow")}
+          </Link>
         </div>
       </div>
     </div>
@@ -690,7 +781,7 @@ function LoginForm({ onShowSignUp }: { onShowSignUp: () => void }) {
                 autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
+                placeholder={t("auth.emailPlaceholder")}
               />
             </FormField>
             <FormField label={t("auth.password")}>
@@ -713,10 +804,18 @@ function LoginForm({ onShowSignUp }: { onShowSignUp: () => void }) {
           {t("auth.dontHaveAccount")}{" "}
           <button
             onClick={onShowSignUp}
-            className="text-blue-600 hover:underline font-medium"
+            className="text-info hover:underline font-medium"
           >
             {t("auth.requestAccess")}
           </button>
+        </p>
+        <p className="text-center text-sm text-slate-500 mt-2">
+          <Link
+            href={"/guide" as Route}
+            className="text-info hover:underline font-medium"
+          >
+            {t("guide.common.learnHow")}
+          </Link>
         </p>
       </div>
     </div>
@@ -770,7 +869,7 @@ function SignUpForm({ onBack }: { onBack: () => void }) {
                 required
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Jane Smith"
+                placeholder={t("auth.namePlaceholder")}
               />
             </FormField>
             <FormField label={t("auth.email")}>
@@ -780,14 +879,16 @@ function SignUpForm({ onBack }: { onBack: () => void }) {
                 autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
+                placeholder={t("auth.emailPlaceholder")}
               />
             </FormField>
             <FormField
               label={
                 <span>
                   {t("auth.phone")}{" "}
-                  <span className="font-normal text-slate-400">{t("auth.phoneOptional")}</span>
+                  <span className="font-normal text-slate-400">
+                    {t("auth.phoneOptional")}
+                  </span>
                 </span>
               }
             >
@@ -796,7 +897,7 @@ function SignUpForm({ onBack }: { onBack: () => void }) {
                 autoComplete="tel"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                placeholder="+1 555 0123"
+                placeholder={t("auth.phonePlaceholder")}
               />
             </FormField>
             <FormField label={t("auth.password")}>
@@ -828,10 +929,18 @@ function SignUpForm({ onBack }: { onBack: () => void }) {
           {t("auth.alreadyHaveAccount")}{" "}
           <button
             onClick={onBack}
-            className="text-blue-600 hover:underline font-medium"
+            className="text-info hover:underline font-medium"
           >
             {t("auth.signIn")}
           </button>
+        </p>
+        <p className="text-center text-sm text-slate-500 mt-2">
+          <Link
+            href={"/guide" as Route}
+            className="text-info hover:underline font-medium"
+          >
+            {t("guide.common.learnHow")}
+          </Link>
         </p>
       </div>
     </div>
@@ -842,7 +951,7 @@ function AppLogo({ subtitle }: { subtitle?: string }) {
   const { t } = useLocale();
   return (
     <div className="text-center mb-8">
-      <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+      <div className="w-12 h-12 bg-brand rounded-2xl flex items-center justify-center mx-auto mb-4">
         <svg
           className="w-7 h-7 text-white"
           fill="none"
@@ -858,7 +967,9 @@ function AppLogo({ subtitle }: { subtitle?: string }) {
         </svg>
       </div>
       <h1 className="text-xl font-bold text-slate-800">Shopkeeper POS</h1>
-      <p className="text-sm text-slate-500 mt-1">{subtitle ?? t("auth.signInToContinue")}</p>
+      <p className="text-sm text-slate-500 mt-1">
+        {subtitle ?? t("auth.signInToContinue")}
+      </p>
     </div>
   );
 }
@@ -873,196 +984,5 @@ function ErrorBox({ message }: { message: string }) {
         {message}
       </Badge>
     </div>
-  );
-}
-
-function SafeSignOutButton({ className }: { className?: string }) {
-  const { user, logout } = useAuth();
-  const { t } = useLocale();
-  const [open, setOpen] = useState(false);
-  const [summary, setSummary] = useState<Awaited<
-    ReturnType<typeof getLocalDataSummary>
-  > | null>(null);
-  const [syncing, setSyncing] = useState(false);
-  const [signingOut, setSigningOut] = useState(false);
-
-  async function openModal() {
-    setSummary(await getLocalDataSummary());
-    setOpen(true);
-  }
-  async function signOutKeepingDeviceData() {
-    setSigningOut(true);
-    try {
-      if (user?.uid) {
-        await saveCurrentAccountSnapshot(user.uid);
-        // Stamp the UID so runRestoreCheck can wipe local Dexie if a different
-        // account signs in on the same device next time.
-        try { localStorage.setItem('shopkeeper_last_active_uid', user.uid); } catch { /* non-fatal */ }
-      }
-      await logout();
-    } finally {
-      setSigningOut(false);
-    }
-  }
-  async function syncThenSignOut() {
-    if (!user?.uid) return signOutKeepingDeviceData();
-    setSyncing(true);
-    const result = await syncAllToCloud(user.uid);
-    setSyncing(false);
-    if (!result) {
-      setSummary(await getLocalDataSummary());
-      return;
-    }
-    await signOutKeepingDeviceData();
-  }
-
-  const isOffline = typeof navigator !== "undefined" && !navigator.onLine;
-  const hasUnsynced = Boolean(summary?.hasUnsyncedWork);
-  // Include blocked (Sprint A) so the sign-out modal accurately shows how
-  // much work hasn't yet reached the cloud. Conflicts have their own dedicated
-  // banner below so they aren't double-counted here.
-  const pendingCount = summary
-    ? summary.pending + summary.failed + summary.syncing + summary.blocked
-    : 0;
-  return (
-    <>
-      <button
-        type="button"
-        onClick={openModal}
-        className={className ?? "text-sm text-slate-500 hover:text-slate-700"}
-      >
-        {t("auth.signOut")}
-      </button>
-      <Modal
-        open={open}
-        title={
-          isOffline
-            ? t("auth.offlineTitle")
-            : hasUnsynced
-              ? t("auth.unsyncedTitle")
-              : t("auth.signOutTitle")
-        }
-        description={
-          isOffline
-            ? t("auth.offlineDesc")
-            : hasUnsynced
-              ? t("auth.unsyncedDesc")
-              : t("auth.signOutDesc")
-        }
-        onClose={() => setOpen(false)}
-        footer={
-          <>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setOpen(false)}
-              disabled={signingOut || syncing}
-            >
-              {t("common.cancel")}
-            </Button>
-            {!isOffline && hasUnsynced && (
-              <Button
-                type="button"
-                onClick={syncThenSignOut}
-                disabled={signingOut || syncing}
-              >
-                {syncing ? t("auth.syncing") : t("auth.syncThenSignOut")}
-              </Button>
-            )}
-            <Button
-              type="button"
-              variant={hasUnsynced || isOffline ? "danger" : "primary"}
-              onClick={signOutKeepingDeviceData}
-              disabled={signingOut || syncing}
-            >
-              {signingOut
-                ? t("auth.signingOut")
-                : hasUnsynced || isOffline
-                  ? t("auth.signOutAnyway")
-                  : t("auth.signOut")}
-            </Button>
-          </>
-        }
-      >
-        {summary && (
-          <div className="space-y-3 text-sm text-slate-600">
-            <p>{t("auth.signOutDataNote")}</p>
-            <div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-50 p-3 text-xs">
-              <div>
-                <span className="font-semibold text-slate-800">
-                  {summary.products}
-                </span>{" "}
-                {t("auth.signOutStatProducts")}
-              </div>
-              <div>
-                <span className="font-semibold text-slate-800">
-                  {summary.bills}
-                </span>{" "}
-                {t("auth.signOutStatBills")}
-              </div>
-              <div>
-                <span className="font-semibold text-slate-800">
-                  {summary.customers}
-                </span>{" "}
-                {t("auth.signOutStatCustomers")}
-              </div>
-              <div>
-                <span className="font-semibold text-slate-800">
-                  {summary.suppliers}
-                </span>{" "}
-                {t("auth.signOutStatSuppliers")}
-              </div>
-              <div>
-                <span className="font-semibold text-slate-800">
-                  {summary.purchases}
-                </span>{" "}
-                {t("auth.signOutStatPurchases")}
-              </div>
-              <div>
-                <span className="font-semibold text-slate-800">
-                  {summary.shifts}
-                </span>{" "}
-                {t("auth.signOutStatShifts")}
-              </div>
-              <div>
-                <span className="font-semibold text-slate-800">
-                  {summary.stockMovements}
-                </span>{" "}
-                {t("auth.signOutStatMovements")}
-              </div>
-              <div>
-                <span className="font-semibold text-slate-800">
-                  {summary.customerPayments}
-                </span>{" "}
-                {t("auth.signOutStatPayments")}
-              </div>
-              <div>
-                <span className="font-semibold text-slate-800">
-                  {summary.supplierPayments}
-                </span>{" "}
-                {t("auth.signOutStatSupplierPayments")}
-              </div>
-              <div>
-                <span className="font-semibold text-slate-800">
-                  {pendingCount}
-                </span>{" "}
-                {t("auth.signOutStatPending")}
-              </div>
-              <div>
-                <span className="font-semibold text-slate-800">
-                  {summary.conflicts}
-                </span>{" "}
-                {t("auth.signOutStatConflicts")}
-              </div>
-            </div>
-            {summary.conflicts > 0 && (
-              <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
-                {t("auth.signOutConflictsWarning")}
-              </p>
-            )}
-          </div>
-        )}
-      </Modal>
-    </>
   );
 }

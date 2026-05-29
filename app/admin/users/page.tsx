@@ -32,12 +32,6 @@ import type { ColumnDef } from "@tanstack/react-table";
 
 type SummaryMap = Record<string, UserSummary>;
 
-// const HEALTH_STYLES: Record<SupportHealth, string> = {
-//   healthy: "bg-green-100 text-green-700",
-//   needs_attention: "bg-amber-100 text-amber-700",
-//   no_backup: "bg-red-100 text-red-600",
-// };
-
 export default function AdminUsersPage() {
   const { isAdmin, user: currentUser } = useAuth();
   const { t } = useLocale();
@@ -60,7 +54,7 @@ export default function AdminUsersPage() {
       setUsers(sorted);
       void loadSupportHealth(sorted);
     } catch {
-      setError("Failed to load users. Check your connection.");
+      setError(t("admin.errorLoadUsers"));
     } finally {
       setLoading(false);
     }
@@ -75,7 +69,7 @@ export default function AdminUsersPage() {
       );
       setSummaries(Object.fromEntries(entries));
     } catch {
-      setError("Users loaded, but support health could not be refreshed.");
+      setError(t("admin.errorRefreshHealth"));
     } finally {
       setLoadingHealth(false);
     }
@@ -94,7 +88,7 @@ export default function AdminUsersPage() {
         ),
       );
     } catch {
-      setError("Failed to update user.");
+      setError(t("admin.errorUpdateUser"));
     }
   }
 
@@ -107,7 +101,7 @@ export default function AdminUsersPage() {
         ),
       );
     } catch {
-      setError("Failed to update user.");
+      setError(t("admin.errorUpdateUser"));
     }
   }
 
@@ -122,7 +116,7 @@ export default function AdminUsersPage() {
         ),
       );
     } catch {
-      setError("Failed to update user.");
+      setError(t("admin.errorUpdateUser"));
     }
   }
 
@@ -141,9 +135,9 @@ export default function AdminUsersPage() {
 
   if (!isAdmin) {
     return (
-      <div className="max-w-md mx-auto mt-12 p-6 bg-white border border-red-100 rounded-2xl text-center">
-        <p className="font-semibold text-red-600 mb-1">Access Denied</p>
-        <p className="text-sm text-slate-500">Only admins can manage users.</p>
+      <div className="max-w-md mx-auto mt-12 p-6 bg-white border border-danger/20 rounded-2xl text-center">
+        <p className="font-semibold text-danger mb-1">{t("admin.accessDenied")}</p>
+        <p className="text-sm text-slate-500">{t("admin.onlyAdminsManage")}</p>
       </div>
     );
   }
@@ -163,7 +157,7 @@ export default function AdminUsersPage() {
           <div className="min-w-[220px]">
             <Link
               href={`/admin/users/${u.uid}` as Route}
-              className="font-medium text-slate-800 transition-colors hover:text-blue-600"
+              className="font-medium text-slate-800 transition-colors hover:text-info"
             >
               {u.name}
             </Link>
@@ -176,7 +170,7 @@ export default function AdminUsersPage() {
             {u.phone && (
               <a
                 href={`tel:${u.phone}`}
-                className="text-xs text-slate-400 hover:text-blue-500"
+                className="text-xs text-slate-400 hover:text-info"
               >
                 {u.phone}
               </a>
@@ -220,7 +214,7 @@ export default function AdminUsersPage() {
             {summary.billCount} {t("bills.title")} / {summary.productCount}{" "}
             {t("products.title")}
             {summary.creditDebt > 0 && (
-              <div className="text-amber-600">
+              <div className="text-warning">
                 {t("admin.customerDebt")} {summary.creditDebt.toFixed(2)}
               </div>
             )}
@@ -317,12 +311,12 @@ export default function AdminUsersPage() {
       </div>
 
       {error && (
-        <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl px-4 py-3">
+        <p className="text-sm text-danger bg-danger-soft border border-danger/20 rounded-xl px-4 py-3">
           {error}
         </p>
       )}
 
-      {loading && <LoadingState title="Loading users…" />}
+      {loading && <LoadingState title={t("admin.loadingUsers")} />}
 
       {showCreate && (
         <CreateUserForm
@@ -336,11 +330,11 @@ export default function AdminUsersPage() {
 
       {pending.length > 0 && (
         <section>
-          <h2 className="text-sm font-semibold text-amber-700 mb-2 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />
+          <h2 className="text-sm font-semibold text-warning mb-2 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-warning inline-block" />
             Pending Approval ({pending.length})
           </h2>
-          <div className="bg-white border border-amber-200 rounded-2xl overflow-hidden divide-y divide-amber-50">
+          <div className="bg-white border border-warning/20 rounded-2xl overflow-hidden divide-y divide-warning/10">
             {pending.map((u) => (
               <div key={u.uid} className="flex items-center gap-3 px-5 py-4">
                 <div className="flex-1 min-w-0">
@@ -351,7 +345,7 @@ export default function AdminUsersPage() {
                   {u.phone && (
                     <a
                       href={`tel:${u.phone}`}
-                      className="text-xs text-blue-500 hover:underline"
+                      className="text-xs text-info hover:underline"
                     >
                       {u.phone}
                     </a>
@@ -386,12 +380,12 @@ export default function AdminUsersPage() {
         <DataTable
           columns={userColumns}
           data={managedUsers}
-          title={pending.length > 0 ? "All Users" : "Users"}
-          description="Search, review backup health, and manage account status."
-          emptyTitle="No users found."
-          searchPlaceholder="Search users…"
+          title={pending.length > 0 ? t("admin.allUsers") : t("admin.users")}
+          description={t("admin.usersTableDesc")}
+          emptyTitle={t("admin.noUsersFound")}
+          searchPlaceholder={t("admin.searchUsers")}
           labels={{
-            searchPlaceholder: "Search users…",
+            searchPlaceholder: t("admin.searchUsers"),
             loading: t("dataTable.loading"),
             page: t("dataTable.page"),
             of: t("dataTable.of"),
@@ -406,7 +400,7 @@ export default function AdminUsersPage() {
         />
       )}
 
-      {!loading && users.length === 0 && <EmptyState title="No users yet." />}
+      {!loading && users.length === 0 && <EmptyState title={t("admin.noUsers")} />}
     </PageShell>
   );
 }
@@ -444,9 +438,9 @@ function SupportCard({
 }) {
   const toneClass =
     tone === "red"
-      ? "text-red-600"
+      ? "text-danger"
       : tone === "amber"
-        ? "text-amber-600"
+        ? "text-warning"
         : "text-slate-800";
   return (
     <div className="bg-white border border-slate-200 rounded-2xl px-4 py-3">
@@ -476,6 +470,7 @@ function CreateUserForm({
   onCreated: () => void;
   onCancel: () => void;
 }) {
+  const { t } = useLocale();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -494,42 +489,43 @@ function CreateUserForm({
     } catch (err: unknown) {
       const code = (err as { code?: string }).code ?? "";
       if (code === "auth/email-already-in-use")
-        setError("That email is already registered.");
+        setError(t("admin.errorEmailExists"));
       else if (code === "auth/weak-password")
-        setError("Password must be at least 6 characters.");
-      else setError("Failed to create user. Check your connection.");
+        setError(t("admin.errorPasswordShort"));
+      else setError(t("admin.errorCreateUser"));
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <SectionCard title="New User">
+    <SectionCard title={t("admin.newUserTitle")}>
       <form
         onSubmit={handleSubmit}
         className="grid grid-cols-1 sm:grid-cols-2 gap-4"
       >
-        <FormField label="Full Name">
+        <FormField label={t("admin.fullName")}>
           <Input
             required
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Jane Smith"
+            placeholder={t("admin.fullNamePlaceholder")}
           />
         </FormField>
-        <FormField label="Email">
+        <FormField label={t("admin.email")}>
           <Input
             type="email"
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="jane@example.com"
+            placeholder={t("admin.emailPlaceholder")}
           />
         </FormField>
         <FormField
           label={
             <span>
-              Phone <span className="text-slate-400">(optional)</span>
+              {t("admin.phone")}{" "}
+              <span className="text-slate-400">{t("admin.optional")}</span>
             </span>
           }
         >
@@ -537,47 +533,47 @@ function CreateUserForm({
             type="tel"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
-            placeholder="+1 555 0123"
+            placeholder={t("admin.phonePlaceholder")}
           />
         </FormField>
-        <FormField label="Password">
+        <FormField label={t("admin.password")}>
           <Input
             type="password"
             required
             minLength={6}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="Min 6 characters"
+            placeholder={t("admin.passwordPlaceholder")}
           />
         </FormField>
-        <FormField label="Role">
+        <FormField label={t("admin.role")}>
           <SearchableSelect
             value={role}
             onValueChange={(value) =>
               setRole((value as UserRole) ?? "cashier")
             }
             options={[
-              { value: "cashier", label: "Cashier" },
-              { value: "manager", label: "Manager" },
-              { value: "accountant", label: "Accountant" },
-              { value: "owner", label: "Owner" },
+              { value: "cashier", label: t("admin.roleCashier") },
+              { value: "manager", label: t("admin.roleManager") },
+              { value: "accountant", label: t("admin.roleAccountant") },
+              { value: "owner", label: t("admin.roleOwner") },
             ]}
-            placeholder="Select role"
-            searchPlaceholder="Search roles…"
-            emptyMessage="No roles found"
+            placeholder={t("admin.selectRole")}
+            searchPlaceholder={t("admin.searchRoles")}
+            emptyMessage={t("admin.noRoles")}
           />
         </FormField>
         {error && (
-          <p className="sm:col-span-2 text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+          <p className="sm:col-span-2 text-sm text-danger bg-danger-soft border border-danger/20 rounded-xl px-3 py-2">
             {error}
           </p>
         )}
         <div className="sm:col-span-2 flex gap-2 justify-end">
           <Button type="button" variant="outline" onClick={onCancel}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button type="submit" loading={loading}>
-            {loading ? "Creating…" : "Create User"}
+            {loading ? t("admin.creating") : t("admin.createUser")}
           </Button>
         </div>
       </form>

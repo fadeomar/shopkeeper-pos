@@ -55,15 +55,15 @@ import type {
 } from "@/types/domain";
 
 const STATUS_COLORS = {
-  active: "bg-green-100 text-green-700",
-  inactive: "bg-red-100 text-red-600",
-  pending: "bg-amber-100 text-amber-700",
+  active: "bg-success-soft text-success",
+  inactive: "bg-danger-soft text-danger",
+  pending: "bg-warning-soft text-warning",
 };
 
 const HEALTH_COLORS: Record<SupportHealth, string> = {
-  healthy: "bg-green-100 text-green-700",
-  needs_attention: "bg-amber-100 text-amber-700",
-  no_backup: "bg-red-100 text-red-600",
+  healthy: "bg-success-soft text-success",
+  needs_attention: "bg-warning-soft text-warning",
+  no_backup: "bg-danger-soft text-danger",
 };
 
 function userDisplayStatus(u: AppUser): "active" | "inactive" | "pending" {
@@ -300,8 +300,8 @@ export default function UserDetailPage() {
   if (!isAdmin) {
     return (
       <PageShell>
-        <div className="max-w-md mx-auto mt-12 p-6 bg-white border border-red-100 rounded-2xl text-center">
-          <p className="font-semibold text-red-600">
+        <div className="max-w-md mx-auto mt-12 p-6 bg-white border border-danger/20 rounded-2xl text-center">
+          <p className="font-semibold text-danger">
             {t("admin.accessDenied")}
           </p>
         </div>
@@ -322,8 +322,8 @@ export default function UserDetailPage() {
   if (!profile) {
     return (
       <PageShell>
-        <div className="bg-white border border-red-100 rounded-2xl p-6 text-center">
-          <p className="text-red-600 font-medium">{t("admin.userNotFound")}</p>
+        <div className="bg-white border border-danger/20 rounded-2xl p-6 text-center">
+          <p className="text-danger font-medium">{t("admin.userNotFound")}</p>
           {error && <p className="text-sm text-slate-500 mt-1">{error}</p>}
         </div>
       </PageShell>
@@ -333,7 +333,7 @@ export default function UserDetailPage() {
   const billColumns: ColumnDef<Bill, unknown>[] = [
     {
       accessorKey: "billNumber",
-      header: "Bill #",
+      header: t("admin.colBillNumber"),
       cell: ({ row }) => (
         <span className="font-mono text-xs text-slate-600">
           {row.original.billNumber}
@@ -342,7 +342,7 @@ export default function UserDetailPage() {
     },
     {
       accessorKey: "createdAt",
-      header: "Date",
+      header: t("admin.colDate"),
       cell: ({ row }) => (
         <span className="whitespace-nowrap text-slate-500">
           {row.original.createdAt.slice(0, 10)}
@@ -351,13 +351,13 @@ export default function UserDetailPage() {
     },
     {
       accessorKey: "customerName",
-      header: "Customer",
+      header: t("admin.colCustomer"),
       cell: ({ row }) =>
         row.original.customerName || <span className="text-slate-300">—</span>,
     },
     {
       accessorKey: "paymentMethod",
-      header: "Payment",
+      header: t("admin.colPayment"),
       cell: ({ row }) => (
         <span className="capitalize text-slate-500">
           {row.original.paymentMethod}
@@ -366,7 +366,7 @@ export default function UserDetailPage() {
     },
     {
       id: "netTotal",
-      header: "Net Total",
+      header: t("admin.colNetTotal"),
       accessorFn: (row) => netBillTotal(row),
       cell: ({ row }) => (
         <span className="block text-right font-medium tabular-nums text-slate-800">
@@ -376,7 +376,7 @@ export default function UserDetailPage() {
     },
     {
       accessorKey: "status",
-      header: "Status",
+      header: t("admin.colStatus"),
       cell: ({ row }) => (
         <span className="block text-right">
           <BillStatusBadge status={row.original.status} />
@@ -388,23 +388,23 @@ export default function UserDetailPage() {
   const paymentColumns: ColumnDef<CustomerPayment, unknown>[] = [
     {
       accessorKey: "createdAt",
-      header: "Date",
+      header: t("admin.colDate"),
       cell: ({ row }) => (
         <span className="whitespace-nowrap text-slate-500">
           {row.original.createdAt.slice(0, 10)}
         </span>
       ),
     },
-    { accessorKey: "customerName", header: "Customer" },
+    { accessorKey: "customerName", header: t("admin.colCustomer") },
     {
       accessorKey: "note",
-      header: "Note",
+      header: t("admin.colNote"),
       cell: ({ row }) =>
         row.original.note || <span className="text-slate-300">—</span>,
     },
     {
       accessorKey: "amount",
-      header: "Amount",
+      header: t("admin.colAmount"),
       cell: ({ row }) => (
         <span className="block text-right font-medium tabular-nums text-slate-800">
           {row.original.amount.toFixed(2)}
@@ -436,7 +436,7 @@ export default function UserDetailPage() {
       header: t("products.qty"),
       cell: ({ row }) => (
         <span
-          className={`block text-right tabular-nums ${row.original.quantityInStock <= 0 ? "font-semibold text-red-600" : "text-slate-700"}`}
+          className={`block text-right tabular-nums ${row.original.quantityInStock <= 0 ? "font-semibold text-danger" : "text-slate-700"}`}
         >
           {row.original.quantityInStock}
         </span>
@@ -457,7 +457,7 @@ export default function UserDetailPage() {
       cell: ({ row }) => (
         <span className="block text-right">
           <span
-            className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${row.original.status === "active" ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"}`}
+            className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${row.original.status === "active" ? "bg-success-soft text-success" : "bg-slate-100 text-slate-500"}`}
           >
             {row.original.status}
           </span>
@@ -469,7 +469,7 @@ export default function UserDetailPage() {
   const movementColumns: ColumnDef<StockMovement, unknown>[] = [
     {
       accessorKey: "createdAt",
-      header: "Date",
+      header: t("admin.colDate"),
       cell: ({ row }) => (
         <span className="whitespace-nowrap text-slate-500">
           {row.original.createdAt.slice(0, 10)}
@@ -478,24 +478,24 @@ export default function UserDetailPage() {
     },
     {
       accessorKey: "movementType",
-      header: "Type",
+      header: t("admin.colType"),
       cell: ({ row }) => (
         <span className="capitalize">{row.original.movementType}</span>
       ),
     },
-    { accessorKey: "referenceType", header: "Reference" },
+    { accessorKey: "referenceType", header: t("admin.colReference") },
     {
       accessorKey: "note",
-      header: "Note",
+      header: t("admin.colNote"),
       cell: ({ row }) =>
         row.original.note || <span className="text-slate-300">—</span>,
     },
     {
       accessorKey: "quantityChange",
-      header: "Qty",
+      header: t("admin.colQty"),
       cell: ({ row }) => (
         <span
-          className={`block text-right font-medium tabular-nums ${row.original.quantityChange < 0 ? "text-red-600" : "text-green-700"}`}
+          className={`block text-right font-medium tabular-nums ${row.original.quantityChange < 0 ? "text-danger" : "text-success"}`}
         >
           {row.original.quantityChange}
         </span>
@@ -531,7 +531,7 @@ export default function UserDetailPage() {
       />
 
       {error && (
-        <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl px-4 py-3">
+        <p className="text-sm text-danger bg-danger-soft border border-danger/20 rounded-xl px-4 py-3">
           {error}
         </p>
       )}
@@ -557,7 +557,7 @@ export default function UserDetailPage() {
               <p>
                 <a
                   href={`mailto:${profile.email}`}
-                  className="hover:text-blue-600 transition-colors"
+                  className="hover:text-info transition-colors"
                 >
                   {profile.email}
                 </a>
@@ -566,7 +566,7 @@ export default function UserDetailPage() {
                 <p>
                   <a
                     href={`tel:${profile.phone}`}
-                    className="hover:text-blue-600 transition-colors"
+                    className="hover:text-info transition-colors"
                   >
                     {profile.phone}
                   </a>
@@ -587,14 +587,14 @@ export default function UserDetailPage() {
             </button>
             <button
               onClick={() => void exportBackupJSON()}
-              className="px-4 py-2 text-sm font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-xl transition-colors"
+              className="px-4 py-2 text-sm font-medium bg-info-soft text-info hover:bg-info-soft/80 rounded-xl transition-colors"
             >
               Export backup JSON
             </button>
             <button
               onClick={() => void generateResetLink()}
               disabled={resetLinkLoading}
-              className="px-4 py-2 text-sm font-medium bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-xl transition-colors disabled:opacity-60"
+              className="px-4 py-2 text-sm font-medium bg-warning-soft text-warning hover:bg-warning-soft/80 rounded-xl transition-colors disabled:opacity-60"
             >
               {resetLinkLoading ? "…" : "Generate password reset link"}
             </button>
@@ -602,7 +602,7 @@ export default function UserDetailPage() {
               <button
                 onClick={toggleStatus}
                 disabled={toggling}
-                className="px-4 py-2 text-sm font-medium bg-green-50 text-green-700 hover:bg-green-100 rounded-xl transition-colors disabled:opacity-60"
+                className="px-4 py-2 text-sm font-medium bg-success-soft text-success hover:bg-success-soft/80 rounded-xl transition-colors disabled:opacity-60"
               >
                 Approve
               </button>
@@ -613,8 +613,8 @@ export default function UserDetailPage() {
                 disabled={toggling}
                 className={`px-4 py-2 text-sm font-medium rounded-xl transition-colors disabled:opacity-60 ${
                   profile.isActive
-                    ? "bg-red-50 text-red-600 hover:bg-red-100"
-                    : "bg-green-50 text-green-700 hover:bg-green-100"
+                    ? "bg-danger-soft text-danger hover:bg-danger-soft/80"
+                    : "bg-success-soft text-success hover:bg-success-soft/80"
                 }`}
               >
                 {toggling
@@ -630,7 +630,7 @@ export default function UserDetailPage() {
         {(resetLink || resetLinkError) && (
           <div className="mt-4 border-t border-slate-100 pt-4">
             {resetLinkError && (
-              <p className="text-sm text-red-600">{resetLinkError}</p>
+              <p className="text-sm text-danger">{resetLinkError}</p>
             )}
             {resetLink && (
               <div className="space-y-1">
@@ -651,7 +651,7 @@ export default function UserDetailPage() {
                     Copy
                   </button>
                 </div>
-                <p className="text-xs text-amber-600">
+                <p className="text-xs text-warning">
                   Link expires after first use or 1 hour. Generate a new one if
                   needed.
                 </p>
@@ -706,7 +706,7 @@ export default function UserDetailPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <SectionCard title={t("admin.supportChecklist")}>
               {support.warnings.length === 0 ? (
-                <p className="text-sm text-green-700 bg-green-50 border border-green-100 rounded-xl px-3 py-2">
+                <p className="text-sm text-success bg-success-soft border border-success/20 rounded-xl px-3 py-2">
                   {t("admin.noWarnings")}
                 </p>
               ) : (
@@ -714,7 +714,7 @@ export default function UserDetailPage() {
                   {support.warnings.map((warning) => (
                     <li
                       key={warning}
-                      className="text-sm text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2"
+                      className="text-sm text-warning bg-warning-soft border border-warning/20 rounded-xl px-3 py-2"
                     >
                       {warning}
                     </li>
@@ -786,7 +786,7 @@ export default function UserDetailPage() {
       )}
 
       {support && support.billCount === 0 && support.productCount === 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-2xl px-5 py-4 text-sm text-amber-700">
+        <div className="bg-warning-soft border border-warning/20 rounded-2xl px-5 py-4 text-sm text-warning">
           No seller data has synced yet. Ask the user to open the app online and
           run sync once.
         </div>
@@ -804,7 +804,7 @@ export default function UserDetailPage() {
         toolbar={
           <button
             onClick={exportBillsCSV}
-            className="text-xs font-medium text-blue-600 transition-colors hover:text-blue-700"
+            className="text-xs font-medium text-info transition-colors hover:text-info/80"
           >
             Export CSV
           </button>
@@ -819,8 +819,8 @@ export default function UserDetailPage() {
       <DataTable
         columns={paymentColumns}
         data={payments}
-        title="Recent Customer Payments"
-        emptyTitle="No customer payments synced yet"
+        title={t("admin.recentCustomerPayments")}
+        emptyTitle={t("admin.noCustomerPaymentsSynced")}
         pageSize={10}
         labels={tableLabels}
       />
@@ -830,7 +830,7 @@ export default function UserDetailPage() {
         data={products}
         title={
           <>
-            Products{" "}
+            {t("admin.products")}{" "}
             <span className="font-normal text-slate-400">
               ({products.length})
             </span>
@@ -839,12 +839,12 @@ export default function UserDetailPage() {
         toolbar={
           <button
             onClick={exportProductsCSV}
-            className="text-xs font-medium text-blue-600 transition-colors hover:text-blue-700"
+            className="text-xs font-medium text-info transition-colors hover:text-info/80"
           >
-            Export CSV
+            {t("admin.exportCSV")}
           </button>
         }
-        emptyTitle="No products synced yet"
+        emptyTitle={t("admin.noProductsSynced")}
         pageSize={10}
         labels={tableLabels}
       />
@@ -852,8 +852,8 @@ export default function UserDetailPage() {
       <DataTable
         columns={movementColumns}
         data={movements}
-        title="Recent Stock Movements"
-        emptyTitle="No stock movements synced yet"
+        title={t("admin.recentStockMovements")}
+        emptyTitle={t("admin.noStockMovementsSynced")}
         pageSize={10}
         labels={tableLabels}
       />
@@ -904,10 +904,10 @@ function healthLabel(health: SupportHealth) {
 function BillStatusBadge({ status }: { status: Bill["status"] }) {
   const cls =
     status === "finalized"
-      ? "bg-green-100 text-green-700"
+      ? "bg-success-soft text-success"
       : status === "voided"
-        ? "bg-red-100 text-red-600"
-        : "bg-amber-100 text-amber-700";
+        ? "bg-danger-soft text-danger"
+        : "bg-warning-soft text-warning";
   return (
     <span
       className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${cls}`}
@@ -933,6 +933,7 @@ interface SettingsCardProps {
 }
 
 function SettingsCard({ uid, settings, onSaved }: SettingsCardProps) {
+  const { t } = useLocale();
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
@@ -972,7 +973,7 @@ function SettingsCard({ uid, settings, onSaved }: SettingsCardProps) {
       onSaved(updated);
       setEditing(false);
     } catch {
-      setSaveError("Failed to save. Check your connection.");
+      setSaveError(t("admin.errorSaveSettings"));
     } finally {
       setSaving(false);
     }
@@ -981,10 +982,11 @@ function SettingsCard({ uid, settings, onSaved }: SettingsCardProps) {
   if (!settings) {
     return (
       <section>
-        <h2 className="text-sm font-semibold text-slate-700 mb-2">Settings</h2>
+        <h2 className="text-sm font-semibold text-slate-700 mb-2">
+          {t("admin.settingsHeading")}
+        </h2>
         <div className="bg-white border border-slate-200 rounded-2xl px-5 py-4 text-sm text-slate-400">
-          No settings synced yet — appears after the user saves settings at
-          least once.
+          {t("admin.noSettingsSynced")}
         </div>
       </section>
     );
@@ -993,13 +995,15 @@ function SettingsCard({ uid, settings, onSaved }: SettingsCardProps) {
   return (
     <section>
       <div className="flex items-center justify-between mb-2">
-        <h2 className="text-sm font-semibold text-slate-700">Settings</h2>
+        <h2 className="text-sm font-semibold text-slate-700">
+          {t("admin.settingsHeading")}
+        </h2>
         {!editing && (
           <button
             onClick={startEdit}
-            className="text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors"
+            className="text-xs font-medium text-info hover:text-info/80 transition-colors"
           >
-            Edit
+            {t("common.edit")}
           </button>
         )}
       </div>
@@ -1008,26 +1012,26 @@ function SettingsCard({ uid, settings, onSaved }: SettingsCardProps) {
         {editing ? (
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <SettingsField label="Store Name">
+              <SettingsField label={t("settings.storeName")}>
                 <input
                   value={storeName}
                   onChange={(e) => setStoreName(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand"
                 />
               </SettingsField>
-              <SettingsField label="Cashier Name">
+              <SettingsField label={t("settings.cashierName")}>
                 <input
                   value={cashierName}
                   onChange={(e) => setCashierName(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="optional"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand"
+                  placeholder={t("admin.optional")}
                 />
               </SettingsField>
-              <SettingsField label="Currency">
+              <SettingsField label={t("settings.currency")}>
                 <input
                   value={currency}
                   onChange={(e) => setCurrency(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand"
                 />
               </SettingsField>
             </div>
@@ -1036,25 +1040,25 @@ function SettingsCard({ uid, settings, onSaved }: SettingsCardProps) {
               <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-700">
                 <input
                   type="checkbox"
-                  className="w-4 h-4 accent-blue-600"
+                  className="w-4 h-4 accent-brand"
                   checked={allowLossSale}
                   onChange={(e) => setAllowLossSale(e.target.checked)}
                 />
-                Allow selling below cost price
+                {t("settings.allowLossSale")}
               </label>
               <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-700">
                 <input
                   type="checkbox"
-                  className="w-4 h-4 accent-blue-600"
+                  className="w-4 h-4 accent-brand"
                   checked={lowStockHighlight}
                   onChange={(e) => setLowStockHighlight(e.target.checked)}
                 />
-                Highlight low-stock products
+                {t("settings.lowStockHighlight")}
               </label>
             </div>
 
             {saveError && (
-              <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+              <p className="text-xs text-danger bg-danger-soft border border-danger/20 rounded-xl px-3 py-2">
                 {saveError}
               </p>
             )}
@@ -1065,32 +1069,32 @@ function SettingsCard({ uid, settings, onSaved }: SettingsCardProps) {
                 disabled={saving}
                 className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800 rounded-xl transition-colors disabled:opacity-50"
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm font-medium rounded-xl transition-colors"
+                className="px-4 py-2 bg-brand hover:bg-brand-hover disabled:opacity-60 text-white text-sm font-medium rounded-xl transition-colors"
               >
-                {saving ? "Saving…" : "Save changes"}
+                {saving ? t("admin.saving") : t("admin.saveChanges")}
               </button>
             </div>
           </>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
-            <ReadRow label="Store Name" value={settings.storeName} />
-            <ReadRow label="Cashier Name" value={settings.cashierName ?? "—"} />
-            <ReadRow label="Currency" value={settings.currency} />
+            <ReadRow label={t("settings.storeName")} value={settings.storeName} />
+            <ReadRow label={t("settings.cashierName")} value={settings.cashierName ?? "—"} />
+            <ReadRow label={t("settings.currency")} value={settings.currency} />
             <ReadRow
-              label="Allow Loss Sale"
-              value={settings.allowLossSale ? "Yes" : "No"}
+              label={t("settings.allowLossSale")}
+              value={settings.allowLossSale ? t("admin.yes") : t("admin.no")}
             />
             <ReadRow
-              label="Low Stock Highlight"
-              value={settings.lowStockHighlight ? "On" : "Off"}
+              label={t("settings.lowStockHighlight")}
+              value={settings.lowStockHighlight ? t("admin.on") : t("admin.off")}
             />
             <ReadRow
-              label="Last Updated"
+              label={t("admin.lastUpdated")}
               value={new Date(settings.updatedAt).toLocaleString(undefined, {
                 year: "numeric",
                 month: "short",

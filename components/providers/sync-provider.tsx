@@ -5,7 +5,7 @@ import { db } from '@/lib/db/schema';
 import {
   applyStockMovementDeltasToCloudProducts,
   syncAuditEventsToCloud,
-  syncBillSequenceToCloud,
+  syncSettingsSequencesToCloud,
   syncBillToCloud,
   syncCashMovementsToCloud,
   syncCustomersToCloud,
@@ -58,8 +58,9 @@ function payloadSource(job: SyncQueueItem | undefined): string | undefined {
   return (job?.payload as { source?: string } | undefined)?.source;
 }
 
-function isBillSequenceJob(job: SyncQueueItem): boolean {
-  return payloadSource(job) === 'bill-sequence';
+function isSequenceJob(job: SyncQueueItem): boolean {
+  const source = payloadSource(job);
+  return source === 'bill-sequence' || source === 'purchase-sequence';
 }
 
 function isActiveQueueStatus(status?: SyncStatus): boolean {
@@ -102,7 +103,7 @@ function jobPriority(job: SyncQueueItem): number {
     case 'stockMovement':
       return 7;
     case 'settings':
-      return isBillSequenceJob(job) ? 8 : 10;
+      return isSequenceJob(job) ? 8 : 10;
     case 'product':
       return 11;
     // Append-only history with no foreign-key dependencies — last.
@@ -339,8 +340,8 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
         return;
       }
 
-      if (isBillSequenceJob(job)) {
-        const merged = await syncBillSequenceToCloud(uid, settings as Settings);
+      if (isSequenceJob(job)) {
+        const merged = await syncSettingsSequencesToCloud(uid, settings as Settings);
         await db.settings.put({ ...merged, syncStatus: 'synced', lastSyncError: undefined });
       } else {
         const prepared = await prepareSettingsForCloudSync(uid, settings, job);

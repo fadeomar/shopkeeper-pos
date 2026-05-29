@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import clsx from "clsx";
 import { getServiceErrorMessage } from "@/lib/errors/get-error-message";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -21,6 +22,19 @@ import { MONEY_EPSILON, formatCurrency } from "@/lib/utils/money";
 import { createFinalizedBill } from "@/lib/services/billing-service";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Check,
+  CircleCheck,
+  Cloud,
+  CloudUpload,
+  ReceiptText,
+  Search,
+  ShoppingCart,
+  Users,
+  X,
+} from "lucide-react";
+import { NumberField } from "@/components/ui/number-field";
+import { MoneyInput, MoneyInputRHF } from "@/components/ui/money-input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { DataTable, useDataTableLabels } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -29,11 +43,13 @@ import { useToast } from "@/components/ui/toast";
 import { BarcodeScannerModal } from "@/components/barcode/barcode-scanner-modal";
 import { useLocale } from "@/components/providers/locale-context";
 import { Card } from "@/components/ui/card";
+import { PaymentMethodControl } from "@/components/pos/payment-method-control";
 import { QuickProductModal } from "./quick-product-modal";
 import { ReceiptView } from "./receipt-view";
 import { normalizeBarcode } from "@/lib/utils/barcode";
 import { useAuth } from "@/components/providers/auth-context";
 import { usePermissions } from "@/lib/hooks/use-permissions";
+import { useOnlineStatus } from "@/lib/hooks/use-online-status";
 import type {
   Bill,
   BillDraftItem,
@@ -42,6 +58,25 @@ import type {
   Product,
   Settings,
 } from "@/types/domain";
+
+/**
+ * Compute 3 context-aware cash tender amounts above the given total.
+ * Steps through common denominations (10 → 50 → 100 → 200 → 500 → 1000)
+ * and collects the first unique rounded-up value at each step.
+ * Example: total=43 → [50, 100, 200]; total=87 → [90, 100, 200]
+ */
+function smartCashChips(total: number): number[] {
+  const steps = [10, 50, 100, 200, 500, 1000];
+  const chips: number[] = [];
+  for (const step of steps) {
+    const rounded = Math.ceil(total / step) * step;
+    if (rounded > total && !chips.includes(rounded)) {
+      chips.push(rounded);
+      if (chips.length === 3) break;
+    }
+  }
+  return chips;
+}
 
 const SUCCESS_AUTO_DISMISS_MS = 8000;
 
@@ -109,33 +144,61 @@ function SuccessPanel({
   onDismiss: () => void;
 }) {
   const { t } = useLocale();
+  const online = useOnlineStatus();
   const newSaleRef = useRef<HTMLButtonElement | null>(null);
   const amountDue = Math.max(0, bill.totalAmount - bill.paidAmount);
+
+  // Track the bill's sync status live so the badge updates when the
+  // background sync worker picks it up.
+  const liveBill = useLiveQuery(
+    () => db.bills.get(bill.id),
+    [bill.id],
+  );
+  const syncStatus = liveBill?.syncStatus ?? bill.syncStatus ?? 'pending';
+  const isSynced = syncStatus === 'synced';
 
   useEffect(() => {
     newSaleRef.current?.focus({ preventScroll: true });
   }, []);
 
   return (
-    <Card className="flex flex-col gap-4" padding="sm">
-      <div className="flex items-start gap-3">
-        <span
+    <Card className="flex flex-col gap-5" padding="md">
+      {/* Success header — generous breathing room so this reads as a
+          confirmation moment, not just another card. */}
+      <div className="flex items-center gap-3">
+        <CircleCheck
           aria-hidden
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-lg font-bold"
-        >
-          ✓
-        </span>
+          size={40}
+          strokeWidth={2}
+          className="shrink-0 text-success"
+        />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-emerald-700">
+          <p className="text-xs font-semibold uppercase tracking-wide text-success">
             {t("billing.saleCompleted")}
           </p>
-          <p className="font-mono text-base font-bold text-slate-900">
+          <p className="font-mono text-base font-bold text-fg">
             {bill.billNumber}
           </p>
         </div>
+        {/* Sync state badge — updates live as the background sync worker runs */}
+        <span
+          className={clsx(
+            "shrink-0 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold",
+            isSynced
+              ? "bg-success-soft text-success"
+              : "bg-warning-soft text-warning",
+          )}
+        >
+          {isSynced ? (
+            <Cloud size={11} aria-hidden />
+          ) : (
+            <CloudUpload size={11} aria-hidden />
+          )}
+          {isSynced ? t("billing.syncedToCloud") : t("billing.savedLocally")}
+        </span>
       </div>
 
-      <div className="rounded-xl bg-emerald-50 border border-emerald-100 px-4 py-3">
+      <div className="rounded-xl bg-success-soft border border-success-soft px-4 py-3">
         <SummaryRow
           label={t("billing.total")}
           value={formatCurrency(bill.totalAmount, currency)}
@@ -157,15 +220,49 @@ function SuccessPanel({
       <ReceiptView bill={bill} items={items} settings={settings} />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <Link
-          href={`/bills/${bill.id}`}
-          className="inline-flex h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
-        >
-          {t("billing.openBillDetail")}
-        </Link>
+        {/* The bill-detail route is dynamic (/bills/[id]); when offline it may
+            not be in the SW cache, so the link would dead-end. The full receipt
+            is already shown above, so offline we disable the link and explain
+            rather than letting the cashier tap into a broken navigation. */}
+        {online ? (
+          <Link
+            href={`/bills/${bill.id}`}
+            // Visually a "secondary action" — uses the same outline-button
+            // styling as the Button component, with a leading receipt icon
+            // to anchor "view the bill we just made".
+            className={clsx(
+              "inline-flex items-center justify-center gap-2 rounded-xl border font-semibold transition-colors",
+              "border-border-default bg-surface text-fg-secondary hover:bg-surface-soft hover:border-border-strong",
+              "px-4 py-2.5 text-sm min-h-11",
+              "focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-brand)_22%,transparent)]",
+            )}
+          >
+            <ReceiptText size={16} aria-hidden />
+            {t("billing.openBillDetail")}
+          </Link>
+        ) : (
+          <span
+            aria-disabled
+            title={t("billing.billDetailOfflineHint")}
+            className={clsx(
+              "inline-flex flex-col items-center justify-center gap-0.5 rounded-xl border",
+              "border-border-default bg-surface-soft px-4 py-2 text-sm min-h-11",
+              "cursor-not-allowed text-fg-muted",
+            )}
+          >
+            <span className="inline-flex items-center gap-2 font-semibold">
+              <ReceiptText size={16} aria-hidden />
+              {t("billing.openBillDetail")}
+            </span>
+            <span className="text-[11px] font-medium">
+              {t("billing.billDetailOfflineHint")}
+            </span>
+          </span>
+        )}
         <Button
           ref={newSaleRef}
           type="button"
+          size="lg"
           onClick={onDismiss}
           className="w-full"
         >
@@ -189,6 +286,7 @@ export function PosScreen() {
   const activeShift = useLiveQuery(() => getActiveShift(), []);
   const settings = useLiveQuery(() => settingsRepo.get(), []);
   const { push } = useToast();
+  const online = useOnlineStatus();
   const currency = settings?.currency ?? "ILS";
   const draftKey = user?.uid ? `${POS_DRAFT_KEY_PREFIX}:${user.uid}` : null;
 
@@ -213,6 +311,8 @@ export function PosScreen() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [customerSheetOpen, setCustomerSheetOpen] = useState(false);
+  const [customerSearch, setCustomerSearch] = useState("");
   const [missingBarcode, setMissingBarcode] = useState("");
   const [isPaidAmountManuallyEdited, setIsPaidAmountManuallyEdited] =
     useState(false);
@@ -243,7 +343,6 @@ export function PosScreen() {
     qty: number;
     subtotal: number;
   } | null>(null);
-  const [customerFieldFocused, setCustomerFieldFocused] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
 
   const barcodeInputRef = useRef<HTMLInputElement | null>(null);
@@ -303,8 +402,13 @@ export function PosScreen() {
         parsed.form.discountAmount,
         parsed.form.taxAmount,
       ).totalAmount;
+      // The auto-fill default is the bill total (or 0 for a credit sale).
+      // Compare against the credit-aware default so a saved credit sale
+      // (paidAmount 0) isn't mistakenly flagged as a manual override.
+      const expectedDefault =
+        parsed.form.paymentMethod === "credit" ? 0 : autoTotal;
       setIsPaidAmountManuallyEdited(
-        Math.abs(parsed.form.paidAmount - autoTotal) > 0.001,
+        Math.abs((parsed.form.paidAmount ?? 0) - expectedDefault) > 0.001,
       );
     } catch {
       window.localStorage.removeItem(draftKey);
@@ -469,46 +573,66 @@ export function PosScreen() {
     watchedCustomerName?.trim() || watchedCustomerPhone?.trim(),
   );
 
-  // Typeahead: match the typed name/phone against the customers table. Filter
-  // out cases where the cashier has already selected an exact-match customer
-  // (no need to suggest the same row they're already on).
-  const customerSuggestions = useMemo<Customer[]>(() => {
-    if (!customers || customers.length === 0) return [];
-    if (!customerFieldFocused) return [];
-    const nameNeedle = watchedCustomerName?.trim().toLowerCase() ?? "";
-    const phoneNeedle = normalizePhone(watchedCustomerPhone ?? "");
-    if (!nameNeedle && !phoneNeedle) return [];
-    const matches = customers.filter((customer) => {
-      const nameMatches =
-        nameNeedle && customer.name.toLowerCase().includes(nameNeedle);
-      const phoneMatches =
-        phoneNeedle && customer.normalizedPhone?.includes(phoneNeedle);
-      return Boolean(nameMatches || phoneMatches);
-    });
-    // Hide the suggestion if the only match is already an exact one to avoid
-    // showing a "you already picked this" row.
-    if (matches.length === 1) {
-      const m = matches[0];
-      const exactName =
-        m.name.toLowerCase() === nameNeedle &&
-        (phoneNeedle === "" || m.normalizedPhone === phoneNeedle);
-      const exactPhone =
-        m.normalizedPhone === phoneNeedle &&
-        (nameNeedle === "" || m.name.toLowerCase() === nameNeedle);
-      if (exactName || exactPhone) return [];
+  // ── Settings-driven enforcement ───────────────────────────────────────────
+  // Payment-method toggles (undefined = enabled). "mixed" needs both cash and
+  // card, so it only appears when both are on.
+  const enableCash = settings?.enableCash !== false;
+  const enableCard = settings?.enableCard !== false;
+  const enableCredit = settings?.enableCredit !== false;
+  const availablePaymentMethods = useMemo<BillFormSchema["paymentMethod"][]>(() => {
+    const methods: BillFormSchema["paymentMethod"][] = [];
+    if (enableCash) methods.push("cash");
+    if (enableCard) methods.push("card");
+    if (enableCash && enableCard) methods.push("mixed");
+    if (enableCredit) methods.push("credit");
+    // Never leave the cashier with zero ways to take payment.
+    return methods.length ? methods : ["cash"];
+  }, [enableCash, enableCard, enableCredit]);
+
+  // If the selected method was just disabled in settings, snap to the first
+  // allowed one so the form never holds a now-invalid method.
+  useEffect(() => {
+    if (
+      !availablePaymentMethods.includes(
+        watchedPaymentMethod as BillFormSchema["paymentMethod"],
+      )
+    ) {
+      form.setValue("paymentMethod", availablePaymentMethods[0], {
+        shouldDirty: false,
+      });
     }
-    return matches.slice(0, 5);
-  }, [
-    customers,
-    customerFieldFocused,
-    watchedCustomerName,
-    watchedCustomerPhone,
-  ]);
+  }, [availablePaymentMethods, watchedPaymentMethod, form]);
+
+  // requireShift turns the soft "no shift open" banner into a hard block.
+  // activeShift is `undefined` while loading and `null` when none is open —
+  // only block on an explicit null so we don't flicker during load.
+  const requireShift = settings?.requireShift === true;
+  const shiftBlocked = requireShift && activeShift === null;
+
+  // Cap the discount at the store's configured limit (0 = no limit).
+  const discountLimit = settings?.defaultDiscountLimit ?? 0;
+  const discountExceedsLimit =
+    discountLimit > 0 && watchedDiscountAmount > discountLimit;
+
+  // Only "exclusive" tax mode shows a manual tax field that is added on top.
+  // "none" and "inclusive" hide it and force the amount to 0 — there is no
+  // tax-rate engine yet, so an "inclusive" manual amount would be double
+  // counted by `total = subtotal - discount + tax`.
+  const taxEnabled = settings?.taxMode === "exclusive";
+  useEffect(() => {
+    if (!taxEnabled && watchedTaxAmount !== 0) {
+      form.setValue("taxAmount", 0, {
+        shouldDirty: false,
+        shouldValidate: true,
+      });
+    }
+  }, [taxEnabled, watchedTaxAmount, form]);
+
+  // (Customer typeahead removed — replaced by CustomerSelectSheet modal)
 
   function selectCustomer(customer: Customer) {
     form.setValue("customerName", customer.name, { shouldDirty: true });
     form.setValue("customerPhone", customer.phone ?? "", { shouldDirty: true });
-    setCustomerFieldFocused(false);
   }
   const hasValidTotal = billSummary.totalAmount >= 0;
   const hasEnoughPayment =
@@ -518,6 +642,8 @@ export function PosScreen() {
     hasValidTotal &&
     hasEnoughPayment &&
     isMixedSplitValid &&
+    !shiftBlocked &&
+    !discountExceedsLimit &&
     (!isCreditSale || hasCreditCustomer);
 
   useEffect(() => {
@@ -744,6 +870,17 @@ export function PosScreen() {
       clearDraft();
       setConfirmOpen(false);
       setLastFinalized({ bill, items: billItems });
+      // Structured success toast that reinforces offline-first trust: it tells
+      // the cashier the sale is saved and whether it's syncing now or queued
+      // until reconnect. The SuccessPanel owns the actions (open bill / new
+      // sale), so the toast intentionally carries no action button.
+      push({
+        title: t("billing.saleCompletedNumber", { number: bill.billNumber }),
+        description: online
+          ? t("billing.saleSavedSyncing")
+          : t("billing.saleSavedOffline"),
+        tone: "success",
+      });
     } catch (error) {
       push(getServiceErrorMessage(error, t, t("billing.billFailed")), "error");
     }
@@ -772,18 +909,16 @@ export function PosScreen() {
       cell: ({ row }) => {
         const item = row.original;
         return (
-          <Input
-            type="number"
-            inputMode="numeric"
-            enterKeyHint="done"
+          <NumberField
+            value={item.quantity}
+            onValueChange={(v) => updateQuantity(item.productId, v)}
+            precision="integer"
             min={1}
             max={item.availableStock}
-            value={item.quantity}
-            onChange={(e) =>
-              updateQuantity(item.productId, Number(e.target.value))
-            }
+            align="center"
             onKeyDown={dismissKeyboardOnEnter}
-            className="w-20 text-center"
+            className="w-24"
+            fullWidth={false}
           />
         );
       },
@@ -855,7 +990,7 @@ export function PosScreen() {
           // by sidebar-nav.tsx for dynamic hrefs.
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           href={"/shift" as any}
-          className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 hover:bg-amber-100 transition-colors"
+          className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-warning/30 bg-warning-soft px-4 py-3 text-sm text-warning hover:bg-warning-soft/80 transition-colors"
         >
           <span className="font-medium">{t("billing.noShiftOpenWarning")}</span>
           <span className="text-xs font-semibold uppercase tracking-wide">
@@ -873,7 +1008,7 @@ export function PosScreen() {
               {t("billing.buildBill")}
             </h3>
             {draftItems.length > 0 && (
-              <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+              <span className="rounded-full bg-info-soft px-3 py-1 text-xs font-semibold text-info">
                 {draftItems.length} {t("billing.items")}
               </span>
             )}
@@ -883,13 +1018,16 @@ export function PosScreen() {
             <div
               role="status"
               aria-live="polite"
-              className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
+              className="flex items-center gap-2 rounded-xl border border-success/30 bg-success-soft px-3 py-2 text-sm text-success"
             >
-              <span aria-hidden className="text-emerald-600">
-                ✓
-              </span>
+              <Check
+                aria-hidden
+                size={16}
+                strokeWidth={3}
+                className="shrink-0 text-success"
+              />
               <span className="font-medium truncate">{lastAdded.name}</span>
-              <span className="ml-auto shrink-0 text-xs font-semibold tabular-nums text-emerald-700">
+              <span className="ml-auto shrink-0 text-xs font-semibold tabular-nums text-success">
                 ×{lastAdded.qty} ·{" "}
                 {formatCurrency(lastAdded.subtotal, currency)}
               </span>
@@ -1047,18 +1185,17 @@ export function PosScreen() {
                       <span className="text-sm font-medium text-slate-600">
                         {t("billing.qty")}
                       </span>
-                      <Input
-                        type="number"
-                        inputMode="numeric"
-                        enterKeyHint="done"
+                      <NumberField
+                        value={item.quantity}
+                        onValueChange={(v) => updateQuantity(item.productId, v)}
+                        precision="integer"
                         min={1}
                         max={item.availableStock}
-                        value={item.quantity}
-                        onChange={(e) =>
-                          updateQuantity(item.productId, Number(e.target.value))
-                        }
+                        showStepper
+                        align="center"
                         onKeyDown={dismissKeyboardOnEnter}
-                        className="w-28 text-center"
+                        className="w-[170px]"
+                        fullWidth={false}
                       />
                     </div>
                   </div>
@@ -1105,101 +1242,98 @@ export function PosScreen() {
                 <FormField label={t("billing.cashierName")}>
                   <Input {...form.register("cashierName")} />
                 </FormField>
-                <div className="relative flex flex-col gap-3">
-                  <FormField label={t("billing.customerName")}>
-                    <Input
-                      {...form.register("customerName")}
-                      onFocus={() => setCustomerFieldFocused(true)}
-                      onBlur={() => {
-                        // Delay so a click on a suggestion can still register.
-                        window.setTimeout(
-                          () => setCustomerFieldFocused(false),
-                          120,
-                        );
-                      }}
-                    />
-                  </FormField>
-                  <FormField label={t("billing.customerPhone")}>
-                    <Input
-                      {...form.register("customerPhone")}
-                      onFocus={() => setCustomerFieldFocused(true)}
-                      onBlur={() => {
-                        window.setTimeout(
-                          () => setCustomerFieldFocused(false),
-                          120,
-                        );
-                      }}
-                    />
-                  </FormField>
-                  {customerSuggestions.length > 0 && (
-                    <ul className="absolute left-0 right-0 top-full z-20 mt-1 max-h-44 overflow-auto rounded-xl border border-slate-200 bg-white shadow-md divide-y divide-slate-100">
-                      {customerSuggestions.map((customer) => (
-                        <li key={customer.id}>
-                          <button
-                            type="button"
-                            onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => selectCustomer(customer)}
-                            className="w-full text-start px-3 py-2 hover:bg-slate-50"
-                          >
-                            <p className="text-sm font-medium text-slate-800 truncate">
-                              {customer.name}
-                            </p>
-                            {customer.phone && (
-                              <p className="text-xs text-slate-500 font-mono truncate">
-                                {customer.phone}
-                              </p>
-                            )}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
+                {/* Customer — compact selector on mobile, sheet opens on tap */}
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs font-medium text-slate-600 uppercase tracking-wide">
+                    {t("billing.customerName")}
+                  </span>
+                  {watchedCustomerName || watchedCustomerPhone ? (
+                    /* Selected customer chip */
+                    <div className="flex items-center gap-2 rounded-xl border border-border-default bg-surface px-3 py-2">
+                      <Users size={15} aria-hidden className="shrink-0 text-slate-400" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-800 truncate">
+                          {watchedCustomerName || "—"}
+                        </p>
+                        {watchedCustomerPhone && (
+                          <p className="text-xs text-slate-500 font-mono truncate">
+                            {watchedCustomerPhone}
+                          </p>
+                        )}
+                      </div>
+                      {/* Edit button — opens sheet to change */}
+                      <button
+                        type="button"
+                        onClick={() => setCustomerSheetOpen(true)}
+                        aria-label={t("billing.pickCustomer")}
+                        className="shrink-0 rounded-lg p-1 text-slate-400 hover:bg-surface-soft hover:text-slate-600 transition-colors"
+                      >
+                        <Search size={14} aria-hidden />
+                      </button>
+                      {/* Clear button */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          form.setValue("customerName", "", { shouldDirty: true });
+                          form.setValue("customerPhone", "", { shouldDirty: true });
+                        }}
+                        aria-label={t("billing.clearCustomer")}
+                        className="shrink-0 rounded-lg p-1 text-slate-400 hover:bg-danger-soft hover:text-danger transition-colors"
+                      >
+                        <X size={14} aria-hidden />
+                      </button>
+                    </div>
+                  ) : (
+                    /* Empty state — "Select customer" button */
+                    <button
+                      type="button"
+                      onClick={() => setCustomerSheetOpen(true)}
+                      className={clsx(
+                        "flex items-center gap-2 w-full rounded-xl border border-dashed border-border-default",
+                        "bg-surface px-3 py-2.5 text-sm text-slate-500",
+                        "hover:border-border-strong hover:bg-surface-soft hover:text-slate-700 transition-colors",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
+                      )}
+                    >
+                      <Users size={15} aria-hidden className="shrink-0" />
+                      <span>{t("billing.pickCustomer")}</span>
+                    </button>
                   )}
                 </div>
                 <FormField label={t("billing.paymentMethod")}>
-                  <SearchableSelect
-                    value={form.watch("paymentMethod")}
-                    onValueChange={(value) =>
-                      form.setValue(
-                        "paymentMethod",
-                        (value ?? "cash") as BillFormSchema["paymentMethod"],
-                      )
+                  <PaymentMethodControl
+                    value={watchedPaymentMethod as BillFormSchema["paymentMethod"]}
+                    onChange={(v) =>
+                      form.setValue("paymentMethod", v, { shouldDirty: true })
                     }
-                    placeholder={t("billing.paymentMethod")}
-                    searchPlaceholder={t("common.search")}
-                    options={[
-                      { value: "cash", label: t("common.cash") },
-                      { value: "card", label: t("common.card") },
-                      { value: "mixed", label: t("common.mixed") },
-                      { value: "credit", label: t("common.credit") },
-                    ]}
+                    label={t("billing.paymentMethod")}
+                    available={availablePaymentMethods}
                   />
                 </FormField>
 
                 <div className="grid grid-cols-2 gap-3">
                   {canDiscount && (
                     <FormField label={t("billing.discount")}>
-                      <Input
-                        type="number"
-                        inputMode="decimal"
-                        enterKeyHint="done"
-                        step="0.01"
+                      <MoneyInputRHF
+                        name="discountAmount"
+                        control={form.control}
+                        currency={currency}
+                        min={0}
                         onKeyDown={dismissKeyboardOnEnter}
-                        {...form.register("discountAmount", {
-                          valueAsNumber: true,
-                        })}
                       />
                     </FormField>
                   )}
-                  <FormField label={t("billing.tax")}>
-                    <Input
-                      type="number"
-                      inputMode="decimal"
-                      enterKeyHint="done"
-                      step="0.01"
-                      onKeyDown={dismissKeyboardOnEnter}
-                      {...form.register("taxAmount", { valueAsNumber: true })}
-                    />
-                  </FormField>
+                  {taxEnabled && (
+                    <FormField label={t("billing.tax")}>
+                      <MoneyInputRHF
+                        name="taxAmount"
+                        control={form.control}
+                        currency={currency}
+                        min={0}
+                        onKeyDown={dismissKeyboardOnEnter}
+                      />
+                    </FormField>
+                  )}
                 </div>
 
                 {isMixedSale ? (
@@ -1209,21 +1343,13 @@ export function PosScreen() {
                         <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">
                           {t("common.cash")}
                         </span>
-                        <Input
-                          type="number"
-                          inputMode="decimal"
-                          enterKeyHint="done"
-                          step="0.01"
+                        <MoneyInput
                           value={watchedCashAmount}
+                          currency={currency}
+                          min={0}
                           onKeyDown={dismissKeyboardOnEnter}
-                          onChange={(e) => {
-                            const v =
-                              e.target.value === ""
-                                ? 0
-                                : Number(e.target.value);
-                            const safe = Number.isFinite(v)
-                              ? Math.max(0, v)
-                              : 0;
+                          onValueChange={(v) => {
+                            const safe = Math.max(0, v);
                             form.setValue("cashAmount", safe, {
                               shouldDirty: true,
                               shouldValidate: true,
@@ -1241,21 +1367,13 @@ export function PosScreen() {
                         <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">
                           {t("common.card")}
                         </span>
-                        <Input
-                          type="number"
-                          inputMode="decimal"
-                          enterKeyHint="done"
-                          step="0.01"
+                        <MoneyInput
                           value={watchedCardAmount}
+                          currency={currency}
+                          min={0}
                           onKeyDown={dismissKeyboardOnEnter}
-                          onChange={(e) => {
-                            const v =
-                              e.target.value === ""
-                                ? 0
-                                : Number(e.target.value);
-                            const safe = Number.isFinite(v)
-                              ? Math.max(0, v)
-                              : 0;
+                          onValueChange={(v) => {
+                            const safe = Math.max(0, v);
                             form.setValue("cardAmount", safe, {
                               shouldDirty: true,
                               shouldValidate: true,
@@ -1275,31 +1393,21 @@ export function PosScreen() {
                   <FormField label={t("billing.actualPaid")}>
                     <div className="flex flex-col gap-2">
                       <div className="flex gap-2">
-                        <Input
-                          type="number"
-                          inputMode="decimal"
-                          enterKeyHint="done"
-                          step="0.01"
+                        <MoneyInput
                           value={
                             Number.isFinite(actualPaidAmount)
                               ? actualPaidAmount
                               : 0
                           }
+                          currency={currency}
+                          min={0}
                           onKeyDown={dismissKeyboardOnEnter}
-                          onChange={(e) => {
+                          onValueChange={(v) => {
                             setIsPaidAmountManuallyEdited(true);
-                            const v =
-                              e.target.value === ""
-                                ? 0
-                                : Number(e.target.value);
-                            form.setValue(
-                              "paidAmount",
-                              Number.isFinite(v) ? v : 0,
-                              {
-                                shouldDirty: true,
-                                shouldValidate: true,
-                              },
-                            );
+                            form.setValue("paidAmount", v, {
+                              shouldDirty: true,
+                              shouldValidate: true,
+                            });
                           }}
                           className="flex-1"
                         />
@@ -1316,6 +1424,7 @@ export function PosScreen() {
                       </div>
                       {watchedPaymentMethod === "cash" && (
                         <div className="flex flex-wrap gap-1.5">
+                          {/* Exact — always first: resets to the bill total */}
                           <button
                             type="button"
                             onClick={() => setIsPaidAmountManuallyEdited(false)}
@@ -1323,22 +1432,27 @@ export function PosScreen() {
                           >
                             {t("billing.exact")}
                           </button>
-                          {[5, 10, 20, 50, 100].map((denomination) => (
-                            <button
-                              key={denomination}
-                              type="button"
-                              onClick={() => {
-                                setIsPaidAmountManuallyEdited(true);
-                                form.setValue("paidAmount", denomination, {
-                                  shouldDirty: true,
-                                  shouldValidate: true,
-                                });
-                              }}
-                              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 tabular-nums hover:bg-slate-50 hover:border-slate-300 transition-colors"
-                            >
-                              {denomination}
-                            </button>
-                          ))}
+                          {/* Context-aware round-up denominations — 3 chips
+                              computed from the live bill total so they are
+                              always >= total and meaningful to the cashier. */}
+                          {smartCashChips(billSummary.totalAmount).map(
+                            (amount) => (
+                              <button
+                                key={amount}
+                                type="button"
+                                onClick={() => {
+                                  setIsPaidAmountManuallyEdited(true);
+                                  form.setValue("paidAmount", amount, {
+                                    shouldDirty: true,
+                                    shouldValidate: true,
+                                  });
+                                }}
+                                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 tabular-nums hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                              >
+                                {formatCurrency(amount, currency)}
+                              </button>
+                            ),
+                          )}
                         </div>
                       )}
                     </div>
@@ -1377,8 +1491,22 @@ export function PosScreen() {
                   )}
                 </div>
 
+                {shiftBlocked && (
+                  <p className="text-xs text-danger font-medium">
+                    {t("billing.shiftRequiredError")}
+                  </p>
+                )}
+
+                {discountExceedsLimit && (
+                  <p className="text-xs text-danger font-medium">
+                    {t("billing.discountLimitExceeded", {
+                      limit: formatCurrency(discountLimit, currency),
+                    })}
+                  </p>
+                )}
+
                 {!hasValidTotal && draftItems.length > 0 && (
-                  <p className="text-xs text-red-600 font-medium">
+                  <p className="text-xs text-danger font-medium">
                     {t("billing.invalidTotal")}
                   </p>
                 )}
@@ -1386,13 +1514,13 @@ export function PosScreen() {
                 {isCreditSale &&
                   !hasCreditCustomer &&
                   draftItems.length > 0 && (
-                    <p className="text-xs text-red-600 font-medium">
+                    <p className="text-xs text-danger font-medium">
                       {t("billing.creditCustomerRequired")}
                     </p>
                   )}
 
                 {isMixedSale && !isMixedSplitValid && draftItems.length > 0 && (
-                  <p className="text-xs text-red-600 font-medium">
+                  <p className="text-xs text-danger font-medium">
                     {t("billing.mixedSumMismatch")}
                   </p>
                 )}
@@ -1400,7 +1528,7 @@ export function PosScreen() {
                 {hasValidTotal &&
                   !hasEnoughPayment &&
                   draftItems.length > 0 && (
-                    <p className="text-xs text-red-600 font-medium">
+                    <p className="text-xs text-danger font-medium">
                       {t("billing.paidBelowTotal")}
                     </p>
                   )}
@@ -1429,14 +1557,30 @@ export function PosScreen() {
       </div>
 
       {draftItems.length > 0 && (
-        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 px-3 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.12)] backdrop-blur lg:hidden">
+        // Sticky mobile checkout bar. Only renders on <lg because the
+        // desktop layout already has a persistent right-rail summary.
+        // pb-safe handles the iOS home-indicator gap; the bar itself is
+        // pinned with `bottom-0` and overlays the page (z-30 sits below
+        // modals at z-50). The shopping-cart icon visually anchors the
+        // totals so the bar reads as "your cart" not "random sticky strip".
+        <div
+          className={clsx(
+            "fixed inset-x-0 bottom-0 z-30 lg:hidden",
+            "border-t border-border-default bg-surface/95 backdrop-blur",
+            "shadow-[0_-8px_24px_rgba(11,18,32,0.10)]",
+            "px-3 pt-3 pb-safe",
+          )}
+        >
           <div className="mx-auto flex max-w-screen-sm items-center gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-soft text-brand">
+              <ShoppingCart size={20} aria-hidden />
+            </div>
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-medium text-slate-500">
+              <p className="text-xs font-medium text-fg-muted">
                 {draftItems.length} {t("billing.items")}
               </p>
               <p
-                className="truncate text-lg font-black text-slate-900 tabular-nums"
+                className="truncate text-lg font-black text-fg tabular-nums"
                 dir="ltr"
               >
                 {formatCurrency(billSummary.totalAmount, currency)}
@@ -1444,9 +1588,10 @@ export function PosScreen() {
             </div>
             <Button
               type="button"
+              size="lg"
               disabled={!canFinalize}
               onClick={form.handleSubmit(() => setConfirmOpen(true))}
-              className="min-w-[132px]"
+              className="min-w-[140px]"
             >
               {t("billing.reviewFinalize")}
             </Button>
@@ -1504,9 +1649,147 @@ export function PosScreen() {
         </div>
       </Modal>
 
+      {/* ── Customer select sheet ────────────────────────────────────────── */}
+      <Modal
+        open={customerSheetOpen}
+        title={t("billing.pickCustomer")}
+        onClose={() => {
+          setCustomerSheetOpen(false);
+          setCustomerSearch("");
+        }}
+      >
+        <div className="flex flex-col gap-3">
+          {/* Search input */}
+          <div className="relative">
+            <Search
+              size={15}
+              aria-hidden
+              className="absolute start-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+            />
+            <input
+              type="text"
+              value={customerSearch}
+              onChange={(e) => setCustomerSearch(e.target.value)}
+              placeholder={t("billing.searchCustomers")}
+              aria-label={t("billing.searchCustomers")}
+              className={clsx(
+                "w-full rounded-xl border border-border-default bg-surface py-2 ps-9 pe-3",
+                "text-sm text-slate-800 placeholder:text-slate-400",
+                "focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-border-strong",
+                "[font-size:16px]", // prevents mobile zoom
+              )}
+            />
+          </div>
+
+          {/* Customer list */}
+          {(() => {
+            const needle = customerSearch.trim().toLowerCase();
+            const filtered = (customers ?? [])
+              .filter(
+                (c) =>
+                  !needle ||
+                  c.name.toLowerCase().includes(needle) ||
+                  c.normalizedPhone?.includes(normalizePhone(customerSearch)),
+              )
+              .slice(0, 20);
+
+            if (filtered.length === 0) {
+              return (
+                <p className="py-4 text-center text-sm text-slate-500">
+                  {t("billing.noCustomersFound")}
+                </p>
+              );
+            }
+
+            return (
+              <ul className="max-h-64 overflow-y-auto divide-y divide-slate-100 rounded-xl border border-border-default">
+                {filtered.map((customer) => (
+                  <li key={customer.id}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        selectCustomer(customer);
+                        setCustomerSheetOpen(false);
+                        setCustomerSearch("");
+                      }}
+                      className="w-full text-start px-3 py-2.5 hover:bg-surface-soft transition-colors"
+                    >
+                      <p className="text-sm font-medium text-slate-800 truncate">
+                        {customer.name}
+                      </p>
+                      {customer.phone && (
+                        <p className="text-xs text-slate-500 font-mono">
+                          {customer.phone}
+                        </p>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            );
+          })()}
+
+          {/* Manual entry section — for customers not yet in the database */}
+          <details className="group">
+            <summary className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-info hover:text-info/80 transition-colors list-none">
+              <span className="rotate-0 transition-transform group-open:rotate-90">›</span>
+              {t("billing.enterManually")}
+            </summary>
+            <div className="mt-2 flex flex-col gap-2">
+              <input
+                type="text"
+                placeholder={t("billing.customerName")}
+                aria-label={t("billing.customerName")}
+                defaultValue={watchedCustomerName}
+                onBlur={(e) =>
+                  form.setValue("customerName", e.target.value.trim(), {
+                    shouldDirty: true,
+                  })
+                }
+                className={clsx(
+                  "w-full rounded-xl border border-border-default bg-surface px-3 py-2",
+                  "text-sm text-slate-800 placeholder:text-slate-400",
+                  "focus:outline-none focus:ring-2 focus:ring-brand/30",
+                  "[font-size:16px]",
+                )}
+              />
+              <input
+                type="tel"
+                placeholder={t("billing.customerPhone")}
+                aria-label={t("billing.customerPhone")}
+                defaultValue={watchedCustomerPhone}
+                onBlur={(e) =>
+                  form.setValue("customerPhone", e.target.value.trim(), {
+                    shouldDirty: true,
+                  })
+                }
+                className={clsx(
+                  "w-full rounded-xl border border-border-default bg-surface px-3 py-2",
+                  "text-sm text-slate-800 placeholder:text-slate-400",
+                  "focus:outline-none focus:ring-2 focus:ring-brand/30",
+                  "[font-size:16px]",
+                )}
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setCustomerSheetOpen(false);
+                  setCustomerSearch("");
+                }}
+              >
+                {t("common.close")}
+              </Button>
+            </div>
+          </details>
+        </div>
+      </Modal>
+
       <QuickProductModal
         open={quickAddOpen}
         barcode={missingBarcode}
+        currency={currency}
         onClose={() => {
           setQuickAddOpen(false);
           setMissingBarcode("");

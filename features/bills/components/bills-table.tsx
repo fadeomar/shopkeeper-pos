@@ -33,12 +33,12 @@ function SyncBadge({ status }: { status?: SyncStatus }) {
   const { t } = useLocale();
   const effective = status ?? "synced";
   const styles: Record<SyncStatus, string> = {
-    synced: "bg-green-50 text-green-700 border-green-100",
-    pending: "bg-amber-50 text-amber-700 border-amber-100",
-    syncing: "bg-blue-50 text-blue-700 border-blue-100",
-    failed: "bg-red-50 text-red-700 border-red-100",
-    conflict: "bg-amber-100 text-amber-800 border-amber-200",
-    blocked: "bg-red-100 text-red-800 border-red-200",
+    synced: "bg-success-soft text-success border-success/20",
+    pending: "bg-warning-soft text-warning border-warning/20",
+    syncing: "bg-info-soft text-info border-info/20",
+    failed: "bg-danger-soft text-danger border-danger/20",
+    conflict: "bg-warning-soft text-warning border-warning/30",
+    blocked: "bg-danger-soft text-danger border-danger/30",
   };
   return (
     <span
@@ -170,7 +170,7 @@ export function BillsTable() {
                 value={getBillNetProfit(row.original)}
                 currency={currency}
                 size="sm"
-                className="text-green-700"
+                className="text-success"
               />
             ),
           } as ColumnDef<Bill>,
@@ -214,7 +214,7 @@ export function BillsTable() {
       cell: ({ row }) => (
         <Link
           href={`/bills/${row.original.id}`}
-          className="inline-flex items-center rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-blue-600 transition-colors hover:border-blue-200 hover:bg-blue-50"
+          className="inline-flex items-center rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-info transition-colors hover:border-info/30 hover:bg-info-soft"
         >
           {t("bills.viewDetails")}
         </Link>
@@ -373,7 +373,7 @@ export function BillsTable() {
                     {canViewProfit && (
                       <div className="rounded-xl bg-slate-50 p-2">
                         <p className="text-slate-500">{t("bills.profit")}</p>
-                        <p className="font-bold text-green-700 tabular-nums">
+                        <p className="font-bold text-success tabular-nums">
                           {formatCurrency(getBillNetProfit(bill), currency)}
                         </p>
                       </div>
@@ -414,7 +414,7 @@ export function BillsTable() {
                       }
                       disabled={mobilePageIndex === 0}
                     >
-                      Previous
+                      {t("dataTable.previous")}
                     </Button>
                     <Button
                       type="button"
@@ -427,7 +427,7 @@ export function BillsTable() {
                       }
                       disabled={mobilePageIndex >= mobilePageCount - 1}
                     >
-                      Next
+                      {t("dataTable.next")}
                     </Button>
                   </div>
                 </div>

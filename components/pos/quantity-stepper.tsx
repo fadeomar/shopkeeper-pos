@@ -1,9 +1,23 @@
 "use client";
 
 import clsx from "clsx";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { NumberField } from "@/components/ui/number-field";
+import { useLocale } from "@/components/providers/locale-context";
 
+/**
+ * QuantityStepper — POS quantity input with built-in +/- buttons.
+ *
+ * Now a thin wrapper around NumberField. The old version used three separate
+ * components in a grid (Button, Input, Button) which had three problems:
+ *   1. The native number input rejected the `text-center` className because
+ *      globals.css forced `text-align: right` on every type="number". Fixed
+ *      in the new globals + NumberField sets its own alignment.
+ *   2. Typing in the middle field, then clicking +/-, lost the in-flight
+ *      value because the buttons used the parent's React state directly
+ *      instead of the input's current buffer. NumberField handles this.
+ *   3. The three-column 44/64/44 grid was rigid — the inner field couldn't
+ *      grow to fill available space inside a cart row.
+ */
 export function QuantityStepper({
   value,
   min = 0,
@@ -11,6 +25,7 @@ export function QuantityStepper({
   disabled,
   onChange,
   className,
+  ariaLabel,
 }: {
   value: number;
   min?: number;
@@ -18,49 +33,23 @@ export function QuantityStepper({
   disabled?: boolean;
   onChange: (value: number) => void;
   className?: string;
+  /** Override the field's accessible name; defaults to the localized "Quantity". */
+  ariaLabel?: string;
 }) {
-  function clamp(next: number) {
-    if (Number.isNaN(next)) return min;
-    return Math.min(max ?? Number.POSITIVE_INFINITY, Math.max(min, next));
-  }
-
+  const { t } = useLocale();
   return (
-    <div
-      className={clsx(
-        "inline-grid grid-cols-[44px_minmax(64px,1fr)_44px] items-center gap-2",
-        className,
-      )}
-    >
-      <Button
-        type="button"
-        variant="outline"
-        size="icon"
-        disabled={disabled || value <= min}
-        onClick={() => onChange(clamp(value - 1))}
-        aria-label="Decrease quantity"
-      >
-        −
-      </Button>
-      <Input
-        type="number"
-        inputSize="md"
-        value={value}
-        min={min}
-        max={max}
-        disabled={disabled}
-        onChange={(event) => onChange(clamp(Number(event.target.value)))}
-        className="text-center"
-      />
-      <Button
-        type="button"
-        variant="outline"
-        size="icon"
-        disabled={disabled || (max != null && value >= max)}
-        onClick={() => onChange(clamp(value + 1))}
-        aria-label="Increase quantity"
-      >
-        +
-      </Button>
-    </div>
+    <NumberField
+      value={value}
+      onValueChange={onChange}
+      min={min}
+      max={max}
+      precision="integer"
+      showStepper
+      align="center"
+      disabled={disabled}
+      fullWidth={false}
+      className={clsx("w-[160px]", className)}
+      aria-label={ariaLabel ?? t("common.quantity")}
+    />
   );
 }

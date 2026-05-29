@@ -12,7 +12,8 @@ import { getActiveShift } from "@/lib/services/shift-service";
 import type { CashMovement, CashMovementType } from "@/types/domain";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import { MoneyInput } from "@/components/ui/money-input";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Modal } from "@/components/ui/modal";
 import { StatCard } from "@/components/ui/stat-card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -24,6 +25,7 @@ import { useLocale } from "@/components/providers/locale-context";
 import { formatCurrency, MONEY_EPSILON, roundMoney } from "@/lib/utils/money";
 import { formatDateTime } from "@/lib/utils/date";
 import { getServiceErrorMessage } from "@/lib/errors/get-error-message";
+import { RecordSyncBadge } from "@/components/sync/record-sync-badge";
 
 const TYPE_OPTIONS: CashMovementType[] = [
   "cash_in",
@@ -70,7 +72,7 @@ export function CashWorkspace() {
 
   const [open, setOpen] = useState(false);
   const [type, setType] = useState<CashMovementType>("cash_in");
-  const [amount, setAmount] = useState("");
+  const [amount, setAmount] = useState<number>(0);
   const [reason, setReason] = useState("");
   const [referenceLabel, setReferenceLabel] = useState("");
   const [saving, setSaving] = useState(false);
@@ -91,14 +93,13 @@ export function CashWorkspace() {
 
   function resetForm() {
     setType("cash_in");
-    setAmount("");
+    setAmount(0);
     setReason("");
     setReferenceLabel("");
   }
 
   async function handleSave() {
-    const numeric = Number(amount);
-    if (!Number.isFinite(numeric) || Math.abs(numeric) < MONEY_EPSILON) {
+    if (!Number.isFinite(amount) || Math.abs(amount) < MONEY_EPSILON) {
       push(t("common.invalidAmount"), "error");
       return;
     }
@@ -106,7 +107,7 @@ export function CashWorkspace() {
     try {
       await recordCashMovement({
         type,
-        amount: numeric,
+        amount,
         reason: reason.trim() || undefined,
         referenceLabel: referenceLabel.trim() || undefined,
         cashierName: settings?.cashierName,
@@ -148,7 +149,7 @@ export function CashWorkspace() {
         header: t("cash.colAmount"),
         cell: ({ row }) => (
           <span
-            className={`font-semibold tabular-nums ${row.original.amount >= 0 ? "text-emerald-700" : "text-red-700"}`}
+            className={`font-semibold tabular-nums ${row.original.amount >= 0 ? "text-success" : "text-danger"}`}
             dir="ltr"
           >
             {row.original.amount >= 0 ? "+" : ""}
@@ -178,6 +179,11 @@ export function CashWorkspace() {
             {row.original.shiftId ?? "—"}
           </span>
         ),
+      },
+      {
+        accessorKey: "syncStatus",
+        header: t("sync.status"),
+        cell: ({ row }) => <RecordSyncBadge status={row.original.syncStatus} />,
       },
     ],
     [t, currency],
@@ -246,7 +252,7 @@ export function CashWorkspace() {
       >
         <div className="space-y-3">
           {!activeShift && (
-            <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            <p className="rounded-xl border border-warning/30 bg-warning-soft px-3 py-2 text-xs text-warning">
               {t("cash.noActiveShiftLabel")}
             </p>
           )}
@@ -259,16 +265,14 @@ export function CashWorkspace() {
 
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium text-slate-700">{t("cash.type")}</span>
-            <Select
+            <SearchableSelect
               value={type}
-              onChange={(e) => setType(e.target.value as CashMovementType)}
-            >
-              {TYPE_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {t(typeKey(option))}
-                </option>
-              ))}
-            </Select>
+              onValueChange={(v) => setType((v ?? "cash_in") as CashMovementType)}
+              options={TYPE_OPTIONS.map((option) => ({
+                value: option,
+                label: t(typeKey(option)),
+              }))}
+            />
             <span className="text-xs text-slate-500">
               {direction === "in" && t("cash.cashIn")}
               {direction === "out" && t("cash.cashOut")}
@@ -280,12 +284,10 @@ export function CashWorkspace() {
             <span className="font-medium text-slate-700">
               {t("cash.amount")}
             </span>
-            <Input
-              type="number"
-              step="0.01"
+            <MoneyInput
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              dir="ltr"
+              onValueChange={setAmount}
+              currency={currency}
             />
             <span className="text-xs text-slate-500">
               {t("cash.amountHelper")}

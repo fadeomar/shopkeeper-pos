@@ -1,6 +1,11 @@
 import { collection, doc, getDoc, getDocs, limit, query, where } from 'firebase/firestore';
 import { firestore } from '@/lib/firebase/config';
 import { saveConflict } from '@/lib/services/sync-conflict-service';
+import {
+  SETTINGS_TRACKED_FIELDS,
+  isSettingsSequenceField,
+  mergedSequences,
+} from '@/lib/services/settings-sync-fields';
 import type { Product, Settings, SyncQueueItem } from '@/types/domain';
 
 type ConflictCheckResult = { hasConflict: boolean; conflictId?: string };
@@ -23,15 +28,6 @@ const PRODUCT_FIELDS: Array<keyof Product> = [
   'status',
 ];
 
-const SETTINGS_FIELDS: Array<keyof Settings> = [
-  'storeName',
-  'cashierName',
-  'currency',
-  'allowLossSale',
-  'nextBillSequence',
-  'lowStockHighlight',
-];
-
 function valuesDiffer(a: unknown, b: unknown): boolean {
   return JSON.stringify(a ?? null) !== JSON.stringify(b ?? null);
 }
@@ -44,11 +40,6 @@ function isCloudNewerThanLocal(localSyncedAt?: string, cloudSyncedAt?: string): 
   if (!cloudSyncedAt) return false;
   if (!localSyncedAt) return true;
   return new Date(cloudSyncedAt).getTime() > new Date(localSyncedAt).getTime();
-}
-
-function finiteSequence(value: unknown, fallback = 1): number {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) && numeric > 0 ? Math.floor(numeric) : fallback;
 }
 
 function laterIso(a?: string, b?: string): string | undefined {
@@ -130,23 +121,19 @@ export async function prepareSettingsForCloudSync(
   if (!snap.exists()) return { hasConflict: false, settings };
 
   const cloud = snap.data() as Settings;
-  const fields = changedFields(settings as unknown as Record<string, unknown>, cloud as unknown as Record<string, unknown>, SETTINGS_FIELDS as string[]);
-  const safeNextBillSequence = Math.max(
-    finiteSequence(settings.nextBillSequence),
-    finiteSequence(cloud.nextBillSequence),
-  );
+  const fields = changedFields(settings as unknown as Record<string, unknown>, cloud as unknown as Record<string, unknown>, SETTINGS_TRACKED_FIELDS);
   const safeSettings: Settings = {
     ...settings,
-    nextBillSequence: safeNextBillSequence,
+    ...mergedSequences(settings, cloud),
     updatedAt: laterIso(settings.updatedAt, cloud.updatedAt) ?? settings.updatedAt,
   };
 
   if (fields.length > 0 && isCloudNewerThanLocal(settings.syncedAt ?? job.createdAt, cloud.syncedAt)) {
-    const businessFields = fields.filter((field) => field !== 'nextBillSequence');
+    const businessFields = fields.filter((field) => !isSettingsSequenceField(field));
 
-    // Bill numbers are monotonic counters. Offline bill creation can legitimately
-    // make the device sequence higher than the cloud. Merge with max instead of
-    // forcing a manual settings conflict.
+    // Bill/purchase numbers are monotonic counters. Offline creation can
+    // legitimately make the device sequence higher than the cloud. Merge with
+    // max instead of forcing a manual settings conflict.
     if (businessFields.length === 0) {
       return { hasConflict: false, settings: safeSettings };
     }

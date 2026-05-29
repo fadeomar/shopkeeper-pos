@@ -89,7 +89,7 @@ function TrendBars({ rows, currency }: { rows: TrendRow[]; currency: string }) {
             </span>
             <div className="h-3 overflow-hidden rounded-full bg-slate-100">
               <div
-                className="h-full rounded-full bg-blue-600"
+                className="h-full rounded-full bg-brand"
                 style={{ width: `${width}%` }}
               />
             </div>
@@ -203,7 +203,7 @@ export function ReportsWorkspace() {
               // typed-routes hasn't been regenerated yet for the new /reports/z page;
               // the route exists at app/reports/z/page.tsx so the cast is safe.
               href={"/reports/z" as never}
-              className="inline-flex min-h-[42px] items-center justify-center rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-700"
+              className="inline-flex min-h-[42px] items-center justify-center rounded-xl bg-success px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-success/90"
             >
               {t("reports.openZReport")}
             </Link>
@@ -215,7 +215,7 @@ export function ReportsWorkspace() {
             </Link>
             <Link
               href="/inventory"
-              className="inline-flex min-h-[42px] items-center justify-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
+              className="inline-flex min-h-[42px] items-center justify-center rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-hover"
             >
               {t("reports.openInventory")}
             </Link>
@@ -283,6 +283,7 @@ export function ReportsWorkspace() {
         <StatCard
           label={t("reports.totalSales")}
           value={formatCurrency(summary.sales, currency)}
+          href="/bills"
         />
         <StatCard
           label={t("reports.totalProfit")}
@@ -292,14 +293,17 @@ export function ReportsWorkspace() {
           label={t("reports.billCount")}
           value={String(summary.billCount)}
           helper={`${t("reports.averageBill")}: ${formatCurrency(summary.averageBill, currency)}`}
+          href="/bills"
         />
         <StatCard
           label={t("reports.cashExpected")}
           value={formatCurrency(summary.cashExpected, currency)}
+          href="/shift"
         />
         <StatCard
           label={t("reports.customerPaymentsCashIn")}
           value={formatCurrency(customerPaymentsCashIn, currency)}
+          href="/customers"
         />
       </section>
 
@@ -308,16 +312,19 @@ export function ReportsWorkspace() {
           label={t("reports.purchaseCost")}
           value={formatCurrency(purchaseSummary.purchaseCost, currency)}
           helper={`${t("reports.purchaseCount")}: ${purchaseSummary.purchaseCount}`}
+          href="/purchases/new"
         />
         <StatCard
           label={t("reports.cashPaidOut")}
           value={formatCurrency(purchaseSummary.cashPaidOut, currency)}
           helper={t("reports.cashPaidOutHelper")}
+          href="/cash"
         />
         <StatCard
           label={t("reports.supplierPayments")}
           value={formatCurrency(purchaseSummary.supplierPayments, currency)}
           helper={`${filteredSupplierPayments.length} ${t("reports.entries")}`}
+          href="/suppliers"
         />
         <StatCard
           label={t("reports.netSupplierDebt")}

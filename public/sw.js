@@ -34,7 +34,7 @@ if (IS_DEV_HOST && !ENABLE_DEV_SW) {
     );
   });
 } else {
-  const CACHE_VERSION = "0.1.10";
+  const CACHE_VERSION = "0.1.12";
 
   const CACHE_HTML = `sk-pages-${CACHE_VERSION}`;
   const CACHE_STATIC = `sk-static-${CACHE_VERSION}`;
@@ -47,15 +47,20 @@ if (IS_DEV_HOST && !ENABLE_DEV_SW) {
 
   const NAV_ROUTES = [
     "/",
+    "/guide",
     "/products",
     "/inventory",
     "/reports",
+    "/reports/z",
     "/customers",
     "/suppliers",
     "/billing",
     "/bills",
     "/purchases/new",
     "/shift",
+    "/cash",
+    "/expenses",
+    "/audit",
     "/settings",
   ];
   const APP_SHELL = [...NAV_ROUTES, "/manifest.webmanifest"];

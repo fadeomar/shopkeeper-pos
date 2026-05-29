@@ -17,6 +17,7 @@ import {
 } from "@/lib/services/shift-service";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MoneyInput } from "@/components/ui/money-input";
 import { Card } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
 import { Modal } from "@/components/ui/modal";
@@ -83,7 +84,7 @@ export function ShiftWorkspace() {
   );
   const currency = settings?.currency ?? "ILS";
 
-  const [openingCash, setOpeningCash] = useState("");
+  const [openingCash, setOpeningCash] = useState<number>(0);
   const [openNotes, setOpenNotes] = useState("");
   const [cashierName, setCashierName] = useState("");
   useEffect(() => {
@@ -95,7 +96,7 @@ export function ShiftWorkspace() {
   const [submittingOpen, setSubmittingOpen] = useState(false);
 
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
-  const [countedCash, setCountedCash] = useState("");
+  const [countedCash, setCountedCash] = useState<number>(0);
   const [closingNotes, setClosingNotes] = useState("");
   const [submittingClose, setSubmittingClose] = useState(false);
 
@@ -129,9 +130,8 @@ export function ShiftWorkspace() {
 
   // Used inside the close dialog to show live counted vs expected diff while
   // the cashier is typing.
-  const countedCashNumeric = Number(countedCash);
-  const liveDifference = Number.isFinite(countedCashNumeric)
-    ? countedCashNumeric - expectedCash
+  const liveDifference = Number.isFinite(countedCash)
+    ? countedCash - expectedCash
     : 0;
 
   const closedShifts = useMemo(
@@ -193,7 +193,7 @@ export function ShiftWorkspace() {
           const diff = row.original.cashDifference ?? 0;
           return (
             <span
-              className={`font-semibold tabular-nums ${diff > MONEY_EPSILON ? "text-emerald-700" : diff < -MONEY_EPSILON ? "text-red-700" : "text-slate-700"}`}
+              className={`font-semibold tabular-nums ${diff > MONEY_EPSILON ? "text-success" : diff < -MONEY_EPSILON ? "text-danger" : "text-slate-700"}`}
             >
               {formatCurrency(diff, currency)}
             </span>
@@ -226,7 +226,7 @@ export function ShiftWorkspace() {
     setSubmittingOpen(true);
     try {
       await openShift({
-        openingCash: Number(openingCash || 0),
+        openingCash: openingCash || 0,
         cashierName: (
           cashierName ||
           settings?.cashierName ||
@@ -234,7 +234,7 @@ export function ShiftWorkspace() {
         ).trim(),
         notes: openNotes,
       });
-      setOpeningCash("");
+      setOpeningCash(0);
       setOpenNotes("");
       setCashierName("");
       push(t("shift.openShiftSuccess"));
@@ -254,11 +254,11 @@ export function ShiftWorkspace() {
     try {
       const closed = await closeShift({
         shiftId: activeShift.id,
-        countedCash: Number(countedCash || 0),
+        countedCash: countedCash || 0,
         notes: closingNotes,
       });
       setCloseDialogOpen(false);
-      setCountedCash("");
+      setCountedCash(0);
       setClosingNotes("");
       push(t("shift.closeShiftSuccess"));
       setReportShift(closed);
@@ -293,14 +293,11 @@ export function ShiftWorkspace() {
               <span className="text-xs font-medium text-slate-600 uppercase tracking-wide">
                 {t("shift.openingCash")}
               </span>
-              <Input
-                type="number"
-                inputMode="decimal"
-                enterKeyHint="done"
-                step="0.01"
-                min="0"
+              <MoneyInput
                 value={openingCash}
-                onChange={(e) => setOpeningCash(e.target.value)}
+                onValueChange={setOpeningCash}
+                currency={currency}
+                min={0}
                 onKeyDown={dismissOnEnter}
                 placeholder="0.00"
               />
@@ -361,7 +358,7 @@ export function ShiftWorkspace() {
               type="button"
               variant="danger"
               onClick={() => {
-                setCountedCash(expectedCash.toFixed(2));
+                setCountedCash(expectedCash);
                 setCloseDialogOpen(true);
               }}
             >
@@ -517,14 +514,11 @@ export function ShiftWorkspace() {
               <span className="text-xs font-medium text-slate-600 uppercase tracking-wide">
                 {t("shift.countedCash")}
               </span>
-              <Input
-                type="number"
-                inputMode="decimal"
-                enterKeyHint="done"
-                step="0.01"
-                min="0"
+              <MoneyInput
                 value={countedCash}
-                onChange={(e) => setCountedCash(e.target.value)}
+                onValueChange={setCountedCash}
+                currency={currency}
+                min={0}
                 onKeyDown={dismissOnEnter}
               />
               <span className="text-xs text-slate-500">

@@ -11,6 +11,8 @@ import { localDateKey } from "@/lib/utils/date";
 import { getServiceErrorMessage } from "@/lib/errors/get-error-message";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NumberFieldRHF } from "@/components/ui/number-field-rhf";
+import { MoneyInputRHF } from "@/components/ui/money-input";
 import { Modal } from "@/components/ui/modal";
 import { useLocale } from "@/components/providers/locale-context";
 import { useToast } from "@/components/ui/toast";
@@ -19,6 +21,7 @@ import type { Product } from "@/types/domain";
 interface Props {
   open: boolean;
   barcode: string;
+  currency: string;
   onClose: () => void;
   onCreated: (product: Product) => void;
 }
@@ -37,7 +40,7 @@ function Field({
       <span className="text-sm font-medium text-slate-700">{label}</span>
       {children}
       {error && (
-        <span className="text-xs font-medium text-red-600">{error}</span>
+        <span className="text-xs font-medium text-danger">{error}</span>
       )}
     </label>
   );
@@ -66,6 +69,7 @@ function buildDefaults(barcode: string): ProductSchema {
 export function QuickProductModal({
   open,
   barcode,
+  currency,
   onClose,
   onCreated,
 }: Props) {
@@ -155,16 +159,31 @@ export function QuickProductModal({
           label={t("products.sellPrice")}
           error={errors.sellPrice?.message}
         >
-          <Input type="number" step="0.01" {...form.register("sellPrice")} />
+          <MoneyInputRHF
+            name="sellPrice"
+            control={form.control}
+            currency={currency}
+            min={0}
+          />
         </Field>
         <Field
           label={t("products.quantityInStock")}
           error={errors.quantityInStock?.message}
         >
-          <Input type="number" step="1" {...form.register("quantityInStock")} />
+          <NumberFieldRHF
+            name="quantityInStock"
+            control={form.control}
+            precision="integer"
+            min={0}
+          />
         </Field>
         <Field label={t("products.buyPrice")} error={errors.buyPrice?.message}>
-          <Input type="number" step="0.01" {...form.register("buyPrice")} />
+          <MoneyInputRHF
+            name="buyPrice"
+            control={form.control}
+            currency={currency}
+            min={0}
+          />
         </Field>
         <Field label={t("products.category")} error={errors.category?.message}>
           <Input {...form.register("category")} />
@@ -176,10 +195,11 @@ export function QuickProductModal({
           label={t("products.minimumStockAlert")}
           error={errors.minimumStockAlert?.message}
         >
-          <Input
-            type="number"
-            step="1"
-            {...form.register("minimumStockAlert")}
+          <NumberFieldRHF
+            name="minimumStockAlert"
+            control={form.control}
+            precision="integer"
+            min={0}
           />
         </Field>
         <button type="submit" className="hidden" disabled={saving} />

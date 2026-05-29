@@ -6,11 +6,14 @@ import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db/schema";
 import { settingsRepo } from "@/lib/db/repositories";
+import { isLowStock } from "@/lib/utils/stock";
+import { RecordSyncBadge } from "@/components/sync/record-sync-badge";
 import { countProductStock } from "@/lib/services/inventory-service";
 import { formatCurrency } from "@/lib/utils/money";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { QuantityStepper } from "@/components/pos/quantity-stepper";
 import { DataTable } from "@/components/ui/data-table";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Modal } from "@/components/ui/modal";
@@ -55,7 +58,7 @@ export function InventoryWorkspace() {
 
   const [mode, setMode] = useState<InventoryModalMode>(null);
   const [selectedProductId, setSelectedProductId] = useState("");
-  const [quantity, setQuantity] = useState("");
+  const [quantity, setQuantity] = useState<number | null>(null);
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const activeProducts = useMemo(
@@ -70,9 +73,7 @@ export function InventoryWorkspace() {
   }, [products]);
 
   const lowStockProducts = activeProducts.filter(
-    (product) =>
-      product.quantityInStock > 0 &&
-      product.quantityInStock <= product.minimumStockAlert,
+    (product) => product.quantityInStock > 0 && isLowStock(product, settings),
   );
   const outOfStockProducts = activeProducts.filter(
     (product) => product.quantityInStock <= 0,
@@ -102,7 +103,7 @@ export function InventoryWorkspace() {
     setMode(nextMode);
     setSelectedProductId(product?.id ?? activeProducts[0]?.id ?? "");
     setQuantity(
-      nextMode === "count" && product ? String(product.quantityInStock) : "",
+      nextMode === "count" && product ? product.quantityInStock : null,
     );
     setNote("");
   }
@@ -116,13 +117,12 @@ export function InventoryWorkspace() {
     const product = activeProducts.find(
       (item) => item.id === selectedProductId,
     );
-    const parsedQuantity = Number(quantity);
 
     if (!product) {
       push(t("inventory.selectProductFirst"));
       return;
     }
-    if (!Number.isInteger(parsedQuantity) || parsedQuantity < 0) {
+    if (quantity == null || !Number.isInteger(quantity) || quantity < 0) {
       push(t("inventory.invalidQuantity"));
       return;
     }
@@ -130,7 +130,7 @@ export function InventoryWorkspace() {
     try {
       setSubmitting(true);
       if (mode === "count") {
-        await countProductStock(product, parsedQuantity, note);
+        await countProductStock(product, quantity, note);
         push(t("inventory.stockCountSaved"));
       }
       setMode(null);
@@ -145,8 +145,8 @@ export function InventoryWorkspace() {
     (product) => product.id === selectedProductId,
   );
   const countedDifference =
-    selectedProduct && mode === "count" && quantity.trim()
-      ? Number(quantity) - selectedProduct.quantityInStock
+    selectedProduct && mode === "count" && quantity != null
+      ? quantity - selectedProduct.quantityInStock
       : 0;
 
   const movementColumns: ColumnDef<StockMovement>[] = [
@@ -185,7 +185,7 @@ export function InventoryWorkspace() {
         const isPositive = row.original.quantityChange >= 0;
         return (
           <span
-            className={`whitespace-nowrap font-semibold ${isPositive ? "text-green-600" : "text-red-600"}`}
+            className={`whitespace-nowrap font-semibold ${isPositive ? "text-success" : "text-danger"}`}
           >
             {isPositive ? "+" : ""}
             {row.original.quantityChange}
@@ -201,6 +201,11 @@ export function InventoryWorkspace() {
           {row.original.note || row.original.referenceType}
         </span>
       ),
+    },
+    {
+      header: t("sync.status"),
+      accessorKey: "syncStatus",
+      cell: ({ row }) => <RecordSyncBadge status={row.original.syncStatus} />,
     },
   ];
 
@@ -238,7 +243,7 @@ export function InventoryWorkspace() {
             </Button>
             <Link
               href={"/purchases/new" as never}
-              className="inline-flex h-[42px] items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-700 active:bg-blue-800"
+              className="inline-flex h-[42px] items-center justify-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-hover active:bg-brand-hover"
             >
               {t("purchases.newPurchase")}
             </Link>
@@ -363,7 +368,7 @@ export function InventoryWorkspace() {
             <div className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600">
               {t("inventory.currentStock")}:{" "}
               <strong>{selectedProduct.quantityInStock}</strong>
-              {Number.isFinite(countedDifference) && quantity.trim() && (
+              {Number.isFinite(countedDifference) && quantity !== null && (
                 <span className="ms-3">
                   {t("inventory.difference")}:{" "}
                   <strong>
@@ -377,12 +382,10 @@ export function InventoryWorkspace() {
 
           <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
             {t("inventory.countedQuantity")}
-            <Input
-              type="number"
+            <QuantityStepper
+              value={quantity ?? 0}
+              onChange={setQuantity}
               min={0}
-              step={1}
-              value={quantity}
-              onChange={(event) => setQuantity(event.target.value)}
             />
           </label>
 

@@ -41,8 +41,8 @@ export function DbBootstrap({ children }: { children: React.ReactNode }) {
 
   if (error) {
     return (
-      <div className="m-6 p-5 bg-white border border-red-200 rounded-2xl shadow-xs">
-        <p className="font-semibold text-red-600 mb-2">{t('db.storageError')}</p>
+      <div className="m-6 p-5 bg-white border border-danger/20 rounded-2xl shadow-xs">
+        <p className="font-semibold text-danger mb-2">{t('db.storageError')}</p>
         <p className="text-sm text-slate-700 mb-1">{error}</p>
         <p className="text-sm text-slate-500">{t('db.storageErrorDesc')}</p>
       </div>

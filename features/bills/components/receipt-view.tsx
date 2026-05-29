@@ -226,7 +226,7 @@ export function ReceiptView({
                 </div>
               )}
               {billWithSplit.creditAmount > 0 && (
-                <div className="flex justify-between font-semibold text-red-600">
+                <div className="flex justify-between font-semibold text-danger">
                   <span>{t("common.credit")}</span>
                   <span className="tabular-nums">
                     {formatCurrency(billWithSplit.creditAmount, currency)}

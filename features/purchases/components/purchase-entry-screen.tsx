@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import clsx from "clsx";
 import { getServiceErrorMessage } from "@/lib/errors/get-error-message";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -28,7 +29,11 @@ import { createFinalizedPurchase } from "@/lib/services/purchase-service";
 import { useAuth } from "@/components/providers/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MoneyInput, MoneyInputRHF } from "@/components/ui/money-input";
+import { QuantityStepper } from "@/components/pos/quantity-stepper";
+import { PaymentMethodControl } from "@/components/pos/payment-method-control";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { CircleCheck, Search, Store, X } from "lucide-react";
 import { DataTable, useDataTableLabels } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Modal } from "@/components/ui/modal";
@@ -128,14 +133,14 @@ function SuccessPanel({
   return (
     <Card className="flex flex-col gap-4" padding="sm">
       <div className="flex items-start gap-3">
-        <span
+        <CircleCheck
           aria-hidden
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-lg font-bold"
-        >
-          ✓
-        </span>
+          size={36}
+          strokeWidth={2}
+          className="shrink-0 text-success"
+        />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-emerald-700">
+          <p className="text-sm font-semibold text-success">
             {t("purchases.purchaseCompleted")}
           </p>
           <p className="font-mono text-base font-bold text-slate-900">
@@ -144,7 +149,7 @@ function SuccessPanel({
         </div>
       </div>
 
-      <div className="rounded-xl bg-emerald-50 border border-emerald-100 px-4 py-3">
+      <div className="rounded-xl bg-success-soft border border-success/20 px-4 py-3">
         <SummaryRow
           label={t("purchases.total")}
           value={formatCurrency(purchase.totalAmount, currency)}
@@ -201,8 +206,8 @@ export function PurchaseEntryScreen() {
 
   const [draftItems, setDraftItems] = useState<PurchaseDraftItem[]>([]);
   const [productId, setProductId] = useState("");
-  const [newLineCost, setNewLineCost] = useState("");
-  const [newLineQty, setNewLineQty] = useState("1");
+  const [newLineCost, setNewLineCost] = useState<number>(0);
+  const [newLineQty, setNewLineQty] = useState<number>(1);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [isPaidAmountManuallyEdited, setIsPaidAmountManuallyEdited] =
@@ -229,7 +234,8 @@ export function PurchaseEntryScreen() {
     [products, currency],
   );
 
-  const [supplierFieldFocused, setSupplierFieldFocused] = useState(false);
+  const [supplierSheetOpen, setSupplierSheetOpen] = useState(false);
+  const [supplierSearch, setSupplierSearch] = useState("");
 
   const form = useForm<PurchaseFormSchema>({
     resolver: zodResolver(purchaseFormSchema),
@@ -257,8 +263,29 @@ export function PurchaseEntryScreen() {
         items: PurchaseDraftItem[];
         form: PurchaseFormSchema;
       };
-      setDraftItems(parsed.items ?? []);
+      const items = parsed.items ?? [];
+      setDraftItems(items);
       form.reset(parsed.form);
+      // Reconstruct the manual-edit flag from the saved draft. The auto-fill
+      // default is the purchase total (or 0 for a credit purchase). If the
+      // saved paidAmount differs from that default, the cashier typed it by
+      // hand — flag it as manual so the auto-fill effect below doesn't
+      // clobber it on reload. Without this, the flag stays false and the
+      // cashier's entered amount is overwritten by the total.
+      const autoTotal = calculateBillTotals(
+        items.map((i) => ({
+          quantity: i.quantity,
+          unitBuyPrice: i.unitCost,
+          unitSellPrice: i.unitCost,
+        })),
+        parsed.form.discountAmount,
+        parsed.form.taxAmount,
+      ).totalAmount;
+      const expectedDefault =
+        parsed.form.paymentMethod === "credit" ? 0 : autoTotal;
+      setIsPaidAmountManuallyEdited(
+        Math.abs((parsed.form.paidAmount ?? 0) - expectedDefault) > 0.001,
+      );
     } catch {
       window.localStorage.removeItem(draftKey);
     }
@@ -342,6 +369,48 @@ export function PurchaseEntryScreen() {
   const hasCreditSupplier = Boolean(
     watchedSupplierName?.trim() || watchedSupplierPhone?.trim(),
   );
+
+  // ── Settings-driven enforcement (payment methods + tax mode) ──────────────
+  // Purchases share the store's payment-method toggles. requireShift and the
+  // discount limit are sell-side concerns and intentionally not applied here.
+  const enableCash = settings?.enableCash !== false;
+  const enableCard = settings?.enableCard !== false;
+  const enableCredit = settings?.enableCredit !== false;
+  const availablePaymentMethods = useMemo<
+    PurchaseFormSchema["paymentMethod"][]
+  >(() => {
+    const methods: PurchaseFormSchema["paymentMethod"][] = [];
+    if (enableCash) methods.push("cash");
+    if (enableCard) methods.push("card");
+    if (enableCash && enableCard) methods.push("mixed");
+    if (enableCredit) methods.push("credit");
+    return methods.length ? methods : ["cash"];
+  }, [enableCash, enableCard, enableCredit]);
+
+  useEffect(() => {
+    if (
+      !availablePaymentMethods.includes(
+        watchedPaymentMethod as PurchaseFormSchema["paymentMethod"],
+      )
+    ) {
+      form.setValue("paymentMethod", availablePaymentMethods[0], {
+        shouldDirty: false,
+      });
+    }
+  }, [availablePaymentMethods, watchedPaymentMethod, form]);
+
+  // Only "exclusive" shows a manual tax field (added on top). "none"/"inclusive"
+  // hide it and force 0 — matches billing and avoids double-counting inclusive.
+  const taxEnabled = settings?.taxMode === "exclusive";
+  useEffect(() => {
+    if (!taxEnabled && watchedTaxAmount !== 0) {
+      form.setValue("taxAmount", 0, {
+        shouldDirty: false,
+        shouldValidate: true,
+      });
+    }
+  }, [taxEnabled, watchedTaxAmount, form]);
+
   const hasValidTotal = purchaseSummary.totalAmount >= 0;
   const hasEnoughPayment =
     isCreditPurchase || isMixedPurchase || actualChangeAmount >= 0;
@@ -379,48 +448,16 @@ export function PurchaseEntryScreen() {
     return () => window.clearTimeout(id);
   }, [lastFinalized]);
 
-  // Supplier typeahead suggestions, mirror of POS customer typeahead.
-  const supplierSuggestions = useMemo<Supplier[]>(() => {
-    if (!suppliers || suppliers.length === 0) return [];
-    if (!supplierFieldFocused) return [];
-    const nameNeedle = watchedSupplierName?.trim().toLowerCase() ?? "";
-    const phoneNeedle = normalizePhone(watchedSupplierPhone ?? "");
-    if (!nameNeedle && !phoneNeedle) return [];
-    const matches = suppliers.filter((s) => {
-      const nameMatches =
-        nameNeedle && s.name.toLowerCase().includes(nameNeedle);
-      const phoneMatches =
-        phoneNeedle && s.normalizedPhone?.includes(phoneNeedle);
-      return Boolean(nameMatches || phoneMatches);
-    });
-    if (matches.length === 1) {
-      const m = matches[0];
-      const exact =
-        (m.name.toLowerCase() === nameNeedle &&
-          (phoneNeedle === "" || m.normalizedPhone === phoneNeedle)) ||
-        (m.normalizedPhone === phoneNeedle &&
-          (nameNeedle === "" || m.name.toLowerCase() === nameNeedle));
-      if (exact) return [];
-    }
-    return matches.slice(0, 5);
-  }, [
-    suppliers,
-    supplierFieldFocused,
-    watchedSupplierName,
-    watchedSupplierPhone,
-  ]);
-
   function selectSupplier(supplier: Supplier) {
     form.setValue("supplierName", supplier.name, { shouldDirty: true });
     form.setValue("supplierPhone", supplier.phone ?? "", { shouldDirty: true });
-    setSupplierFieldFocused(false);
   }
 
   function addLine() {
     const product = products?.find((p) => p.id === productId);
     if (!product) return;
-    const qty = Math.max(1, Math.trunc(Number(newLineQty) || 0));
-    const cost = Math.max(0, Number(newLineCost) || product.buyPrice);
+    const qty = Math.max(1, Math.trunc(newLineQty || 0));
+    const cost = Math.max(0, newLineCost || product.buyPrice);
     setDraftItems((cur) => {
       const existing = cur.find((i) => i.productId === product.id);
       if (existing) {
@@ -445,8 +482,8 @@ export function PurchaseEntryScreen() {
       ];
     });
     setProductId("");
-    setNewLineCost("");
-    setNewLineQty("1");
+    setNewLineCost(0);
+    setNewLineQty(1);
     if (lastFinalized) setLastFinalized(null);
   }
 
@@ -573,17 +610,11 @@ export function PurchaseEntryScreen() {
       cell: ({ row }) => {
         const item = row.original;
         return (
-          <Input
-            type="number"
-            inputMode="numeric"
-            enterKeyHint="done"
-            min={1}
+          <QuantityStepper
             value={item.quantity}
-            onChange={(e) =>
-              updateLine(item.productId, { quantity: Number(e.target.value) })
-            }
-            onKeyDown={dismissKeyboardOnEnter}
-            className="w-20 text-center"
+            onChange={(v) => updateLine(item.productId, { quantity: v })}
+            min={1}
+            className="w-[140px]"
           />
         );
       },
@@ -594,18 +625,15 @@ export function PurchaseEntryScreen() {
       cell: ({ row }) => {
         const item = row.original;
         return (
-          <Input
-            type="number"
-            inputMode="decimal"
-            enterKeyHint="done"
-            step="0.01"
-            min={0}
+          <MoneyInput
             value={item.unitCost}
-            onChange={(e) =>
-              updateLine(item.productId, { unitCost: Number(e.target.value) })
-            }
+            onValueChange={(v) => updateLine(item.productId, { unitCost: v })}
+            currency={currency}
+            min={0}
             onKeyDown={dismissKeyboardOnEnter}
-            className="w-24 text-center"
+            inputSize="sm"
+            className="w-36"
+            fullWidth={false}
           />
         );
       },
@@ -633,8 +661,9 @@ export function PurchaseEntryScreen() {
           variant="ghost"
           size="sm"
           onClick={() => removeLine(row.original.productId)}
+          aria-label={t("common.remove")}
         >
-          ×
+          <X size={14} aria-hidden />
         </Button>
       ),
     },
@@ -643,7 +672,7 @@ export function PurchaseEntryScreen() {
   if (!products) {
     return (
       <Card>
-        <p className="text-sm text-slate-500">Loading…</p>
+        <p className="text-sm text-slate-500">{t("common.loading")}</p>
       </Card>
     );
   }
@@ -667,7 +696,7 @@ export function PurchaseEntryScreen() {
               {t("purchases.title")}
             </h3>
             {draftItems.length > 0 && (
-              <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+              <span className="rounded-full bg-info-soft px-3 py-1 text-xs font-semibold text-info">
                 {draftItems.length} {t("purchases.items")}
               </span>
             )}
@@ -684,28 +713,22 @@ export function PurchaseEntryScreen() {
               emptyMessage={t("products.noProducts")}
               disabled={!products?.length}
             />
-            <Input
-              type="number"
-              inputMode="numeric"
-              enterKeyHint="done"
-              min={1}
+            <QuantityStepper
               value={newLineQty}
-              onChange={(e) => setNewLineQty(e.target.value)}
-              onKeyDown={dismissKeyboardOnEnter}
-              placeholder={t("purchases.qty")}
-              className="w-24"
+              onChange={setNewLineQty}
+              min={1}
+              className="w-[140px]"
             />
-            <Input
-              type="number"
-              inputMode="decimal"
-              enterKeyHint="done"
-              step="0.01"
-              min={0}
+            <MoneyInput
               value={newLineCost}
-              onChange={(e) => setNewLineCost(e.target.value)}
+              onValueChange={setNewLineCost}
+              currency={currency}
+              min={0}
               onKeyDown={dismissKeyboardOnEnter}
               placeholder={t("purchases.unitCost")}
+              inputSize="sm"
               className="w-32"
+              fullWidth={false}
             />
             <Button
               type="button"
@@ -728,7 +751,7 @@ export function PurchaseEntryScreen() {
             <p>{t("purchases.productMissingNote")}</p>
             <Link
               href="/products"
-              className="mt-2 inline-flex text-sm font-semibold text-blue-600 hover:text-blue-700"
+              className="mt-2 inline-flex text-sm font-semibold text-info hover:text-info/80"
             >
               {t("purchases.addProductInProducts")}
             </Link>
@@ -742,41 +765,81 @@ export function PurchaseEntryScreen() {
             />
           ) : (
             <>
-              {/* Mobile touch-card layout */}
+              {/* Mobile touch-card layout — fully editable qty + cost */}
               <div className="flex flex-col gap-2 md:hidden">
                 {draftItems.map((item) => (
                   <div
                     key={item.productId}
-                    className="flex items-center gap-3 rounded-xl border border-slate-200 px-3 py-2.5"
+                    className="rounded-2xl border border-slate-200 bg-white p-3 shadow-xs"
                   >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-slate-800 truncate">
-                        {item.name}
-                      </p>
-                      <p className="text-xs text-slate-500">
-                        <span dir="ltr">
-                          {formatCurrency(item.unitCost, currency)}
-                        </span>
-                        {" × "}
-                        {item.quantity}
-                      </p>
+                    {/* Header: name + remove */}
+                    <div className="flex items-start justify-between gap-2 mb-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-slate-900 truncate">
+                          {item.name}
+                        </p>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          {t("purchases.currentStock")}: {item.currentStock}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeLine(item.productId)}
+                        aria-label={t("common.remove")}
+                        className="shrink-0 rounded-lg p-1 text-slate-400 hover:bg-danger-soft hover:text-danger transition-colors"
+                      >
+                        <X size={16} aria-hidden />
+                      </button>
                     </div>
-                    <span
-                      className="text-sm font-bold tabular-nums text-slate-900"
-                      dir="ltr"
-                    >
-                      {formatCurrency(
-                        calculateLineSubtotal(item.quantity, item.unitCost),
-                        currency,
-                      )}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => removeLine(item.productId)}
-                      className="text-slate-400 hover:text-red-500 transition-colors p-1 text-lg leading-none"
-                    >
-                      ×
-                    </button>
+
+                    {/* Editable qty + cost row */}
+                    <div className="grid grid-cols-2 gap-2 mb-2">
+                      <label className="flex flex-col gap-1">
+                        <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">
+                          {t("purchases.qty")}
+                        </span>
+                        <QuantityStepper
+                          value={item.quantity}
+                          onChange={(v) =>
+                            updateLine(item.productId, { quantity: v })
+                          }
+                          min={1}
+                          className="w-full"
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1">
+                        <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">
+                          {t("purchases.cost")}
+                        </span>
+                        <MoneyInput
+                          value={item.unitCost}
+                          onValueChange={(v) =>
+                            updateLine(item.productId, { unitCost: v })
+                          }
+                          currency={currency}
+                          min={0}
+                          onKeyDown={dismissKeyboardOnEnter}
+                          inputSize="sm"
+                          fullWidth
+                        />
+                      </label>
+                    </div>
+
+                    {/* Subtotal row */}
+                    <div className="flex items-center justify-between border-t border-slate-100 pt-2">
+                      <span className="text-xs text-slate-500">
+                        {t("purchases.subtotal")}
+                      </span>
+                      <span
+                        className="text-sm font-bold tabular-nums text-slate-900"
+                        dir="ltr"
+                      >
+                        {formatCurrency(
+                          calculateLineSubtotal(item.quantity, item.unitCost),
+                          currency,
+                        )}
+                      </span>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -815,100 +878,105 @@ export function PurchaseEntryScreen() {
                 className="flex flex-col gap-3"
                 onSubmit={form.handleSubmit(() => setConfirmOpen(true))}
               >
-                <div className="relative flex flex-col gap-3">
-                  <FormField label={t("purchases.supplierName")}>
-                    <Input
-                      {...form.register("supplierName")}
-                      onFocus={() => setSupplierFieldFocused(true)}
-                      onBlur={() => {
-                        window.setTimeout(
-                          () => setSupplierFieldFocused(false),
-                          120,
-                        );
-                      }}
-                    />
-                  </FormField>
-                  <FormField label={t("purchases.supplierPhone")}>
-                    <Input
-                      {...form.register("supplierPhone")}
-                      onFocus={() => setSupplierFieldFocused(true)}
-                      onBlur={() => {
-                        window.setTimeout(
-                          () => setSupplierFieldFocused(false),
-                          120,
-                        );
-                      }}
-                    />
-                  </FormField>
-                  {supplierSuggestions.length > 0 && (
-                    <ul className="absolute left-0 right-0 top-full z-20 mt-1 max-h-44 overflow-auto rounded-xl border border-slate-200 bg-white shadow-md divide-y divide-slate-100">
-                      {supplierSuggestions.map((s) => (
-                        <li key={s.id}>
-                          <button
-                            type="button"
-                            onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => selectSupplier(s)}
-                            className="w-full text-start px-3 py-2 hover:bg-slate-50"
-                          >
-                            <p className="text-sm font-medium text-slate-800 truncate">
-                              {s.name}
-                            </p>
-                            {s.phone && (
-                              <p className="text-xs text-slate-500 font-mono truncate">
-                                {s.phone}
-                              </p>
-                            )}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
+                {/* Supplier — compact selector; the select sheet opens on tap */}
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs font-medium text-slate-600 uppercase tracking-wide">
+                    {t("purchases.supplierName")}
+                  </span>
+                  {watchedSupplierName || watchedSupplierPhone ? (
+                    /* Selected supplier chip */
+                    <div className="flex items-center gap-2 rounded-xl border border-border-default bg-surface px-3 py-2">
+                      <Store
+                        size={15}
+                        aria-hidden
+                        className="shrink-0 text-slate-400"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-800 truncate">
+                          {watchedSupplierName || "—"}
+                        </p>
+                        {watchedSupplierPhone && (
+                          <p className="text-xs text-slate-500 font-mono truncate">
+                            {watchedSupplierPhone}
+                          </p>
+                        )}
+                      </div>
+                      {/* Change — reopens the sheet */}
+                      <button
+                        type="button"
+                        onClick={() => setSupplierSheetOpen(true)}
+                        aria-label={t("purchases.pickSupplier")}
+                        className="shrink-0 rounded-lg p-1 text-slate-400 hover:bg-surface-soft hover:text-slate-600 transition-colors"
+                      >
+                        <Search size={14} aria-hidden />
+                      </button>
+                      {/* Clear */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          form.setValue("supplierName", "", {
+                            shouldDirty: true,
+                          });
+                          form.setValue("supplierPhone", "", {
+                            shouldDirty: true,
+                          });
+                        }}
+                        aria-label={t("purchases.clearSupplier")}
+                        className="shrink-0 rounded-lg p-1 text-slate-400 hover:bg-danger-soft hover:text-danger transition-colors"
+                      >
+                        <X size={14} aria-hidden />
+                      </button>
+                    </div>
+                  ) : (
+                    /* Empty state — "Select supplier" button */
+                    <button
+                      type="button"
+                      onClick={() => setSupplierSheetOpen(true)}
+                      className={clsx(
+                        "flex items-center gap-2 w-full rounded-xl border border-dashed border-border-default",
+                        "bg-surface px-3 py-2.5 text-sm text-slate-500",
+                        "hover:border-border-strong hover:bg-surface-soft hover:text-slate-700 transition-colors",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
+                      )}
+                    >
+                      <Store size={15} aria-hidden className="shrink-0" />
+                      <span>{t("purchases.pickSupplier")}</span>
+                    </button>
                   )}
                 </div>
 
                 <FormField label={t("purchases.paymentMethod")}>
-                  <SearchableSelect
-                    value={form.watch("paymentMethod")}
-                    onValueChange={(value) =>
-                      form.setValue(
-                        "paymentMethod",
-                        (value ??
-                          "cash") as PurchaseFormSchema["paymentMethod"],
-                      )
+                  <PaymentMethodControl
+                    value={watchedPaymentMethod as PurchaseFormSchema["paymentMethod"]}
+                    onChange={(v) =>
+                      form.setValue("paymentMethod", v, { shouldDirty: true })
                     }
-                    placeholder={t("purchases.paymentMethod")}
-                    searchPlaceholder={t("common.search")}
-                    options={[
-                      { value: "cash", label: t("common.cash") },
-                      { value: "card", label: t("common.card") },
-                      { value: "mixed", label: t("common.mixed") },
-                      { value: "credit", label: t("common.credit") },
-                    ]}
+                    label={t("purchases.paymentMethod")}
+                    available={availablePaymentMethods}
                   />
                 </FormField>
 
                 <div className="grid grid-cols-2 gap-3">
                   <FormField label={t("purchases.discount")}>
-                    <Input
-                      type="number"
-                      inputMode="decimal"
-                      enterKeyHint="done"
-                      step="0.01"
+                    <MoneyInputRHF
+                      name="discountAmount"
+                      control={form.control}
+                      currency={currency}
+                      min={0}
                       onKeyDown={dismissKeyboardOnEnter}
-                      {...form.register("discountAmount", {
-                        valueAsNumber: true,
-                      })}
                     />
                   </FormField>
-                  <FormField label={t("purchases.tax")}>
-                    <Input
-                      type="number"
-                      inputMode="decimal"
-                      enterKeyHint="done"
-                      step="0.01"
-                      onKeyDown={dismissKeyboardOnEnter}
-                      {...form.register("taxAmount", { valueAsNumber: true })}
-                    />
-                  </FormField>
+                  {taxEnabled && (
+                    <FormField label={t("purchases.tax")}>
+                      <MoneyInputRHF
+                        name="taxAmount"
+                        control={form.control}
+                        currency={currency}
+                        min={0}
+                        onKeyDown={dismissKeyboardOnEnter}
+                      />
+                    </FormField>
+                  )}
                 </div>
 
                 {isMixedPurchase ? (
@@ -918,21 +986,13 @@ export function PurchaseEntryScreen() {
                         <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">
                           {t("common.cash")}
                         </span>
-                        <Input
-                          type="number"
-                          inputMode="decimal"
-                          enterKeyHint="done"
-                          step="0.01"
+                        <MoneyInput
                           value={watchedCashAmount}
+                          currency={currency}
+                          min={0}
                           onKeyDown={dismissKeyboardOnEnter}
-                          onChange={(e) => {
-                            const v =
-                              e.target.value === ""
-                                ? 0
-                                : Number(e.target.value);
-                            const safe = Number.isFinite(v)
-                              ? Math.max(0, v)
-                              : 0;
+                          onValueChange={(v) => {
+                            const safe = Math.max(0, v);
                             form.setValue("cashAmount", safe, {
                               shouldDirty: true,
                               shouldValidate: true,
@@ -949,21 +1009,13 @@ export function PurchaseEntryScreen() {
                         <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">
                           {t("common.card")}
                         </span>
-                        <Input
-                          type="number"
-                          inputMode="decimal"
-                          enterKeyHint="done"
-                          step="0.01"
+                        <MoneyInput
                           value={watchedCardAmount}
+                          currency={currency}
+                          min={0}
                           onKeyDown={dismissKeyboardOnEnter}
-                          onChange={(e) => {
-                            const v =
-                              e.target.value === ""
-                                ? 0
-                                : Number(e.target.value);
-                            const safe = Number.isFinite(v)
-                              ? Math.max(0, v)
-                              : 0;
+                          onValueChange={(v) => {
+                            const safe = Math.max(0, v);
                             form.setValue("cardAmount", safe, {
                               shouldDirty: true,
                               shouldValidate: true,
@@ -981,28 +1033,20 @@ export function PurchaseEntryScreen() {
                 ) : watchedPaymentMethod === "card" ? null : (
                   <FormField label={t("purchases.actualPaid")}>
                     <div className="flex gap-2">
-                      <Input
-                        type="number"
-                        inputMode="decimal"
-                        enterKeyHint="done"
-                        step="0.01"
+                      <MoneyInput
                         value={
                           Number.isFinite(actualPaidAmount)
                             ? actualPaidAmount
                             : 0
                         }
-                        onChange={(e) => {
+                        currency={currency}
+                        min={0}
+                        onValueChange={(v) => {
                           setIsPaidAmountManuallyEdited(true);
-                          const v =
-                            e.target.value === "" ? 0 : Number(e.target.value);
-                          form.setValue(
-                            "paidAmount",
-                            Number.isFinite(v) ? v : 0,
-                            {
-                              shouldDirty: true,
-                              shouldValidate: true,
-                            },
-                          );
+                          form.setValue("paidAmount", v, {
+                            shouldDirty: true,
+                            shouldValidate: true,
+                          });
                         }}
                         onKeyDown={dismissKeyboardOnEnter}
                         className="flex-1"
@@ -1055,28 +1099,28 @@ export function PurchaseEntryScreen() {
                 </div>
 
                 {!hasValidTotal && draftItems.length > 0 && (
-                  <p className="text-xs text-red-600 font-medium">
+                  <p className="text-xs text-danger font-medium">
                     {t("purchases.invalidTotal")}
                   </p>
                 )}
                 {isCreditPurchase &&
                   !hasCreditSupplier &&
                   draftItems.length > 0 && (
-                    <p className="text-xs text-red-600 font-medium">
+                    <p className="text-xs text-danger font-medium">
                       {t("purchases.creditSupplierRequired")}
                     </p>
                   )}
                 {isMixedPurchase &&
                   !isMixedSplitValid &&
                   draftItems.length > 0 && (
-                    <p className="text-xs text-red-600 font-medium">
+                    <p className="text-xs text-danger font-medium">
                       {t("purchases.mixedSumMismatch")}
                     </p>
                   )}
                 {hasValidTotal &&
                   !hasEnoughPayment &&
                   draftItems.length > 0 && (
-                    <p className="text-xs text-red-600 font-medium">
+                    <p className="text-xs text-danger font-medium">
                       {t("purchases.paidBelowTotal")}
                     </p>
                   )}
@@ -1152,6 +1196,145 @@ export function PurchaseEntryScreen() {
               highlight
             />
           )}
+        </div>
+      </Modal>
+
+      {/* ── Supplier select sheet ────────────────────────────────────────── */}
+      <Modal
+        open={supplierSheetOpen}
+        title={t("purchases.pickSupplier")}
+        onClose={() => {
+          setSupplierSheetOpen(false);
+          setSupplierSearch("");
+        }}
+      >
+        <div className="flex flex-col gap-3">
+          {/* Search input */}
+          <div className="relative">
+            <Search
+              size={15}
+              aria-hidden
+              className="absolute start-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+            />
+            <input
+              type="text"
+              value={supplierSearch}
+              onChange={(e) => setSupplierSearch(e.target.value)}
+              placeholder={t("purchases.searchSuppliers")}
+              aria-label={t("purchases.searchSuppliers")}
+              className={clsx(
+                "w-full rounded-xl border border-border-default bg-surface py-2 ps-9 pe-3",
+                "text-sm text-slate-800 placeholder:text-slate-400",
+                "focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-border-strong",
+                "[font-size:16px]", // prevents mobile zoom
+              )}
+            />
+          </div>
+
+          {/* Supplier list */}
+          {(() => {
+            const needle = supplierSearch.trim().toLowerCase();
+            const filtered = (suppliers ?? [])
+              .filter(
+                (s) =>
+                  !needle ||
+                  s.name.toLowerCase().includes(needle) ||
+                  s.normalizedPhone?.includes(normalizePhone(supplierSearch)),
+              )
+              .slice(0, 20);
+
+            if (filtered.length === 0) {
+              return (
+                <p className="py-4 text-center text-sm text-slate-500">
+                  {t("purchases.noSuppliersFound")}
+                </p>
+              );
+            }
+
+            return (
+              <ul className="max-h-64 overflow-y-auto divide-y divide-slate-100 rounded-xl border border-border-default">
+                {filtered.map((supplier) => (
+                  <li key={supplier.id}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        selectSupplier(supplier);
+                        setSupplierSheetOpen(false);
+                        setSupplierSearch("");
+                      }}
+                      className="w-full text-start px-3 py-2.5 hover:bg-surface-soft transition-colors"
+                    >
+                      <p className="text-sm font-medium text-slate-800 truncate">
+                        {supplier.name}
+                      </p>
+                      {supplier.phone && (
+                        <p className="text-xs text-slate-500 font-mono">
+                          {supplier.phone}
+                        </p>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            );
+          })()}
+
+          {/* Manual entry — for suppliers not yet in the database */}
+          <details className="group">
+            <summary className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-info hover:text-info/80 transition-colors list-none">
+              <span className="rotate-0 transition-transform group-open:rotate-90">
+                ›
+              </span>
+              {t("purchases.enterManually")}
+            </summary>
+            <div className="mt-2 flex flex-col gap-2">
+              <input
+                type="text"
+                placeholder={t("purchases.supplierName")}
+                aria-label={t("purchases.supplierName")}
+                defaultValue={watchedSupplierName}
+                onBlur={(e) =>
+                  form.setValue("supplierName", e.target.value.trim(), {
+                    shouldDirty: true,
+                  })
+                }
+                className={clsx(
+                  "w-full rounded-xl border border-border-default bg-surface px-3 py-2",
+                  "text-sm text-slate-800 placeholder:text-slate-400",
+                  "focus:outline-none focus:ring-2 focus:ring-brand/30",
+                  "[font-size:16px]",
+                )}
+              />
+              <input
+                type="tel"
+                placeholder={t("purchases.supplierPhone")}
+                aria-label={t("purchases.supplierPhone")}
+                defaultValue={watchedSupplierPhone}
+                onBlur={(e) =>
+                  form.setValue("supplierPhone", e.target.value.trim(), {
+                    shouldDirty: true,
+                  })
+                }
+                className={clsx(
+                  "w-full rounded-xl border border-border-default bg-surface px-3 py-2",
+                  "text-sm text-slate-800 placeholder:text-slate-400",
+                  "focus:outline-none focus:ring-2 focus:ring-brand/30",
+                  "[font-size:16px]",
+                )}
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setSupplierSheetOpen(false);
+                  setSupplierSearch("");
+                }}
+              >
+                {t("common.close")}
+              </Button>
+            </div>
+          </details>
         </div>
       </Modal>
     </>

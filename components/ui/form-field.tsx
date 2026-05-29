@@ -27,7 +27,7 @@ export function FormField({
         <label htmlFor={htmlFor} className={typographyClasses.label}>
           {label}{" "}
           {required && (
-            <span className="text-red-500" aria-hidden="true">
+            <span className="text-danger" aria-hidden="true">
               *
             </span>
           )}

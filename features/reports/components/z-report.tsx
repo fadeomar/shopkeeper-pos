@@ -7,7 +7,7 @@ import { db } from "@/lib/db/schema";
 import { settingsRepo } from "@/lib/db/repositories";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Select } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Input } from "@/components/ui/input";
 import { PageShell } from "@/components/ui/page-shell";
 import { PageHeader } from "@/components/ui/page-header";
@@ -251,15 +251,16 @@ export function ZReport() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <label className="flex flex-col gap-1 text-xs font-medium text-slate-600 sm:w-48">
             {t("reports.period")}
-            <Select
+            <SearchableSelect
               value={range}
-              onChange={(e) => setRange(e.target.value as ReportRange)}
-            >
-              <option value="today">{t("reports.zRangeToday")}</option>
-              <option value="week">{t("reports.zRangeThisWeek")}</option>
-              <option value="month">{t("reports.thisMonth")}</option>
-              <option value="custom">{t("reports.zRangeCustom")}</option>
-            </Select>
+              onValueChange={(v) => setRange((v ?? "today") as ReportRange)}
+              options={[
+                { value: "today", label: t("reports.zRangeToday") },
+                { value: "week", label: t("reports.zRangeThisWeek") },
+                { value: "month", label: t("reports.thisMonth") },
+                { value: "custom", label: t("reports.zRangeCustom") },
+              ]}
+            />
           </label>
           {range === "custom" && (
             <>
@@ -489,7 +490,7 @@ function Row({
 }) {
   return (
     <div
-      className={`flex items-center justify-between py-2 text-sm ${highlight ? "bg-emerald-50 -mx-2 px-2 rounded-lg" : ""}`}
+      className={`flex items-center justify-between py-2 text-sm ${highlight ? "bg-success-soft -mx-2 px-2 rounded-lg" : ""}`}
     >
       <span
         className={bold ? "font-semibold text-slate-800" : "text-slate-600"}

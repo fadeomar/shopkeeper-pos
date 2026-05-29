@@ -22,9 +22,9 @@ function Row({
 }) {
   const toneClass =
     tone === "positive"
-      ? "text-emerald-700"
+      ? "text-success"
       : tone === "warning"
-        ? "text-red-700"
+        ? "text-danger"
         : "text-slate-900";
   return (
     <div className="flex items-center justify-between gap-3 py-1.5">

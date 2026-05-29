@@ -14,7 +14,7 @@ export default function BillDetailsPage({ params }: { params: Promise<{ billId: 
       <div>
         <Link
           href="/bills"
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors"
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-info hover:text-info/80 transition-colors"
         >
           {dir === 'rtl' ? '→' : '←'} {t('bills.backToBills')}
         </Link>

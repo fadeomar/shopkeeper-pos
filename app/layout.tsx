@@ -19,17 +19,21 @@ export const metadata: Metadata = {
   },
 };
 
-export const viewport: Viewport = { themeColor: '#0f172a' };
+export const viewport: Viewport = { themeColor: '#0b1220' };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     /* suppressHydrationWarning because LocaleProvider sets lang/dir on mount */
-    <html lang="en" dir="ltr" suppressHydrationWarning>
+    <html
+      lang="en"
+      dir="ltr"
+      suppressHydrationWarning
+    >
       {/* Runs before React hydration so lang/dir is correct even if hydration stalls offline */}
       <head>
         <script dangerouslySetInnerHTML={{ __html: `(function(){try{var l=localStorage.getItem('shopkeeper-pos-locale');if(l==='ar'){var d=document.documentElement;d.lang='ar';d.dir='rtl';}}catch(e){}})()` }} />
       </head>
-      <body className="bg-slate-50 min-h-screen" suppressHydrationWarning>
+      <body className="bg-app min-h-screen text-fg" suppressHydrationWarning>
         <LocaleProvider>
           <SettingsProvider>
             <ToastProvider>

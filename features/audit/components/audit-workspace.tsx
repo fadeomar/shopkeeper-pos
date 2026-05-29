@@ -8,7 +8,7 @@ import { listAuditEvents } from "@/lib/services/audit-service";
 import type { AuditAction, AuditCategory, AuditEvent } from "@/types/domain";
 import { DataTable, useDataTableLabels } from "@/components/ui/data-table";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Card } from "@/components/ui/card";
 import { PageShell } from "@/components/ui/page-shell";
 import { PageHeader } from "@/components/ui/page-header";
@@ -35,16 +35,16 @@ function actionKey(a: AuditAction): string {
 }
 
 const CATEGORY_BADGE_TONE: Record<AuditCategory, string> = {
-  product: 'bg-blue-50 text-blue-700 ring-blue-200',
-  inventory: 'bg-amber-50 text-amber-800 ring-amber-200',
-  bill: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+  product: 'bg-info-soft text-info ring-info/30',
+  inventory: 'bg-warning-soft text-warning ring-warning/30',
+  bill: 'bg-success-soft text-success ring-success/30',
   purchase: 'bg-violet-50 text-violet-700 ring-violet-200',
   customer: 'bg-sky-50 text-sky-700 ring-sky-200',
   supplier: 'bg-fuchsia-50 text-fuchsia-700 ring-fuchsia-200',
   settings: 'bg-slate-50 text-slate-700 ring-slate-200',
   shift: 'bg-indigo-50 text-indigo-700 ring-indigo-200',
   user: 'bg-rose-50 text-rose-700 ring-rose-200',
-  sync: 'bg-orange-50 text-orange-700 ring-orange-200',
+  sync: 'bg-warning-soft text-warning ring-warning/20',
 };
 
 export function AuditWorkspace() {
@@ -152,21 +152,27 @@ export function AuditWorkspace() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <label className="flex flex-col gap-1 text-xs font-medium text-slate-600 sm:w-48">
             {t('audit.filterCategory')}
-            <Select value={category} onChange={(e) => setCategory(e.target.value as AuditCategory | '')}>
-              <option value="">{t('audit.filterAllCategories')}</option>
-              {CATEGORIES.map((c) => (
-                <option key={c} value={c}>{t(categoryKey(c))}</option>
-              ))}
-            </Select>
+            <SearchableSelect
+              value={category || null}
+              onValueChange={(v) => setCategory((v ?? '') as AuditCategory | '')}
+              clearable
+              placeholder={t('audit.filterAllCategories')}
+              options={[
+                ...CATEGORIES.map((c) => ({ value: c, label: t(categoryKey(c)) })),
+              ]}
+            />
           </label>
           <label className="flex flex-col gap-1 text-xs font-medium text-slate-600 sm:w-48">
             {t('audit.filterAction')}
-            <Select value={action} onChange={(e) => setAction(e.target.value as AuditAction | '')}>
-              <option value="">{t('audit.filterAllActions')}</option>
-              {ACTIONS.map((a) => (
-                <option key={a} value={a}>{t(actionKey(a))}</option>
-              ))}
-            </Select>
+            <SearchableSelect
+              value={action || null}
+              onValueChange={(v) => setAction((v ?? '') as AuditAction | '')}
+              clearable
+              placeholder={t('audit.filterAllActions')}
+              options={[
+                ...ACTIONS.map((a) => ({ value: a, label: t(actionKey(a)) })),
+              ]}
+            />
           </label>
           <label className="flex flex-1 flex-col gap-1 text-xs font-medium text-slate-600">
             {t('audit.filterSearch')}

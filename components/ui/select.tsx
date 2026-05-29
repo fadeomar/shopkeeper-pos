@@ -11,7 +11,7 @@ export function Select({
         "w-full px-3 py-2.5 text-sm rounded-xl border border-slate-200 bg-white",
         "text-slate-900",
         "transition-colors duration-150",
-        "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500",
+        "focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand",
         "disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-50",
         "cursor-pointer",
         className,
