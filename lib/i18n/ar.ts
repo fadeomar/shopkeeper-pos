@@ -624,6 +624,9 @@ export const ar: TranslationDict = {
     shortcutClearBarcode: "Esc — مسح حقل الباركود",
     noShiftOpenWarning:
       "لا يوجد دوام مفتوح — لن يتم احتساب هذه الفاتورة في تسوية الكاش.",
+    shiftRequiredError:
+      "يجب فتح دوام لإتمام البيع. افتح دواماً للمتابعة.",
+    discountLimitExceeded: "الخصم يتجاوز الحد المسموح به وهو {{limit}}.",
     openShift: "فتح دوام",
     itemAdded: "تمت إضافة {{name}}.",
     itemUpdated: "{{name}} ×{{qty}}",
@@ -757,6 +760,8 @@ export const ar: TranslationDict = {
     saved: "تم حفظ الإعدادات.",
     invalidCurrency:
       "يجب أن تكون العملة رمز ISO من ثلاثة أحرف (مثل USD أو EUR أو ILS).",
+    atLeastOnePaymentMethod:
+      "يجب إبقاء طريقة دفع واحدة على الأقل مفعّلة (نقد أو بطاقة أو آجل).",
     language: "اللغة",
     languageDesc: "اختر لغة العرض المفضلة",
     english: "English",
@@ -820,8 +825,8 @@ export const ar: TranslationDict = {
     taxModeNone: "بدون ضريبة",
     taxModeInclusive: "الضريبة مشمولة في السعر",
     taxModeExclusive: "الضريبة تضاف فوق السعر",
-    defaultDiscountLimit: "الحد الأقصى للخصم في الفاتورة (%)",
-    defaultDiscountLimitHint: "لا يمكن للكاشير تطبيق خصم أعلى من هذه النسبة. اضبط 0 لتعطيل الخصومات.",
+    defaultDiscountLimit: "الحد الأقصى للخصم في الفاتورة",
+    defaultDiscountLimitHint: "لا يمكن للكاشير تطبيق خصم أعلى من هذا المبلغ في الفاتورة. اضبط 0 لإلغاء الحد.",
     requireShift: "يتطلب وردية مفتوحة لإتمام المبيعات",
     // Payment methods
     paymentMethods: "طرق الدفع",
@@ -1227,6 +1232,7 @@ export const ar: TranslationDict = {
     // Shared bill / purchase
     DISCOUNT_TOO_HIGH:
       "الخصم لا يمكن أن يتجاوز المجموع الفرعي بالإضافة إلى الضريبة.",
+    DISCOUNT_EXCEEDS_LIMIT: "الخصم يتجاوز الحد المسموح به وهو {{limit}}.",
     PRODUCTS_MISSING: "بعض المنتجات لم يتم العثور عليها في المخزون.",
     LINE_PRODUCT_NOT_FOUND: "المنتج {{name}} غير موجود.",
     VOID_REASON_REQUIRED: "سبب الإلغاء مطلوب.",
@@ -1246,6 +1252,8 @@ export const ar: TranslationDict = {
     BILL_NOT_FINALIZED: "لا يمكن إلغاء إلا الفواتير المكتملة.",
     BILL_ITEM_NOT_FOUND: "صنف الفاتورة غير موجود.",
     BILL_VOIDED_NO_RETURN: "الفواتير الملغاة لا يمكن إرجاعها.",
+    BILL_SHIFT_REQUIRED: "افتح دواماً قبل إتمام عملية البيع.",
+    PAYMENT_METHOD_DISABLED: "طريقة الدفع هذه معطّلة في الإعدادات.",
     // Purchase-specific
     PURCHASE_NO_ITEMS: "أضف منتجاً واحداً على الأقل قبل حفظ المشترى.",
     PURCHASE_CREDIT_NEEDS_SUPPLIER:

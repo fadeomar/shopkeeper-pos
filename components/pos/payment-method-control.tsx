@@ -5,8 +5,12 @@
  * SearchableSelect dropdown for payment method selection.
  *
  * Designed for touch-first POS use: large tap targets, instant visual
- * feedback, no extra tap to open a dropdown. Renders as a 2×2 grid on
- * mobile and a single 4-column row on sm+ screens.
+ * feedback, no extra tap to open a dropdown. Renders 2 per row on mobile
+ * and one row of N on sm+ screens, where N is the number of enabled methods.
+ *
+ * The `available` prop gates which methods render — it is driven by the
+ * store's payment-method settings (enableCash/enableCard/enableCredit), so a
+ * disabled method is never selectable. When omitted, all four render.
  *
  * ARIA: uses role="radiogroup" + role="radio" + aria-checked so the
  * selection is announced correctly by screen readers.
@@ -25,6 +29,14 @@ interface PaymentOption {
   labelKey: string;
 }
 
+// Static col-count classes (kept literal so Tailwind's JIT scanner sees them).
+const SM_COLS: Record<number, string> = {
+  1: 'sm:grid-cols-1',
+  2: 'sm:grid-cols-2',
+  3: 'sm:grid-cols-3',
+  4: 'sm:grid-cols-4',
+};
+
 // Icon choices:
 //   Banknote → Cash: physical note, universal "cash" metaphor
 //   CreditCard → Card: self-evident
@@ -42,18 +54,37 @@ interface Props {
   onChange: (value: PaymentMethod) => void;
   /** aria-label for the radiogroup — pass t('billing.paymentMethod') */
   label: string;
+  /**
+   * Which methods to show, in render order. Defaults to all four.
+   * Driven by store payment-method settings so disabled methods never appear.
+   */
+  available?: readonly PaymentMethod[];
 }
 
-export function PaymentMethodControl({ value, onChange, label }: Props) {
+export function PaymentMethodControl({
+  value,
+  onChange,
+  label,
+  available,
+}: Props) {
   const { t } = useLocale();
+
+  const options = available
+    ? OPTIONS.filter((o) => available.includes(o.value))
+    : OPTIONS;
+  // Fall back to all options if a bad/empty list was passed (never render none).
+  const visible = options.length > 0 ? options : OPTIONS;
 
   return (
     <div
       role="radiogroup"
       aria-label={label}
-      className="grid grid-cols-2 sm:grid-cols-4 gap-1.5"
+      className={clsx(
+        'grid grid-cols-2 gap-1.5',
+        SM_COLS[visible.length] ?? 'sm:grid-cols-4',
+      )}
     >
-      {OPTIONS.map(({ value: v, icon: Icon, labelKey }) => {
+      {visible.map(({ value: v, icon: Icon, labelKey }) => {
         const active = value === v;
         return (
           <button

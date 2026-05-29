@@ -595,6 +595,8 @@ export interface TranslationDict {
     shortcutFinalize: string;
     shortcutClearBarcode: string;
     noShiftOpenWarning: string;
+    shiftRequiredError: string;
+    discountLimitExceeded: string;
     openShift: string;
     itemAdded: string;
     itemUpdated: string;
@@ -715,6 +717,7 @@ export interface TranslationDict {
     save: string;
     saved: string;
     invalidCurrency: string;
+    atLeastOnePaymentMethod: string;
     language: string;
     languageDesc: string;
     english: string;
@@ -1144,6 +1147,7 @@ export interface TranslationDict {
     PRODUCT_NOT_FOUND: string;
     // Shared bill / purchase
     DISCOUNT_TOO_HIGH: string;
+    DISCOUNT_EXCEEDS_LIMIT: string;
     PRODUCTS_MISSING: string;
     LINE_PRODUCT_NOT_FOUND: string;
     VOID_REASON_REQUIRED: string;
@@ -1161,6 +1165,8 @@ export interface TranslationDict {
     BILL_NOT_FINALIZED: string;
     BILL_ITEM_NOT_FOUND: string;
     BILL_VOIDED_NO_RETURN: string;
+    BILL_SHIFT_REQUIRED: string;
+    PAYMENT_METHOD_DISABLED: string;
     // Purchase-specific
     PURCHASE_NO_ITEMS: string;
     PURCHASE_CREDIT_NEEDS_SUPPLIER: string;

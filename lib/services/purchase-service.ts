@@ -3,6 +3,7 @@ import { db } from "@/lib/db/schema";
 import { logAudit } from "@/lib/services/audit-service";
 import { SETTINGS_ID, supplierRepo } from "@/lib/db/repositories";
 import { calculateBillTotals, calculateChange, calculateLineSubtotal } from "@/lib/utils/calculations";
+import { assertPaymentMethodEnabled, effectiveTaxAmount } from "@/lib/services/settings-policy";
 import { nowIso } from "@/lib/utils/date";
 import { MONEY_EPSILON, addMoney, allocateMoney, roundMoney, subtractMoney } from "@/lib/utils/money";
 import { createId, createPurchaseNumber } from "@/lib/utils/id";
@@ -109,6 +110,16 @@ export async function createFinalizedPurchase(input: {
     throw new AppError(AppErrorCode.PURCHASE_NO_ITEMS);
   }
 
+  // Normalise tax up front so the pre-transaction payment checks use the same
+  // total the transaction commits (a stale client could otherwise send tax
+  // under a non-"exclusive" mode and trip a false PURCHASE_PAID_TOO_LOW /
+  // PURCHASE_MIXED_SPLIT_MISMATCH). The transaction re-reads settings as the
+  // authoritative copy.
+  const previewSettings = await db.settings.get(SETTINGS_ID);
+  const previewTaxAmount = previewSettings
+    ? effectiveTaxAmount(previewSettings, input.form.taxAmount)
+    : input.form.taxAmount;
+
   const totalAmountPreview = calculateBillTotals(
     input.items.map((item) => ({
       quantity: item.quantity,
@@ -119,7 +130,7 @@ export async function createFinalizedPurchase(input: {
       unitSellPrice: item.unitCost,
     })),
     input.form.discountAmount,
-    input.form.taxAmount,
+    previewTaxAmount,
   ).totalAmount;
 
   if (totalAmountPreview < 0) {
@@ -170,6 +181,10 @@ export async function createFinalizedPurchase(input: {
         );
       }
 
+      // Settings-driven rules (authoritative copy of the purchase UI gates).
+      assertPaymentMethodEnabled(settings, input.form.paymentMethod);
+      const taxAmount = effectiveTaxAmount(settings, input.form.taxAmount);
+
       const productIds = input.items.map((item) => item.productId);
       const liveProducts = await db.products.bulkGet(productIds);
       if (liveProducts.some((product) => !product)) {
@@ -199,7 +214,7 @@ export async function createFinalizedPurchase(input: {
           unitSellPrice: item.unitCost,
         })),
         input.form.discountAmount,
-        input.form.taxAmount,
+        taxAmount,
       );
 
       const totalAmount = totals.totalAmount;
@@ -250,7 +265,7 @@ export async function createFinalizedPurchase(input: {
         paymentMethod: input.form.paymentMethod,
         subtotal: totals.subtotal,
         discountAmount: input.form.discountAmount,
-        taxAmount: input.form.taxAmount,
+        taxAmount,
         totalAmount,
         paidAmount: split.paidAmount,
         changeAmount: split.changeAmount,

@@ -18,6 +18,7 @@ export const AppErrorCode = {
 
   // ── Shared bill / purchase validation ─────────────────────────────────────
   DISCOUNT_TOO_HIGH: 'DISCOUNT_TOO_HIGH',
+  DISCOUNT_EXCEEDS_LIMIT: 'DISCOUNT_EXCEEDS_LIMIT',
   PRODUCTS_MISSING: 'PRODUCTS_MISSING',
   LINE_PRODUCT_NOT_FOUND: 'LINE_PRODUCT_NOT_FOUND',
   VOID_REASON_REQUIRED: 'VOID_REASON_REQUIRED',
@@ -36,6 +37,7 @@ export const AppErrorCode = {
   BILL_NOT_FINALIZED: 'BILL_NOT_FINALIZED',
   BILL_ITEM_NOT_FOUND: 'BILL_ITEM_NOT_FOUND',
   BILL_VOIDED_NO_RETURN: 'BILL_VOIDED_NO_RETURN',
+  BILL_SHIFT_REQUIRED: 'BILL_SHIFT_REQUIRED',
 
   // ── Purchase-specific ──────────────────────────────────────────────────────
   PURCHASE_NO_ITEMS: 'PURCHASE_NO_ITEMS',
@@ -67,6 +69,8 @@ export const AppErrorCode = {
   CUSTOMER_REQUIRED: 'CUSTOMER_REQUIRED',
   SUPPLIER_REQUIRED: 'SUPPLIER_REQUIRED',
   PAYMENT_AMOUNT_INVALID: 'PAYMENT_AMOUNT_INVALID',
+  // Shared by bills + purchases — a disabled payment method was submitted.
+  PAYMENT_METHOD_DISABLED: 'PAYMENT_METHOD_DISABLED',
 
   // ── Import ─────────────────────────────────────────────────────────────────
   IMPORT_DUPLICATES: 'IMPORT_DUPLICATES',

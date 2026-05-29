@@ -14,6 +14,7 @@ import { MONEY_EPSILON, addMoney, roundMoney } from "@/lib/utils/money";
 import type { BillSplit } from "@/lib/utils/bill-split";
 import { createBillNumber, createId } from "@/lib/utils/id";
 import { buildSyncQueueItem, getSyncQueueId } from "@/lib/services/sync-queue-service";
+import { assertPaymentMethodEnabled, effectiveTaxAmount } from "@/lib/services/settings-policy";
 import type {
   Bill,
   BillDraftItem,
@@ -128,6 +129,17 @@ export async function createFinalizedBill(input: {
     throw new AppError(AppErrorCode.BILL_NO_ITEMS);
   }
 
+  // Normalise tax up front so the pre-transaction payment checks below use the
+  // same total the transaction will commit. Without this, a stale offline
+  // client that still sends a tax amount under a non-"exclusive" mode could
+  // trip a false BILL_PAID_TOO_LOW / BILL_MIXED_SPLIT_MISMATCH on a total that
+  // the transaction then discards. The transaction re-reads settings as the
+  // authoritative copy.
+  const previewSettings = await db.settings.get(SETTINGS_ID);
+  const previewTaxAmount = previewSettings
+    ? effectiveTaxAmount(previewSettings, input.form.taxAmount)
+    : input.form.taxAmount;
+
   const totalAmountPreview = calculateBillTotals(
     input.items.map((item) => ({
       quantity: item.quantity,
@@ -135,7 +147,7 @@ export async function createFinalizedBill(input: {
       unitSellPrice: item.unitSellPrice,
     })),
     input.form.discountAmount,
-    input.form.taxAmount,
+    previewTaxAmount,
   ).totalAmount;
 
   if (totalAmountPreview < 0) {
@@ -176,6 +188,24 @@ export async function createFinalizedBill(input: {
           "Settings row not found. Initialize settings before creating bills.",
         );
       }
+
+      // ── Settings-driven business rules (authoritative copy of the UI gates) ──
+      // The POS UI already blocks these, but enforce them here too so an
+      // offline/stale client (or a future caller) can't bypass store policy.
+      assertPaymentMethodEnabled(settings, input.form.paymentMethod);
+      if (
+        settings.defaultDiscountLimit &&
+        settings.defaultDiscountLimit > 0 &&
+        input.form.discountAmount > settings.defaultDiscountLimit
+      ) {
+        throw new AppError(AppErrorCode.DISCOUNT_EXCEEDS_LIMIT, {
+          limit: settings.defaultDiscountLimit,
+        });
+      }
+      // Normalise tax to the store's mode — only "exclusive" keeps a manual
+      // amount; "none"/"inclusive" force 0 regardless of what the form sent.
+      const taxAmount = effectiveTaxAmount(settings, input.form.taxAmount);
+
       const productIds = input.items.map((item) => item.productId);
       const liveProducts = await db.products.bulkGet(productIds);
 
@@ -224,7 +254,7 @@ export async function createFinalizedBill(input: {
           unitSellPrice: item.unitSellPrice,
         })),
         input.form.discountAmount,
-        input.form.taxAmount,
+        taxAmount,
       );
 
       const totalAmount = totals.totalAmount;
@@ -269,6 +299,9 @@ export async function createFinalizedBill(input: {
       // its open-state fields are immutable and totals are derived from
       // bills at read time.
       const activeShift = await db.shifts.where('status').equals('open').first();
+      if (settings.requireShift && !activeShift) {
+        throw new AppError(AppErrorCode.BILL_SHIFT_REQUIRED);
+      }
       const resolvedShiftId = activeShift?.id;
 
       const bill: Bill = {
@@ -283,7 +316,7 @@ export async function createFinalizedBill(input: {
         paymentMethod: input.form.paymentMethod,
         subtotal: totals.subtotal,
         discountAmount: input.form.discountAmount,
-        taxAmount: input.form.taxAmount,
+        taxAmount,
         totalAmount,
         paidAmount: split.paidAmount,
         changeAmount: split.changeAmount,

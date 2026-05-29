@@ -9,12 +9,16 @@ const OFFLINE_NAV_ROUTES = [
   "/products",
   "/inventory",
   "/reports",
+  "/reports/z",
   "/customers",
   "/suppliers",
   "/billing",
   "/bills",
   "/purchases/new",
   "/shift",
+  "/cash",
+  "/expenses",
+  "/audit",
   "/settings",
 ] as const;
 

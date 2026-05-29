@@ -369,6 +369,48 @@ export function PurchaseEntryScreen() {
   const hasCreditSupplier = Boolean(
     watchedSupplierName?.trim() || watchedSupplierPhone?.trim(),
   );
+
+  // ── Settings-driven enforcement (payment methods + tax mode) ──────────────
+  // Purchases share the store's payment-method toggles. requireShift and the
+  // discount limit are sell-side concerns and intentionally not applied here.
+  const enableCash = settings?.enableCash !== false;
+  const enableCard = settings?.enableCard !== false;
+  const enableCredit = settings?.enableCredit !== false;
+  const availablePaymentMethods = useMemo<
+    PurchaseFormSchema["paymentMethod"][]
+  >(() => {
+    const methods: PurchaseFormSchema["paymentMethod"][] = [];
+    if (enableCash) methods.push("cash");
+    if (enableCard) methods.push("card");
+    if (enableCash && enableCard) methods.push("mixed");
+    if (enableCredit) methods.push("credit");
+    return methods.length ? methods : ["cash"];
+  }, [enableCash, enableCard, enableCredit]);
+
+  useEffect(() => {
+    if (
+      !availablePaymentMethods.includes(
+        watchedPaymentMethod as PurchaseFormSchema["paymentMethod"],
+      )
+    ) {
+      form.setValue("paymentMethod", availablePaymentMethods[0], {
+        shouldDirty: false,
+      });
+    }
+  }, [availablePaymentMethods, watchedPaymentMethod, form]);
+
+  // Only "exclusive" shows a manual tax field (added on top). "none"/"inclusive"
+  // hide it and force 0 — matches billing and avoids double-counting inclusive.
+  const taxEnabled = settings?.taxMode === "exclusive";
+  useEffect(() => {
+    if (!taxEnabled && watchedTaxAmount !== 0) {
+      form.setValue("taxAmount", 0, {
+        shouldDirty: false,
+        shouldValidate: true,
+      });
+    }
+  }, [taxEnabled, watchedTaxAmount, form]);
+
   const hasValidTotal = purchaseSummary.totalAmount >= 0;
   const hasEnoughPayment =
     isCreditPurchase || isMixedPurchase || actualChangeAmount >= 0;
@@ -910,6 +952,7 @@ export function PurchaseEntryScreen() {
                       form.setValue("paymentMethod", v, { shouldDirty: true })
                     }
                     label={t("purchases.paymentMethod")}
+                    available={availablePaymentMethods}
                   />
                 </FormField>
 
@@ -923,15 +966,17 @@ export function PurchaseEntryScreen() {
                       onKeyDown={dismissKeyboardOnEnter}
                     />
                   </FormField>
-                  <FormField label={t("purchases.tax")}>
-                    <MoneyInputRHF
-                      name="taxAmount"
-                      control={form.control}
-                      currency={currency}
-                      min={0}
-                      onKeyDown={dismissKeyboardOnEnter}
-                    />
-                  </FormField>
+                  {taxEnabled && (
+                    <FormField label={t("purchases.tax")}>
+                      <MoneyInputRHF
+                        name="taxAmount"
+                        control={form.control}
+                        currency={currency}
+                        min={0}
+                        onKeyDown={dismissKeyboardOnEnter}
+                      />
+                    </FormField>
+                  )}
                 </div>
 
                 {isMixedPurchase ? (

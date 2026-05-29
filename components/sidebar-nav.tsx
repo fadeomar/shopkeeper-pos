@@ -88,7 +88,7 @@ export function SidebarNav() {
     // hidden on mobile — MobileBottomNav handles routing below lg.
     <nav
       aria-label={t('nav.mainNavLabel')}
-      className="hidden lg:flex lg:flex-col lg:flex-1 lg:px-3 lg:py-2"
+      className="hidden lg:flex lg:flex-col lg:flex-1 lg:px-3 lg:py-2 lg:gap-1"
     >
       {routes.map(({ href, key, icon: Icon }) => {
         const active = pathname === href || (href !== '/' && pathname.startsWith(href));
@@ -105,12 +105,17 @@ export function SidebarNav() {
               'ps-4 pe-3 py-2.5',
               active
                 ? [
-                    'bg-white/10 text-white',
+                    // Active = brand-tinted fill + accent bar + faint inset ring.
+                    // Distinct enough from hover that "I am here" never reads as
+                    // "I can click this".
+                    'bg-brand/20 text-white',
+                    'shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-brand)_35%,transparent)]',
                     // 3px brand bar on the inline-start edge for scannability.
                     'before:absolute before:inset-y-2 before:start-0',
                     'before:w-[3px] before:rounded-full before:bg-brand',
                   ]
-                : 'text-slate-300 hover:bg-white/10 hover:text-white',
+                : // Hover = barely-there wash; clearly weaker than the active fill.
+                  'text-slate-300 hover:bg-white/[0.045] hover:text-slate-100',
             )}
           >
             <Icon
@@ -119,7 +124,7 @@ export function SidebarNav() {
               aria-hidden
               className={clsx(
                 'shrink-0 transition-colors',
-                active ? 'text-white/80' : 'text-slate-400 group-hover:text-white',
+                active ? 'text-white' : 'text-slate-400 group-hover:text-slate-200',
               )}
             />
             <span className="flex-1 truncate">{t(key)}</span>

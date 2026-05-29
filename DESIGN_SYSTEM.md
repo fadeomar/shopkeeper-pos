@@ -136,9 +136,15 @@ Do not remove translations or hardcode English where translation keys exist. Use
 
 Use centralized sync statuses: online, offline, synced, pendingSync, conflict, and error. Existing domain statuses such as pending, syncing, failed, and blocked should map to semantic tones through `StatusPill` or wrapper components.
 
+Offline route coverage: every route reachable from the nav (sidebar + mobile "More" sheet) must be in the service-worker warm/precache lists so it works offline. Keep `NAV_ROUTES` in `public/sw.js` and `OFFLINE_NAV_ROUTES` in `components/pwa/sw-register.tsx` in sync with the nav, and **bump `CACHE_VERSION` in `sw.js`** whenever the precache list changes so clients pick it up.
+
 ## 19. Billing/cart/payment UI rules
 
 Billing UI must not change calculations. Use `PriceDisplay`, `PaymentBadge`, `CartSummaryCard`, and `CheckoutActionBar` as presentational wrappers only.
+
+Settings-driven enforcement (POS + purchases): store settings are authoritative and must actually gate behavior, never be cosmetic toggles. (1) **Payment methods** — `PaymentMethodControl` takes an `available` list derived from `enableCash/enableCard/enableCredit`; `mixed` only appears when both cash and card are on; a disabled method is auto-corrected off the form. (2) **`requireShift`** — a hard block on POS finalize (not just the soft "no shift" banner). (3) **`defaultDiscountLimit`** — a **currency amount** (use `MoneyInputRHF`, not a `%`), caps the POS discount (0 = no limit). (4) **`taxMode`** — only `exclusive` shows the manual tax field (added on top); `none` and `inclusive` hide it and force `taxAmount` to 0. There is no tax-rate engine, so an `inclusive` manual amount would be double-counted — never show it.
+
+These rules are enforced in the UI **and** defensively in the service layer via the shared helpers in `lib/services/settings-policy.ts` — `assertPaymentMethodEnabled(settings, method)` and `effectiveTaxAmount(settings, taxAmount)` — called by both `billing-service.ts` and `purchase-service.ts` so a stale/offline client can't bypass store policy (bad data would otherwise sync to the cloud). `AppError` codes: `BILL_SHIFT_REQUIRED` (bills only), `PAYMENT_METHOD_DISABLED` and `DISCOUNT_EXCEEDS_LIMIT` (shared).
 
 ## 20. Inventory/stock UI rules
 

@@ -7,6 +7,7 @@ import { settingsRepo } from "@/lib/db/repositories";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NumberFieldRHF } from "@/components/ui/number-field-rhf";
+import { MoneyInputRHF } from "@/components/ui/money-input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Settings as SettingsIcon } from "lucide-react";
 import { FormField } from "@/components/ui/form-field";
@@ -154,6 +155,14 @@ export default function SettingsPage() {
       push(t("settings.invalidCurrency"), "error");
       return;
     }
+    // At least one payment method must stay enabled — otherwise the POS would
+    // have no valid method and the service would reject every sale. (The POS
+    // falls back to cash visually, but the service treats cash as disabled too,
+    // so block the all-off state here at the source.)
+    if (!values.enableCash && !values.enableCard && !values.enableCredit) {
+      push(t("settings.atLeastOnePaymentMethod"), "error");
+      return;
+    }
     const saved = await settingsRepo.update({
       ...values,
       currency: normalizedCurrency,
@@ -277,13 +286,11 @@ export default function SettingsPage() {
               label={t("settings.defaultDiscountLimit")}
               hint={t("settings.defaultDiscountLimitHint")}
             >
-              <NumberFieldRHF
+              <MoneyInputRHF
                 name="defaultDiscountLimit"
                 control={form.control}
-                precision="integer"
+                currency={form.watch("currency") || "ILS"}
                 min={0}
-                max={100}
-                suffix="%"
               />
             </FormField>
           </div>

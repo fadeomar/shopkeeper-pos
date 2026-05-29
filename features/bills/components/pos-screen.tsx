@@ -546,6 +546,61 @@ export function PosScreen() {
     watchedCustomerName?.trim() || watchedCustomerPhone?.trim(),
   );
 
+  // ── Settings-driven enforcement ───────────────────────────────────────────
+  // Payment-method toggles (undefined = enabled). "mixed" needs both cash and
+  // card, so it only appears when both are on.
+  const enableCash = settings?.enableCash !== false;
+  const enableCard = settings?.enableCard !== false;
+  const enableCredit = settings?.enableCredit !== false;
+  const availablePaymentMethods = useMemo<BillFormSchema["paymentMethod"][]>(() => {
+    const methods: BillFormSchema["paymentMethod"][] = [];
+    if (enableCash) methods.push("cash");
+    if (enableCard) methods.push("card");
+    if (enableCash && enableCard) methods.push("mixed");
+    if (enableCredit) methods.push("credit");
+    // Never leave the cashier with zero ways to take payment.
+    return methods.length ? methods : ["cash"];
+  }, [enableCash, enableCard, enableCredit]);
+
+  // If the selected method was just disabled in settings, snap to the first
+  // allowed one so the form never holds a now-invalid method.
+  useEffect(() => {
+    if (
+      !availablePaymentMethods.includes(
+        watchedPaymentMethod as BillFormSchema["paymentMethod"],
+      )
+    ) {
+      form.setValue("paymentMethod", availablePaymentMethods[0], {
+        shouldDirty: false,
+      });
+    }
+  }, [availablePaymentMethods, watchedPaymentMethod, form]);
+
+  // requireShift turns the soft "no shift open" banner into a hard block.
+  // activeShift is `undefined` while loading and `null` when none is open —
+  // only block on an explicit null so we don't flicker during load.
+  const requireShift = settings?.requireShift === true;
+  const shiftBlocked = requireShift && activeShift === null;
+
+  // Cap the discount at the store's configured limit (0 = no limit).
+  const discountLimit = settings?.defaultDiscountLimit ?? 0;
+  const discountExceedsLimit =
+    discountLimit > 0 && watchedDiscountAmount > discountLimit;
+
+  // Only "exclusive" tax mode shows a manual tax field that is added on top.
+  // "none" and "inclusive" hide it and force the amount to 0 — there is no
+  // tax-rate engine yet, so an "inclusive" manual amount would be double
+  // counted by `total = subtotal - discount + tax`.
+  const taxEnabled = settings?.taxMode === "exclusive";
+  useEffect(() => {
+    if (!taxEnabled && watchedTaxAmount !== 0) {
+      form.setValue("taxAmount", 0, {
+        shouldDirty: false,
+        shouldValidate: true,
+      });
+    }
+  }, [taxEnabled, watchedTaxAmount, form]);
+
   // (Customer typeahead removed — replaced by CustomerSelectSheet modal)
 
   function selectCustomer(customer: Customer) {
@@ -560,6 +615,8 @@ export function PosScreen() {
     hasValidTotal &&
     hasEnoughPayment &&
     isMixedSplitValid &&
+    !shiftBlocked &&
+    !discountExceedsLimit &&
     (!isCreditSale || hasCreditCustomer);
 
   useEffect(() => {
@@ -1212,6 +1269,7 @@ export function PosScreen() {
                       form.setValue("paymentMethod", v, { shouldDirty: true })
                     }
                     label={t("billing.paymentMethod")}
+                    available={availablePaymentMethods}
                   />
                 </FormField>
 
@@ -1227,15 +1285,17 @@ export function PosScreen() {
                       />
                     </FormField>
                   )}
-                  <FormField label={t("billing.tax")}>
-                    <MoneyInputRHF
-                      name="taxAmount"
-                      control={form.control}
-                      currency={currency}
-                      min={0}
-                      onKeyDown={dismissKeyboardOnEnter}
-                    />
-                  </FormField>
+                  {taxEnabled && (
+                    <FormField label={t("billing.tax")}>
+                      <MoneyInputRHF
+                        name="taxAmount"
+                        control={form.control}
+                        currency={currency}
+                        min={0}
+                        onKeyDown={dismissKeyboardOnEnter}
+                      />
+                    </FormField>
+                  )}
                 </div>
 
                 {isMixedSale ? (
@@ -1392,6 +1452,20 @@ export function PosScreen() {
                     />
                   )}
                 </div>
+
+                {shiftBlocked && (
+                  <p className="text-xs text-danger font-medium">
+                    {t("billing.shiftRequiredError")}
+                  </p>
+                )}
+
+                {discountExceedsLimit && (
+                  <p className="text-xs text-danger font-medium">
+                    {t("billing.discountLimitExceeded", {
+                      limit: formatCurrency(discountLimit, currency),
+                    })}
+                  </p>
+                )}
 
                 {!hasValidTotal && draftItems.length > 0 && (
                   <p className="text-xs text-danger font-medium">

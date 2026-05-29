@@ -934,3 +934,91 @@ categories indistinguishable.
 
 Verified: no live banned-scale refs remain (grep), `npm run typecheck` clean,
 `npm run build` succeeds. Documented in DESIGN_SYSTEM.md §11 + §15.
+
+## Production-readiness pass #2/#3/#4 (post-review)
+
+### #2 — Settings now actually enforced (was the P0 "fake settings")
+
+Several store settings were editable but ignored. Now wired, in the UI **and**
+defensively in `lib/services/billing-service.ts`:
+
+- **Payment methods** (`enableCash/Card/Credit`): `PaymentMethodControl` gained an
+  `available` prop; POS + purchases derive it from settings. `mixed` shows only
+  when cash+card are both on. A disabled-but-selected method auto-corrects to the
+  first allowed one. Service rejects a disabled method (`BILL_PAYMENT_METHOD_DISABLED`).
+- **`requireShift`**: POS finalize is now a hard block (added to `canFinalize` +
+  inline error `billing.shiftRequiredError`); service throws `BILL_SHIFT_REQUIRED`.
+  Previously only a soft banner.
+- **`defaultDiscountLimit`**: POS caps discount (inline `billing.discountLimitExceeded`);
+  service throws `DISCOUNT_EXCEEDS_LIMIT`. 0 = no limit.
+- **`taxMode === 'none'`**: hides the manual tax field + forces `taxAmount` 0 (POS +
+  purchases). NOTE behavior change — the settings default is `none`, so the tax field
+  is hidden by default; shops wanting manual tax set mode to inclusive/exclusive.
+  inclusive/exclusive both keep the current additive manual field (no rate engine yet).
+- **`lowStockThreshold`**: new `lib/utils/stock.ts` (`lowStockLimit` / `isLowStock`).
+  A product's own `minimumStockAlert` wins when > 0; otherwise the global threshold
+  applies. Wired into products-table + inventory-workspace low-stock detection.
+
+New i18n: errors `DISCOUNT_EXCEEDS_LIMIT`, `BILL_SHIFT_REQUIRED`,
+`BILL_PAYMENT_METHOD_DISABLED`; billing `shiftRequiredError`, `discountLimitExceeded`
+(en + ar + types).
+
+### #3 — Sidebar active vs hover were indistinguishable
+
+Both used `bg-white/10`. Now: active = `bg-brand/20` + inset brand ring + the existing
+3px brand edge bar + full-white icon ("I am here"); hover = `bg-white/[0.045]` faint
+wash ("I can click this"). Added `lg:gap-1` between items. `components/sidebar-nav.tsx`.
+
+### #4 — Offline route coverage completed
+
+`NAV_ROUTES` (`public/sw.js`) and `OFFLINE_NAV_ROUTES` (`sw-register.tsx`) were missing
+`/cash`, `/expenses`, `/audit`, `/reports/z`. Added all four to both lists and bumped
+`CACHE_VERSION` 0.1.10 → 0.1.11 so clients re-precache.
+
+Verified: `npm run typecheck` clean, `npm run build` succeeds.
+
+### Pre-commit adjustments (review follow-up)
+
+Three fixes after re-review of the settings-enforcement work:
+
+1. **Tax mode tightened.** Only `exclusive` now shows the manual tax field; `none`
+   AND `inclusive` hide it and force `taxAmount` 0. Reason: with only a manual
+   amount (no rate engine), an `inclusive` value would be double-counted by
+   `total = subtotal - discount + tax`. Normalised authoritatively in the service
+   layer via `effectiveTaxAmount(settings, taxAmount)` so a stale/offline client
+   can't submit tax when the mode forbids it — applied in billing **and** purchase
+   services (totals + saved `taxAmount`).
+
+2. **Payment gating extended to `purchase-service.ts`.** Pulled the policy into a
+   shared `lib/services/settings-policy.ts` (`assertPaymentMethodEnabled`) used by
+   both services. Error code generalised `BILL_PAYMENT_METHOD_DISABLED` →
+   `PAYMENT_METHOD_DISABLED` (applies to bills + purchases). UI-only enforcement
+   wasn't enough for an offline-first app (stale cache, direct callers, supplier
+   balance / drawer / cloud-sync impact).
+
+3. **Discount limit unit mismatch fixed.** The setting was labelled "Max discount
+   per bill (%)" with a `%` input but enforced as a currency amount
+   (`discountAmount > defaultDiscountLimit`). Converted the setting to a money
+   **amount** (`MoneyInputRHF`, label "Max discount per bill"), so label, input,
+   and enforcement now agree.
+
+Verified: `npm run typecheck` clean, `npm run build` succeeds, no stale
+`BILL_PAYMENT_METHOD_DISABLED` references remain.
+
+### Pre-commit fixes round 2 (review follow-up)
+
+1. **Tax preview validation now uses effective tax.** `createFinalizedBill` and
+   `createFinalizedPurchase` previously computed the *pre-transaction* preview
+   total with raw `input.form.taxAmount`, so a stale offline client sending tax
+   under a non-"exclusive" mode could trip a false `BILL_PAID_TOO_LOW` /
+   `BILL_MIXED_SPLIT_MISMATCH` (and purchase equivalents) on a total the
+   transaction then discarded. Both now read settings up front and run the
+   preview through `effectiveTaxAmount()`. The transaction still re-reads
+   settings as the authoritative copy.
+
+2. **Settings blocks the all-payment-methods-disabled state.** `onSubmit` now
+   rejects saving when cash, card and credit are all off
+   (`settings.atLeastOnePaymentMethod`, en + ar). This removes the UI/service
+   mismatch where the POS fell back to cash but the service rejected cash.
+
+Verified: `npm run typecheck` clean, `npm run build` succeeds.

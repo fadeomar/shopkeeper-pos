@@ -11,6 +11,7 @@ import {
   updateProductDetails,
 } from "@/lib/services/inventory-service";
 import { settingsRepo } from "@/lib/db/repositories";
+import { isLowStock } from "@/lib/utils/stock";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
@@ -310,8 +311,7 @@ export function ProductsTable({
           ) : (
             mobileProducts.map((product) => {
               const lowStock =
-                settings?.lowStockHighlight &&
-                product.quantityInStock <= product.minimumStockAlert;
+                settings?.lowStockHighlight && isLowStock(product, settings);
               return (
                 <div
                   key={product.id}

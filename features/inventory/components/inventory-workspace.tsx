@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db/schema";
 import { settingsRepo } from "@/lib/db/repositories";
+import { isLowStock } from "@/lib/utils/stock";
 import { countProductStock } from "@/lib/services/inventory-service";
 import { formatCurrency } from "@/lib/utils/money";
 import { Card } from "@/components/ui/card";
@@ -71,9 +72,7 @@ export function InventoryWorkspace() {
   }, [products]);
 
   const lowStockProducts = activeProducts.filter(
-    (product) =>
-      product.quantityInStock > 0 &&
-      product.quantityInStock <= product.minimumStockAlert,
+    (product) => product.quantityInStock > 0 && isLowStock(product, settings),
   );
   const outOfStockProducts = activeProducts.filter(
     (product) => product.quantityInStock <= 0,

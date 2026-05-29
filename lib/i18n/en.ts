@@ -633,6 +633,9 @@ export const en: TranslationDict = {
     shortcutClearBarcode: "Esc — clear barcode input",
     noShiftOpenWarning:
       "No shift open — cash drawer reconciliation is disabled for this sale.",
+    shiftRequiredError:
+      "An open shift is required to complete a sale. Open a shift to continue.",
+    discountLimitExceeded: "Discount exceeds the allowed limit of {{limit}}.",
     openShift: "Open shift",
     itemAdded: "{{name}} added.",
     itemUpdated: "{{name}} ×{{qty}}",
@@ -767,6 +770,8 @@ export const en: TranslationDict = {
     saved: "Settings saved.",
     invalidCurrency:
       "Currency must be a 3-letter ISO code (e.g. ILS, USD, EUR, JOD).",
+    atLeastOnePaymentMethod:
+      "At least one payment method (cash, card, or credit) must stay enabled.",
     language: "Language",
     languageDesc: "Choose your preferred display language",
     english: "English",
@@ -831,8 +836,8 @@ export const en: TranslationDict = {
     taxModeNone: "No tax",
     taxModeInclusive: "Tax included in price",
     taxModeExclusive: "Tax added on top",
-    defaultDiscountLimit: "Max discount per bill (%)",
-    defaultDiscountLimitHint: "Cashiers cannot apply a discount above this percentage. Set 0 to disable discounts.",
+    defaultDiscountLimit: "Max discount per bill",
+    defaultDiscountLimitHint: "Cashiers cannot apply a discount above this amount per bill. Set 0 for no limit.",
     requireShift: "Require an open shift to make sales",
     // Payment methods
     paymentMethods: "Payment Methods",
@@ -1240,6 +1245,7 @@ export const en: TranslationDict = {
     PRODUCT_NOT_FOUND: "Product not found.",
     // Shared bill / purchase
     DISCOUNT_TOO_HIGH: "Discount cannot be greater than subtotal plus tax.",
+    DISCOUNT_EXCEEDS_LIMIT: "Discount exceeds the allowed limit of {{limit}}.",
     PRODUCTS_MISSING: "Some products could not be found in inventory.",
     LINE_PRODUCT_NOT_FOUND: "Product {{name}} not found.",
     VOID_REASON_REQUIRED: "Void reason is required.",
@@ -1259,6 +1265,8 @@ export const en: TranslationDict = {
     BILL_NOT_FINALIZED: "Only finalized bills can be voided.",
     BILL_ITEM_NOT_FOUND: "Bill item not found.",
     BILL_VOIDED_NO_RETURN: "Voided bills cannot receive returns.",
+    BILL_SHIFT_REQUIRED: "Open a shift before completing a sale.",
+    PAYMENT_METHOD_DISABLED: "That payment method is disabled in settings.",
     // Purchase-specific
     PURCHASE_NO_ITEMS: "Add at least one product before saving the purchase.",
     PURCHASE_CREDIT_NEEDS_SUPPLIER:
