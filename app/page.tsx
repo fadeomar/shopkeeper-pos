@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import clsx from "clsx";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db/schema";
 import { settingsRepo } from "@/lib/db/repositories";
@@ -9,11 +10,13 @@ import { formatCurrency } from "@/lib/utils/money";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { FitText } from "@/components/ui/fit-text";
 import { PageShell } from "@/components/ui/page-shell";
 import { useToast } from "@/components/ui/toast";
 import { useLocale } from "@/components/providers/locale-context";
 import { getBillNetTotal } from "@/features/bills/utils/bill-summary";
 import { getSupplierLedger } from "@/lib/services/supplier-ledger-service";
+import { ArrowDownLeft, ArrowUpRight, Plus, Play } from "lucide-react";
 
 export default function DashboardPage() {
   const { t } = useLocale();
@@ -97,21 +100,40 @@ export default function DashboardPage() {
             )}
             <Link
               href="/billing"
-              className="inline-flex items-center justify-center gap-2 font-semibold rounded-xl transition-colors duration-150 px-4 py-2.5 text-sm min-h-[42px] bg-blue-600 text-white hover:bg-blue-700"
+              // Mirrors Button variant="primary" size="md" so the visual
+              // language stays consistent. The leading Plus icon makes
+              // the "create" semantics explicit at a glance — matters
+              // more on the dashboard where this is the primary CTA.
+              className={clsx(
+                "inline-flex items-center justify-center gap-2 font-semibold rounded-xl",
+                "px-4 py-2.5 text-sm min-h-[42px]",
+                "bg-brand text-white hover:bg-brand-hover transition-colors",
+                "focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-brand)_22%,transparent)]",
+              )}
             >
+              <Plus size={16} strokeWidth={2.5} aria-hidden />
               {t("dashboard.createBill")}
             </Link>
           </div>
         </section>
 
-        {/* Stats grid */}
-        <section className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+        {/* Stats grid — one card per row on mobile so long currency
+            values have the full content width to breathe. Step up at
+            sm/lg/xl breakpoints. */}
+        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
           {stats.map(({ label, value }) => (
             <Card key={label} className="flex flex-col gap-1.5">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">
                 {label}
               </p>
-              <p className="text-2xl font-bold text-slate-900">{value}</p>
+              {/* FitText scales down for unusually long values
+                  (≥ $1M+) but the one-per-row mobile layout means
+                  ordinary values render at full text-2xl. */}
+              <FitText
+                value={String(value)}
+                size="2xl"
+                className="font-bold text-slate-900"
+              />
             </Card>
           ))}
         </section>
@@ -123,17 +145,27 @@ export default function DashboardPage() {
               title={t("dashboard.emptyTitle")}
               description={t("dashboard.emptyDesc")}
             />
-            <div className="mt-4 flex gap-2 justify-center">
+            <div className="mt-4 flex flex-wrap gap-2 justify-center">
               <Link
                 href="/products"
-                className="inline-flex items-center justify-center rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-200"
+                className={clsx(
+                  "inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition-colors",
+                  "bg-surface-soft text-fg-secondary hover:bg-surface-muted",
+                  "px-4 py-2.5 text-sm min-h-[42px]",
+                )}
               >
+                <Plus size={16} strokeWidth={2.5} aria-hidden />
                 {t("dashboard.addFirstProduct")}
               </Link>
               <Link
                 href="/shift"
-                className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
+                className={clsx(
+                  "inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition-colors",
+                  "bg-brand text-white hover:bg-brand-hover",
+                  "px-4 py-2.5 text-sm min-h-[42px]",
+                )}
               >
+                <Play size={16} strokeWidth={2.5} aria-hidden />
                 {t("dashboard.openFirstShift")}
               </Link>
             </div>
@@ -151,25 +183,54 @@ export default function DashboardPage() {
                 {t("dashboard.noMovements")}
               </p>
             )}
-            {(stockMovements ?? []).map((mv) => (
-              <div
-                key={mv.id}
-                className="flex items-center justify-between gap-3 py-3"
-              >
-                <span className="text-sm font-medium text-slate-700 capitalize">
-                  {mv.movementType}
-                </span>
-                <span
-                  className={`text-sm font-semibold tabular-nums ${mv.quantityChange >= 0 ? "text-green-600" : "text-red-600"}`}
+            {(stockMovements ?? []).map((mv) => {
+              const isIncrease = mv.quantityChange >= 0;
+              return (
+                <div
+                  key={mv.id}
+                  className="flex items-center gap-3 py-3"
                 >
-                  {mv.quantityChange > 0 ? "+" : ""}
-                  {mv.quantityChange}
-                </span>
-                <span className="text-xs text-slate-400 truncate flex-1 text-end">
-                  {mv.note || mv.referenceType}
-                </span>
-              </div>
-            ))}
+                  {/* Directional icon — green up-right arrow for stock
+                      coming in, red down-left for stock going out. Reads
+                      faster than the +/- sign alone at small sizes. */}
+                  <span
+                    aria-hidden
+                    className={clsx(
+                      "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
+                      isIncrease
+                        ? "bg-success-soft text-success"
+                        : "bg-danger-soft text-danger",
+                    )}
+                  >
+                    {isIncrease ? (
+                      <ArrowUpRight size={16} strokeWidth={2.5} />
+                    ) : (
+                      <ArrowDownLeft size={16} strokeWidth={2.5} />
+                    )}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-slate-700 capitalize truncate">
+                      {mv.movementType}
+                    </p>
+                    {(mv.note || mv.referenceType) && (
+                      <p className="text-xs text-slate-400 truncate">
+                        {mv.note || mv.referenceType}
+                      </p>
+                    )}
+                  </div>
+                  <span
+                    className={clsx(
+                      "text-sm font-semibold tabular-nums shrink-0",
+                      isIncrease ? "text-success" : "text-danger",
+                    )}
+                    dir="ltr"
+                  >
+                    {isIncrease && "+"}
+                    {mv.quantityChange}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </Card>
       </div>

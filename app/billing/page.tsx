@@ -1,5 +1,6 @@
 'use client';
 
+import { ShoppingCart } from 'lucide-react';
 import { PosScreen } from '@/features/bills/components/pos-screen';
 import { useLocale } from '@/components/providers/locale-context';
 import { PageShell } from '@/components/ui/page-shell';
@@ -12,6 +13,7 @@ export default function BillingPage() {
       <PageHeader
         title={t('billing.title')}
         description={t('billing.subtitle')}
+        icon={<ShoppingCart size={24} aria-hidden />}
       />
       <PosScreen />
     </PageShell>

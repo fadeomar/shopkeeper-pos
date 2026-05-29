@@ -5,40 +5,181 @@
 @source "../features/**/*.{ts,tsx}";
 @source "../lib/**/*.{ts,tsx}";
 
+/* ─── Design tokens (CSS variables) ───────────────────────────────────────── */
+/* Centralized here so every page references the same values. Mirror of
+   lib/design/tokens.ts but exposed as CSS so utility classes can resolve
+   them without a JS round-trip. Future dark mode = override on .dark. */
+
+:root {
+  /* Surfaces — warm green-tinted chrome */
+  --color-app: #F6F7F2;            /* page background */
+  --color-surface: #ffffff;        /* card / panel */
+  --color-surface-soft: #F0F4EA;   /* nested surface */
+  --color-surface-muted: #E4E8DD;  /* dividers, chips */
+
+  /* Text */
+  --color-text: #0b1220;           /* primary */
+  --color-text-secondary: #2a3754;
+  --color-text-muted: #64708a;
+  --color-text-inverse: #ffffff;
+
+  /* Borders — green-tinted */
+  --color-border-subtle: #ECF0E5;
+  --color-border: #DDE3D4;
+  --color-border-strong: #C4CCB6;
+
+  /* Brand — retail POS green */
+  --color-brand: #1F6F43;
+  --color-brand-hover: #185A35;
+  --color-brand-soft: #DCFCE7;
+  --color-brand-ring: #2F8F5C;
+
+  /* Semantic states */
+  --color-success: #059669;
+  --color-success-soft: #D1FAE5;
+  --color-warning: #D97706;
+  --color-warning-soft: #FED7AA;
+  --color-danger: #DC2626;
+  --color-danger-soft: #FEE2E2;
+  --color-info: #2563EB;           /* kept blue — links/info stay distinct from brand */
+  --color-info-soft: #DBEAFE;
+
+  /* Money accent — revenue/cash accents, used sparingly */
+  --color-money: #B7791F;
+  --color-money-soft: #FEF3C7;
+
+  /* Elevation */
+  --shadow-xs: 0 1px 2px 0 rgb(11 18 32 / 0.04);
+  --shadow-sm: 0 1px 3px 0 rgb(11 18 32 / 0.06), 0 1px 2px -1px rgb(11 18 32 / 0.05);
+  --shadow-md: 0 8px 24px -12px rgb(11 18 32 / 0.18);
+  --shadow-lg: 0 20px 35px -20px rgb(11 18 32 / 0.30);
+  --shadow-pop: 0 12px 32px -8px rgb(11 18 32 / 0.22), 0 4px 12px -4px rgb(11 18 32 / 0.12);
+
+  /* Radius */
+  --radius-sm: 0.5rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 0.875rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
+  --radius-3xl: 1.5rem;
+
+  /* Touch targets — generous, never below 44px for primary actions */
+  --tap-compact: 2.25rem;          /* 36px - secondary chips */
+  --tap-default: 2.75rem;          /* 44px - baseline */
+  --tap-large: 3rem;               /* 48px - primary mobile actions */
+  --tap-pos: 3.5rem;               /* 56px - checkout-bar actions */
+}
+
+@theme inline {
+  /* Map our variables into Tailwind v4's color/utility space.
+     This lets us write `bg-surface`, `text-muted`, `border-default`,
+     `text-brand`, etc. consistently from feature files instead of
+     hand-coding `bg-white`/`bg-slate-50` everywhere. */
+  --color-app: var(--color-app);
+  --color-surface: var(--color-surface);
+  --color-surface-soft: var(--color-surface-soft);
+  --color-surface-muted: var(--color-surface-muted);
+
+  --color-fg: var(--color-text);
+  --color-fg-secondary: var(--color-text-secondary);
+  --color-fg-muted: var(--color-text-muted);
+  --color-fg-inverse: var(--color-text-inverse);
+
+  --color-border-subtle: var(--color-border-subtle);
+  --color-border-default: var(--color-border);
+  --color-border-strong: var(--color-border-strong);
+
+  --color-brand: var(--color-brand);
+  --color-brand-hover: var(--color-brand-hover);
+  --color-brand-soft: var(--color-brand-soft);
+
+  --color-success: var(--color-success);
+  --color-success-soft: var(--color-success-soft);
+  --color-warning: var(--color-warning);
+  --color-warning-soft: var(--color-warning-soft);
+  --color-danger: var(--color-danger);
+  --color-danger-soft: var(--color-danger-soft);
+  --color-info: var(--color-info);
+  --color-info-soft: var(--color-info-soft);
+
+  --color-money: var(--color-money);
+  --color-money-soft: var(--color-money-soft);
+
+  --font-sans: var(--font-sans), var(--font-arabic), system-ui, -apple-system, Segoe UI, sans-serif;
+  --font-mono: var(--font-mono), SFMono-Regular, Consolas, monospace;
+}
+
 @layer base {
   *, *::before, *::after { box-sizing: border-box; }
-
-  html, body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-      'Noto Sans Arabic', 'Arabic UI Text', sans-serif;
-  }
-
-  a { color: inherit; text-decoration: none; }
-  button, input, select, textarea { font: inherit; }
 
   html {
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html, body {
+    /* Latin first, Arabic family included so Arabic glyphs pick it up
+       automatically without requiring `lang="ar"` on every element.
+       System fallbacks at the end keep the app usable if Google's CDN
+       is unreachable on first load (offline-first principle). */
+    font-family: var(--font-sans), var(--font-arabic), -apple-system,
+      BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans Arabic',
+      'Arabic UI Text', sans-serif;
+    font-feature-settings: 'cv11', 'ss01', 'ss03'; /* subtle Jakarta variants */
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Arabic-only override — uses Plex Sans Arabic primary, since the Jakarta
+     family doesn't cover Arabic glyphs. The :lang(ar) selector applies
+     whenever `lang="ar"` is set on <html> by LocaleProvider. */
+  :lang(ar) {
+    font-family: var(--font-arabic), var(--font-sans), 'Noto Sans Arabic',
+      'Arabic UI Text', sans-serif;
   }
 
   body {
-    background: #f8fafc;
+    background: var(--color-app);
+    color: var(--color-text);
     overscroll-behavior-y: none;
   }
 
+  a { color: inherit; text-decoration: none; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+
+  /* Tabular numerals everywhere by default — POS values must align in
+     columns. Components that need proportional figures (rare) can opt out
+     with `font-feature-settings: normal`. */
+  .tabular-nums, [data-numeric], input[type="number"], input[inputmode="decimal"], input[inputmode="numeric"] {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* 16px on mobile to prevent iOS Safari from zooming on focus. Shrinks on
+     desktop where zoom isn't an issue and 14px reads better. */
   input, select, textarea {
     font-size: 16px;
   }
-
   @media (min-width: 640px) {
     input, select, textarea { font-size: 14px; }
   }
 
-  /* Number / price inputs stay LTR regardless of page direction so digit
-     order and currency symbols remain readable in Arabic mode */
+  /* Native number-input cleanup — we now use the NumberField component which
+     uses type="text" + inputMode, so the spinners and direction quirks no
+     longer apply. Any remaining `<input type="number">` keeps LTR digit
+     order for currency/qty readability in Arabic mode. */
   input[type="number"] {
     direction: ltr;
-    text-align: right;
+    -moz-appearance: textfield;
+  }
+  /* The legacy CSS forced `text-align: right` which fought every component
+     trying to center its value (e.g. QuantityStepper). Removed so component
+     classes win. Currency cells set their own alignment via utilities. */
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
   }
 }
 
@@ -48,8 +189,8 @@
   position: relative;
   width: 100%;
   aspect-ratio: 1 / 1;
-  background: #0f172a;
-  border-radius: 12px;
+  background: var(--color-text);
+  border-radius: var(--radius-xl);
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -65,11 +206,11 @@
 
 .scanner-crosshair {
   position: absolute;
-  inset: 20%;
-  border: 3px solid rgba(37, 99, 235, 0.9);
-  border-radius: 12px;
+  inset: 18%;
+  border: 3px solid color-mix(in srgb, var(--color-brand) 90%, transparent);
+  border-radius: var(--radius-xl);
   pointer-events: none;
-  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.45);
 }
 
 .scanner-overlay-msg {
@@ -83,21 +224,15 @@
   color: white;
   font-size: 15px;
   line-height: 1.5;
-  background: rgba(15, 23, 42, 0.85);
+  background: rgba(11, 18, 32, 0.85);
 }
 
 .scanner-overlay-error { color: #fca5a5; }
 
 @media print {
-  body * {
-    visibility: hidden !important;
-  }
-
+  body * { visibility: hidden !important; }
   #receipt-print-area,
-  #receipt-print-area * {
-    visibility: visible !important;
-  }
-
+  #receipt-print-area * { visibility: visible !important; }
   #receipt-print-area {
     position: absolute !important;
     inset-inline-start: 0 !important;
@@ -106,25 +241,58 @@
     max-width: none !important;
     margin: 0 !important;
     padding: 16px !important;
+    /* Mono receipt — feels like a real till slip */
+    font-family: var(--font-mono), monospace !important;
   }
-
-  .no-print {
-    display: none !important;
-  }
+  .no-print { display: none !important; }
 }
 
+/* ─── Utilities ────────────────────────────────────────────────────────────── */
 
 @layer utilities {
-  .no-scrollbar {
-    scrollbar-width: none;
-    -ms-overflow-style: none;
+  .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+
+  .touch-card { -webkit-tap-highlight-color: transparent; }
+
+  /* Soft inner ring used on focused inputs/buttons — matches the brand
+     color with reduced opacity, so focus states feel intentional rather
+     than the harsh default 2px outline. */
+  .focus-ring {
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-brand) 22%, transparent);
+    border-color: var(--color-brand);
   }
 
-  .no-scrollbar::-webkit-scrollbar {
-    display: none;
+  /* Safe-area aware bottom padding — for sticky checkout bars and the
+     bottom-sheet modals on iOS notch devices. */
+  .pb-safe {
+    padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
+  }
+  .pt-safe {
+    padding-top: max(env(safe-area-inset-top), 0.5rem);
   }
 
-  .touch-card {
-    -webkit-tap-highlight-color: transparent;
+  /* Animation for the bottom-sheet modal (mobile) and dropdown panels. */
+  @keyframes sheet-up {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
   }
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes pop-in {
+    from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  /* Toasts slide up + fade from just below their resting spot. */
+  @keyframes toast-in {
+    from { opacity: 0; transform: translateY(8px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .animate-sheet-up { animation: sheet-up 220ms cubic-bezier(0.32, 0.72, 0, 1); }
+  .animate-fade-in { animation: fade-in 160ms ease-out; }
+  .animate-pop-in { animation: pop-in 140ms cubic-bezier(0.32, 0.72, 0, 1); }
+  .animate-toast-in { animation: toast-in 200ms cubic-bezier(0.32, 0.72, 0, 1); }
 }

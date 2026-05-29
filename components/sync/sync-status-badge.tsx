@@ -29,14 +29,14 @@ export function SyncStatusBadge({ compact = false }: { compact?: boolean }) {
         !compact && 'mb-3',
         compact && 'truncate px-2.5 py-1.5',
         summary.blocked > 0
-          ? 'bg-red-50 text-red-700 ring-red-200'
+          ? 'bg-danger-soft text-danger ring-danger/20'
           : summary.conflicts > 0
-            ? 'bg-amber-50 text-amber-800 ring-amber-200'
+            ? 'bg-warning-soft text-warning ring-warning/30'
             : offline
               ? 'bg-slate-800 text-slate-200 ring-slate-700'
               : summary.hasUnsyncedWork
-                ? 'bg-blue-50 text-blue-700 ring-blue-200'
-                : 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+                ? 'bg-info-soft text-info ring-info/30'
+                : 'bg-success-soft text-success ring-success/30',
       )}
       title={label}
     >

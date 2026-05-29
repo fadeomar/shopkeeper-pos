@@ -13,6 +13,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { QuantityStepper } from "@/components/pos/quantity-stepper";
 import { Modal } from "@/components/ui/modal";
 import { DataTable, useDataTableLabels } from "@/components/ui/data-table";
 import { useToast } from "@/components/ui/toast";
@@ -92,7 +93,7 @@ export function BillDetails({ billId }: { billId: string }) {
   const [voidOpen, setVoidOpen] = useState(false);
   const [voidReason, setVoidReason] = useState("");
   const [returnItem, setReturnItem] = useState<BillItem | null>(null);
-  const [returnQuantity, setReturnQuantity] = useState("1");
+  const [returnQuantity, setReturnQuantity] = useState<number>(1);
   const [returnReason, setReturnReason] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
@@ -190,7 +191,7 @@ export function BillDetails({ billId }: { billId: string }) {
             accessorKey: "lineProfit",
             header: t("bills.lineProfit"),
             cell: ({ row }: { row: { original: BillItem } }) => (
-              <span className="font-medium tabular-nums text-green-600" dir="ltr">
+              <span className="font-medium tabular-nums text-success" dir="ltr">
                 {formatCurrency(row.original.lineProfit, currency)}
               </span>
             ),
@@ -212,7 +213,7 @@ export function BillDetails({ billId }: { billId: string }) {
             disabled={!billCanReturn || remaining <= 0}
             onClick={() => {
               setReturnItem(item);
-              setReturnQuantity(String(remaining));
+              setReturnQuantity(remaining);
             }}
           >
             {t("bills.returnItem")}
@@ -246,11 +247,11 @@ export function BillDetails({ billId }: { billId: string }) {
       await returnBillItem({
         billId: bill!.id,
         itemId: returnItem.id,
-        quantity: Number(returnQuantity),
+        quantity: returnQuantity,
         reason: returnReason,
       });
       setReturnItem(null);
-      setReturnQuantity("1");
+      setReturnQuantity(1);
       setReturnReason("");
       toast.push(t("bills.itemReturned"));
     } catch (err) {
@@ -285,10 +286,10 @@ export function BillDetails({ billId }: { billId: string }) {
             className={clsx(
               "inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold",
               bill.status === "finalized"
-                ? "bg-green-100 text-green-700"
+                ? "bg-success-soft text-success"
                 : bill.status === "voided"
-                  ? "bg-red-100 text-red-700"
-                  : "bg-amber-100 text-amber-700",
+                  ? "bg-danger-soft text-danger"
+                  : "bg-warning-soft text-warning",
             )}
           >
             {t(`common.${bill.status}` as Parameters<typeof t>[0])}
@@ -344,7 +345,7 @@ export function BillDetails({ billId }: { billId: string }) {
             </Button>
           </div>
           {!billCanVoid && bill.status !== "voided" && (
-            <p className="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
+            <p className="mt-3 text-xs text-warning bg-warning-soft border border-warning/30 rounded-xl px-3 py-2">
               {t("bills.voidOnlyFinalized")}
             </p>
           )}
@@ -465,7 +466,7 @@ export function BillDetails({ billId }: { billId: string }) {
           id="void-reason"
           value={voidReason}
           onChange={(event) => setVoidReason(event.target.value)}
-          className="mt-2 w-full min-h-24 rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="mt-2 w-full min-h-24 rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
           placeholder={t("bills.reasonPlaceholder")}
         />
       </Modal>
@@ -495,8 +496,8 @@ export function BillDetails({ billId }: { billId: string }) {
               disabled={
                 isSaving ||
                 !returnReason.trim() ||
-                Number(returnQuantity) <= 0 ||
-                Number(returnQuantity) > selectedRemaining
+                returnQuantity <= 0 ||
+                returnQuantity > selectedRemaining
               }
             >
               {t("bills.confirmReturn")}
@@ -512,14 +513,11 @@ export function BillDetails({ billId }: { billId: string }) {
             >
               {t("bills.returnQuantity")}
             </label>
-            <Input
-              id="return-quantity"
-              type="number"
-              min="1"
-              max={selectedRemaining}
-              step="1"
+            <QuantityStepper
               value={returnQuantity}
-              onChange={(event) => setReturnQuantity(event.target.value)}
+              onChange={setReturnQuantity}
+              min={1}
+              max={selectedRemaining}
             />
           </div>
           <div>
@@ -533,7 +531,7 @@ export function BillDetails({ billId }: { billId: string }) {
               id="return-reason"
               value={returnReason}
               onChange={(event) => setReturnReason(event.target.value)}
-              className="mt-2 w-full min-h-24 rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="mt-2 w-full min-h-24 rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
               placeholder={t("bills.reasonPlaceholder")}
             />
           </div>

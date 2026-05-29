@@ -62,6 +62,20 @@ export function normalizeCurrencyCode(code: string): string {
   return SYMBOL_TO_ISO[code.trim()] ?? code;
 }
 
+export function currencySymbol(currency: string): string {
+  const code = normalizeCurrencyCode(currency);
+  try {
+    const parts = new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: code,
+      currencyDisplay: "symbol",
+    }).formatToParts(0);
+    return parts.find((p) => p.type === "currency")?.value ?? code;
+  } catch {
+    return code;
+  }
+}
+
 export function formatCurrency(value: number, currency = "ILS") {
   const code = normalizeCurrencyCode(currency);
   try {

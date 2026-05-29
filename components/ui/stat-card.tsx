@@ -1,4 +1,5 @@
 import { Card } from './card';
+import { FitText } from './fit-text';
 import clsx from 'clsx';
 
 export function StatCard({
@@ -13,15 +14,21 @@ export function StatCard({
   tone?: 'neutral' | 'positive' | 'warning' | 'danger';
 }) {
   const toneClass =
-    tone === 'positive' ? 'text-emerald-700' :
-    tone === 'warning' ? 'text-amber-700' :
-    tone === 'danger' ? 'text-red-700' :
-    'text-slate-900';
+    tone === 'positive' ? 'text-success' :
+    tone === 'warning' ? 'text-warning' :
+    tone === 'danger' ? 'text-danger' :
+    'text-fg';
   return (
     <Card className="flex flex-col gap-1 p-4">
-      <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{label}</p>
-      <p className={clsx('text-2xl font-bold tabular-nums', toneClass)}>{value}</p>
-      {helper && <p className="text-xs text-slate-500 mt-0.5">{helper}</p>}
+      <p className="text-xs font-medium text-fg-muted uppercase tracking-wide">{label}</p>
+      {/* FitText handles long currency strings ($115,540.30 etc.) by
+          stepping down through a size ladder rather than clipping. */}
+      <FitText
+        value={String(value)}
+        size="2xl"
+        className={clsx('font-bold', toneClass)}
+      />
+      {helper && <p className="text-xs text-fg-muted mt-0.5">{helper}</p>}
     </Card>
   );
 }

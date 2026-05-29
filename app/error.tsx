@@ -47,7 +47,7 @@ export default function AppError({ error, reset }: { error: Error & { digest?: s
   return (
     <main className="min-h-[70vh] flex items-center justify-center bg-slate-50 px-4 py-10">
       <section className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-red-600">
+        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-danger-soft text-danger">
           <span className="text-xl font-bold">!</span>
         </div>
         <h1 className="text-center text-lg font-bold text-slate-900">{t('errorPage.pageTitle')}</h1>

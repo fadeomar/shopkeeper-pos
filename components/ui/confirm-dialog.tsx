@@ -53,9 +53,9 @@ export function ConfirmDialog({
         </>
       }
     >
-      {description ? (
-        <p className={typographyClasses.muted}>{description}</p>
-      ) : null}
+      {/* Description is already rendered in the Modal header (and wired to
+          aria-describedby on the dialog). No body content needed. */}
+      {null}
     </Modal>
   );
 }

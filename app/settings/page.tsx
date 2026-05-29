@@ -6,7 +6,9 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { settingsRepo } from "@/lib/db/repositories";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import { NumberFieldRHF } from "@/components/ui/number-field-rhf";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { Settings as SettingsIcon } from "lucide-react";
 import { FormField } from "@/components/ui/form-field";
 import { Card } from "@/components/ui/card";
 import { SectionCard } from "@/components/ui/section-card";
@@ -81,7 +83,7 @@ function ToggleRow({
     <label className="flex items-start gap-3 cursor-pointer select-none">
       <input
         type="checkbox"
-        className="mt-0.5 h-4 w-4 shrink-0 rounded accent-blue-600"
+        className="mt-0.5 h-4 w-4 shrink-0 rounded accent-brand"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
       />
@@ -189,6 +191,7 @@ export default function SettingsPage() {
       <PageHeader
         title={t("settings.title")}
         description={t("settings.subtitle")}
+        icon={<SettingsIcon size={24} aria-hidden />}
       />
 
       {/* ── Language ─────────────────────────────────────────────────────── */}
@@ -205,7 +208,7 @@ export default function SettingsPage() {
               className={clsx(
                 "px-5 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all duration-150",
                 locale === value
-                  ? "border-blue-600 bg-blue-50 text-blue-700"
+                  ? "border-brand bg-brand-soft text-brand"
                   : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50",
               )}
             >
@@ -257,29 +260,30 @@ export default function SettingsPage() {
             </FormField>
 
             <FormField label={t("settings.taxMode")}>
-              <Select {...form.register("taxMode")}>
-                {taxOptions.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </Select>
+              <SearchableSelect
+                value={form.watch("taxMode")}
+                onValueChange={(value) =>
+                  form.setValue(
+                    "taxMode",
+                    (value ?? "none") as "none" | "inclusive" | "exclusive",
+                    { shouldDirty: true },
+                  )
+                }
+                options={taxOptions}
+              />
             </FormField>
 
             <FormField
               label={t("settings.defaultDiscountLimit")}
               hint={t("settings.defaultDiscountLimitHint")}
             >
-              <Input
-                {...form.register("defaultDiscountLimit", {
-                  valueAsNumber: true,
-                  min: 0,
-                  max: 100,
-                })}
-                type="number"
+              <NumberFieldRHF
+                name="defaultDiscountLimit"
+                control={form.control}
+                precision="integer"
                 min={0}
                 max={100}
-                step={1}
+                suffix="%"
               />
             </FormField>
           </div>
@@ -360,28 +364,22 @@ export default function SettingsPage() {
               label={t("settings.lowStockThreshold")}
               hint={t("settings.lowStockThresholdHint")}
             >
-              <Input
-                {...form.register("lowStockThreshold", {
-                  valueAsNumber: true,
-                  min: 0,
-                })}
-                type="number"
+              <NumberFieldRHF
+                name="lowStockThreshold"
+                control={form.control}
+                precision="integer"
                 min={0}
-                step={1}
               />
             </FormField>
             <FormField
               label={t("settings.expiryWarningDays")}
               hint={t("settings.expiryWarningDaysHint")}
             >
-              <Input
-                {...form.register("expiryWarningDays", {
-                  valueAsNumber: true,
-                  min: 0,
-                })}
-                type="number"
+              <NumberFieldRHF
+                name="expiryWarningDays"
+                control={form.control}
+                precision="integer"
                 min={0}
-                step={1}
               />
             </FormField>
           </div>
@@ -551,7 +549,7 @@ function RolePermissionsCard() {
                     <td key={role} className="py-2.5 px-3 text-center">
                       <input
                         type="checkbox"
-                        className="h-4 w-4 rounded accent-blue-600 cursor-pointer disabled:cursor-not-allowed"
+                        className="h-4 w-4 rounded accent-brand cursor-pointer disabled:cursor-not-allowed"
                         checked={checked}
                         disabled={isOwner}
                         onChange={() => toggle(role, perm)}
@@ -815,19 +813,19 @@ function DeviceHealthCard() {
 
       <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50 p-3 text-xs text-slate-600">
         {blocked > 0 ? (
-          <span className="font-medium text-red-600">
+          <span className="font-medium text-danger">
             {t("settings.blockedSyncWarning", { count: blocked })}
           </span>
         ) : stats?.failed ? (
-          <span className="font-medium text-red-600">
+          <span className="font-medium text-danger">
             {t("settings.failedSyncWarning", { count: stats.failed })}
           </span>
         ) : waiting > 0 ? (
-          <span className="font-medium text-blue-700">
+          <span className="font-medium text-info">
             {t("settings.waitingSyncWarning", { count: waiting })}
           </span>
         ) : (
-          <span className="font-medium text-emerald-700">
+          <span className="font-medium text-success">
             {t("settings.healthLooksGood")}
           </span>
         )}
@@ -911,21 +909,21 @@ function ClearCacheConfirmModal({
       }
     >
       <div className="space-y-3 text-sm text-slate-600">
-        <p className="rounded-xl bg-emerald-50 border border-emerald-100 px-3 py-2 text-emerald-800">
+        <p className="rounded-xl bg-success-soft border border-success/20 px-3 py-2 text-success">
           {t("settings.clearCacheDataNote")}
         </p>
         {conflictCount > 0 && (
-          <p className="rounded-xl bg-red-50 border border-red-200 px-3 py-2 text-red-800">
+          <p className="rounded-xl bg-danger-soft border border-danger/20 px-3 py-2 text-danger">
             {t("settings.clearCacheConflictsWarning", { count: conflictCount })}
           </p>
         )}
         {offline && (
-          <p className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-amber-800">
+          <p className="rounded-xl bg-warning-soft border border-warning/30 px-3 py-2 text-warning">
             {t("settings.clearCacheOfflineWarning")}
           </p>
         )}
         {waitingCount > 0 && (
-          <p className="rounded-xl bg-blue-50 border border-blue-200 px-3 py-2 text-blue-800">
+          <p className="rounded-xl bg-info-soft border border-info/30 px-3 py-2 text-info">
             {t("settings.clearCacheUnsyncedWarning", { count: waitingCount })}
           </p>
         )}

@@ -53,6 +53,11 @@ export const en: TranslationDict = {
     expenses: "Expenses",
     audit: "Audit Log",
     settings: "Settings",
+    mainNavLabel: "Main navigation",
+    adminNavLabel: "Admin navigation",
+    skipToContent: "Skip to main content",
+    shiftOpen: "Shift open",
+    moreMenuLabel: "More",
   },
   navShort: {
     dashboard: "Home",
@@ -69,6 +74,7 @@ export const en: TranslationDict = {
     expenses: "Expenses",
     audit: "Audit",
     settings: "Settings",
+    more: "More",
   },
   dataTable: {
     search: "Search…",
@@ -81,6 +87,7 @@ export const en: TranslationDict = {
     previous: "Previous",
     next: "Next",
     last: "Last",
+    paginationNav: "Pagination",
   },
   searchableSelect: {
     select: "Select…",
@@ -649,6 +656,13 @@ export const en: TranslationDict = {
       "{{count}} item(s) removed from your saved cart — product is inactive or no longer exists.",
     draftStockAdjusted:
       "Quantity reduced for {{count}} item(s) — not enough stock.",
+    pickCustomer: "Select customer",
+    clearCustomer: "Clear",
+    searchCustomers: "Search customers",
+    noCustomersFound: "No customers found",
+    enterManually: "Enter manually",
+    savedLocally: "Saved locally · Pending sync",
+    syncedToCloud: "Synced to cloud",
   },
   bills: {
     title: "Bill history",
@@ -1034,6 +1048,11 @@ export const en: TranslationDict = {
     supplier: "Supplier",
     status: "Status",
     walkInSupplier: "Walk-in",
+    pickSupplier: "Select supplier",
+    clearSupplier: "Clear",
+    searchSuppliers: "Search suppliers",
+    noSuppliersFound: "No suppliers found",
+    enterManually: "Enter manually",
   },
   suppliers: {
     title: "Suppliers & payables",

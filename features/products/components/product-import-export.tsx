@@ -167,8 +167,8 @@ export function ProductImportExport() {
                 <div key={stat.label} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-center">
                   <div className={clsx(
                     'text-lg font-bold tabular-nums',
-                    stat.tone === 'success' && 'text-green-700',
-                    stat.tone === 'error' && 'text-red-600',
+                    stat.tone === 'success' && 'text-success',
+                    stat.tone === 'error' && 'text-danger',
                     stat.tone === 'muted' && 'text-slate-800',
                   )}>
                     {stat.value}
@@ -180,15 +180,15 @@ export function ProductImportExport() {
           )}
 
           {preview && preview.validRows.length > 0 && (
-            <div className="rounded-xl bg-green-50 border border-green-100 px-4 py-3 text-sm text-green-800">
+            <div className="rounded-xl bg-success-soft border border-success/20 px-4 py-3 text-sm text-success">
               {t('products.importReady', { count: preview.validRows.length })}
             </div>
           )}
 
           {preview && preview.errors.length > 0 && (
-            <div className="rounded-xl bg-red-50 border border-red-100 px-4 py-3">
-              <p className="text-sm font-semibold text-red-700">{t('products.importErrors')}</p>
-              <ul className="mt-2 max-h-44 overflow-y-auto space-y-1 text-xs text-red-700">
+            <div className="rounded-xl bg-danger-soft border border-danger/20 px-4 py-3">
+              <p className="text-sm font-semibold text-danger">{t('products.importErrors')}</p>
+              <ul className="mt-2 max-h-44 overflow-y-auto space-y-1 text-xs text-danger">
                 {preview.errors.slice(0, 20).map((error, index) => (
                   <li key={`${error.rowNumber}-${error.barcode ?? ''}-${index}`}>
                     {error.rowNumber > 0 ? t('products.importRowError', { row: error.rowNumber }) : t('products.importFileError')}

@@ -19,7 +19,7 @@ export function LoadingState({
       )}
     >
       <span
-        className="mb-3 h-6 w-6 animate-spin rounded-full border-2 border-blue-600 border-t-transparent"
+        className="mb-3 h-6 w-6 animate-spin rounded-full border-2 border-brand border-t-transparent"
         aria-hidden
       />
       <p className="text-sm font-semibold text-slate-700">{title}</p>

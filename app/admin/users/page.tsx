@@ -32,12 +32,6 @@ import type { ColumnDef } from "@tanstack/react-table";
 
 type SummaryMap = Record<string, UserSummary>;
 
-// const HEALTH_STYLES: Record<SupportHealth, string> = {
-//   healthy: "bg-green-100 text-green-700",
-//   needs_attention: "bg-amber-100 text-amber-700",
-//   no_backup: "bg-red-100 text-red-600",
-// };
-
 export default function AdminUsersPage() {
   const { isAdmin, user: currentUser } = useAuth();
   const { t } = useLocale();
@@ -141,8 +135,8 @@ export default function AdminUsersPage() {
 
   if (!isAdmin) {
     return (
-      <div className="max-w-md mx-auto mt-12 p-6 bg-white border border-red-100 rounded-2xl text-center">
-        <p className="font-semibold text-red-600 mb-1">Access Denied</p>
+      <div className="max-w-md mx-auto mt-12 p-6 bg-white border border-danger/20 rounded-2xl text-center">
+        <p className="font-semibold text-danger mb-1">Access Denied</p>
         <p className="text-sm text-slate-500">Only admins can manage users.</p>
       </div>
     );
@@ -163,7 +157,7 @@ export default function AdminUsersPage() {
           <div className="min-w-[220px]">
             <Link
               href={`/admin/users/${u.uid}` as Route}
-              className="font-medium text-slate-800 transition-colors hover:text-blue-600"
+              className="font-medium text-slate-800 transition-colors hover:text-info"
             >
               {u.name}
             </Link>
@@ -176,7 +170,7 @@ export default function AdminUsersPage() {
             {u.phone && (
               <a
                 href={`tel:${u.phone}`}
-                className="text-xs text-slate-400 hover:text-blue-500"
+                className="text-xs text-slate-400 hover:text-info"
               >
                 {u.phone}
               </a>
@@ -220,7 +214,7 @@ export default function AdminUsersPage() {
             {summary.billCount} {t("bills.title")} / {summary.productCount}{" "}
             {t("products.title")}
             {summary.creditDebt > 0 && (
-              <div className="text-amber-600">
+              <div className="text-warning">
                 {t("admin.customerDebt")} {summary.creditDebt.toFixed(2)}
               </div>
             )}
@@ -317,7 +311,7 @@ export default function AdminUsersPage() {
       </div>
 
       {error && (
-        <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl px-4 py-3">
+        <p className="text-sm text-danger bg-danger-soft border border-danger/20 rounded-xl px-4 py-3">
           {error}
         </p>
       )}
@@ -336,11 +330,11 @@ export default function AdminUsersPage() {
 
       {pending.length > 0 && (
         <section>
-          <h2 className="text-sm font-semibold text-amber-700 mb-2 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />
+          <h2 className="text-sm font-semibold text-warning mb-2 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-warning inline-block" />
             Pending Approval ({pending.length})
           </h2>
-          <div className="bg-white border border-amber-200 rounded-2xl overflow-hidden divide-y divide-amber-50">
+          <div className="bg-white border border-warning/20 rounded-2xl overflow-hidden divide-y divide-warning/10">
             {pending.map((u) => (
               <div key={u.uid} className="flex items-center gap-3 px-5 py-4">
                 <div className="flex-1 min-w-0">
@@ -351,7 +345,7 @@ export default function AdminUsersPage() {
                   {u.phone && (
                     <a
                       href={`tel:${u.phone}`}
-                      className="text-xs text-blue-500 hover:underline"
+                      className="text-xs text-info hover:underline"
                     >
                       {u.phone}
                     </a>
@@ -444,9 +438,9 @@ function SupportCard({
 }) {
   const toneClass =
     tone === "red"
-      ? "text-red-600"
+      ? "text-danger"
       : tone === "amber"
-        ? "text-amber-600"
+        ? "text-warning"
         : "text-slate-800";
   return (
     <div className="bg-white border border-slate-200 rounded-2xl px-4 py-3">
@@ -568,7 +562,7 @@ function CreateUserForm({
           />
         </FormField>
         {error && (
-          <p className="sm:col-span-2 text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+          <p className="sm:col-span-2 text-sm text-danger bg-danger-soft border border-danger/20 rounded-xl px-3 py-2">
             {error}
           </p>
         )}

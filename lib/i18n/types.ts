@@ -54,6 +54,16 @@ export interface TranslationDict {
     expenses: string;
     audit: string;
     settings: string;
+    /** aria-label for the cashier sidebar <nav> */
+    mainNavLabel: string;
+    /** aria-label for the admin sidebar <nav> */
+    adminNavLabel: string;
+    /** Skip-to-content link text */
+    skipToContent: string;
+    /** aria-label on the shift open indicator dot */
+    shiftOpen: string;
+    /** Title / aria-label for the mobile "More" sheet dialog */
+    moreMenuLabel: string;
   };
   navShort: {
     dashboard: string;
@@ -70,6 +80,8 @@ export interface TranslationDict {
     expenses: string;
     audit: string;
     settings: string;
+    /** Label for the "More" tab in the mobile bottom nav */
+    more: string;
   };
   dataTable: {
     search: string;
@@ -82,6 +94,8 @@ export interface TranslationDict {
     previous: string;
     next: string;
     last: string;
+    /** aria-label for the pagination <nav> */
+    paginationNav: string;
   };
   searchableSelect: {
     select: string;
@@ -597,6 +611,13 @@ export interface TranslationDict {
     draftPricesRefreshed: string;
     draftProductsRemoved: string;
     draftStockAdjusted: string;
+    pickCustomer: string;
+    clearCustomer: string;
+    searchCustomers: string;
+    noCustomersFound: string;
+    enterManually: string;
+    savedLocally: string;
+    syncedToCloud: string;
   };
   bills: {
     title: string;
@@ -947,6 +968,11 @@ export interface TranslationDict {
     supplier: string;
     status: string;
     walkInSupplier: string;
+    pickSupplier: string;
+    clearSupplier: string;
+    searchSuppliers: string;
+    noSuppliersFound: string;
+    enterManually: string;
   };
   suppliers: {
     title: string;

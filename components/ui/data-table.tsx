@@ -127,6 +127,7 @@ export function DataTable<TData>({
                 value={globalFilter}
                 onChange={(event) => setGlobalFilter(event.target.value)}
                 placeholder={tableLabels.searchPlaceholder}
+                aria-label={tableLabels.searchPlaceholder}
                 className="sm:w-64"
               />
             )}
@@ -142,8 +143,16 @@ export function DataTable<TData>({
                 {headerGroup.headers.map((header) => {
                   const canSort = header.column.getCanSort();
                   const sorted = header.column.getIsSorted();
+                  // aria-sort is only meaningful on sortable columns.
+                  const ariaSort = canSort
+                    ? sorted === 'asc'
+                      ? 'ascending'
+                      : sorted === 'desc'
+                        ? 'descending'
+                        : 'none'
+                    : undefined;
                   return (
-                    <th key={header.id} className={typographyClasses.tableHead}>
+                    <th key={header.id} className={typographyClasses.tableHead} aria-sort={ariaSort}>
                       {header.isPlaceholder ? null : (
                         <button
                           type="button"
@@ -187,7 +196,10 @@ export function DataTable<TData>({
         </table>
       </div>
 
-      <div className="flex flex-col gap-3 border-t border-slate-100 p-3 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between">
+      <nav
+        aria-label={t('dataTable.paginationNav')}
+        className="flex flex-col gap-3 border-t border-slate-100 p-3 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between"
+      >
         <div>
           {tableLabels.page} <span className="font-semibold text-slate-900">{pageCount === 0 ? 0 : pageIndex + 1}</span> {tableLabels.of}{' '}
           <span className="font-semibold text-slate-900">{pageCount}</span>
@@ -208,7 +220,7 @@ export function DataTable<TData>({
           <Button type="button" variant="outline" size="sm" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()}>{tableLabels.next}</Button>
           <Button type="button" variant="outline" size="sm" onClick={() => table.setPageIndex(Math.max(pageCount - 1, 0))} disabled={!table.getCanNextPage()}>{tableLabels.last}</Button>
         </div>
-      </div>
+      </nav>
     </div>
   );
 }

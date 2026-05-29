@@ -53,6 +53,11 @@ export const ar: TranslationDict = {
     expenses: "المصاريف",
     audit: "سجل التدقيق",
     settings: "الإعدادات",
+    mainNavLabel: "التنقل الرئيسي",
+    adminNavLabel: "تنقل المسؤول",
+    skipToContent: "تخطى إلى المحتوى الرئيسي",
+    shiftOpen: "دوام مفتوح",
+    moreMenuLabel: "المزيد",
   },
   navShort: {
     dashboard: "الرئيسية",
@@ -69,6 +74,7 @@ export const ar: TranslationDict = {
     expenses: "مصاريف",
     audit: "السجل",
     settings: "الإعدادات",
+    more: "المزيد",
   },
   dataTable: {
     search: "بحث…",
@@ -81,6 +87,7 @@ export const ar: TranslationDict = {
     previous: "السابق",
     next: "التالي",
     last: "الأخيرة",
+    paginationNav: "التنقل بين الصفحات",
   },
   searchableSelect: {
     select: "اختر…",
@@ -640,6 +647,13 @@ export const ar: TranslationDict = {
       "تم حذف {{count}} منتج/منتجات من سلة المشتريات المحفوظة — المنتج غير نشط أو غير موجود.",
     draftStockAdjusted:
       "تم تعديل الكمية لـ {{count}} منتج/منتجات — المخزون غير كافٍ.",
+    pickCustomer: "اختر عميلاً",
+    clearCustomer: "مسح",
+    searchCustomers: "ابحث عن عميل",
+    noCustomersFound: "لا يوجد عملاء مطابقون",
+    enterManually: "أدخل يدوياً",
+    savedLocally: "محفوظ محلياً · في انتظار المزامنة",
+    syncedToCloud: "تمت المزامنة مع السحابة",
   },
   bills: {
     title: "سجل الفواتير",
@@ -1022,6 +1036,11 @@ export const ar: TranslationDict = {
     supplier: "المورد",
     status: "الحالة",
     walkInSupplier: "بدون مورد",
+    pickSupplier: "اختر مورّداً",
+    clearSupplier: "مسح",
+    searchSuppliers: "ابحث عن مورّد",
+    noSuppliersFound: "لا يوجد موردون مطابقون",
+    enterManually: "أدخل يدوياً",
   },
   suppliers: {
     title: "الموردون والديون",

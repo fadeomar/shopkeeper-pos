@@ -19,7 +19,7 @@ export function ConflictResolverModal({ userId }: { userId?: string }) {
       <div className="space-y-4">
         <p className="text-sm text-slate-600">{t('sync.conflictNoSilentOverwrite')}</p>
         {conflicts.map((c) => (
-          <div key={c.id} className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
+          <div key={c.id} className="rounded-2xl border border-warning/30 bg-warning-soft/60 p-4">
             <div className="flex items-start justify-between gap-2">
               <div>
                 <p className="text-sm font-semibold text-slate-900 capitalize">
@@ -29,7 +29,7 @@ export function ConflictResolverModal({ userId }: { userId?: string }) {
                   {c.conflictType.replaceAll('_', ' ')} · {c.severity}
                 </p>
               </div>
-              <span className="rounded-full bg-white px-2 py-1 text-xs font-medium text-amber-700 ring-1 ring-amber-200">
+              <span className="rounded-full bg-white px-2 py-1 text-xs font-medium text-warning ring-1 ring-warning/30">
                 {t('sync.needsReview')}
               </span>
             </div>

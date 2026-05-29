@@ -14,6 +14,7 @@ import { settingsRepo } from "@/lib/db/repositories";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
+import { NumberField } from "@/components/ui/number-field";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Modal } from "@/components/ui/modal";
 import { Card } from "@/components/ui/card";
@@ -30,12 +31,12 @@ function SyncBadge({ status }: { status?: SyncStatus }) {
   const { t } = useLocale();
   const effective = status ?? "synced";
   const styles: Record<SyncStatus, string> = {
-    synced: "bg-green-50 text-green-700 border-green-100",
-    pending: "bg-amber-50 text-amber-700 border-amber-100",
-    syncing: "bg-blue-50 text-blue-700 border-blue-100",
-    failed: "bg-red-50 text-red-700 border-red-100",
-    conflict: "bg-amber-100 text-amber-800 border-amber-200",
-    blocked: "bg-red-100 text-red-800 border-red-200",
+    synced: "bg-success-soft text-success border-success/20",
+    pending: "bg-warning-soft text-warning border-warning/20",
+    syncing: "bg-info-soft text-info border-info/20",
+    failed: "bg-danger-soft text-danger border-danger/20",
+    conflict: "bg-warning-soft text-warning border-warning/30",
+    blocked: "bg-danger-soft text-danger border-danger/30",
   };
   return (
     <span
@@ -66,7 +67,7 @@ export function ProductsTable({
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
   const [adjustProduct, setAdjustProduct] = useState<Product | null>(null);
-  const [adjustQty, setAdjustQty] = useState("1");
+  const [adjustQty, setAdjustQty] = useState<number>(1);
   const [adjustNote, setAdjustNote] = useState("Manual stock adjustment");
 
   const categories = useMemo(() => {
@@ -114,20 +115,19 @@ export function ProductsTable({
 
   async function submitAdjustment() {
     if (!adjustProduct) return;
-    const qty = Number(adjustQty);
-    if (Number.isNaN(qty) || qty === 0) {
+    if (Number.isNaN(adjustQty) || adjustQty === 0) {
       push(t("products.nonZeroAdj"), "error");
       return;
     }
     try {
       await adjustProductStock(
         adjustProduct,
-        qty,
+        adjustQty,
         adjustNote || "Manual stock adjustment",
       );
       push(t("products.stockAdjusted"));
       setAdjustProduct(null);
-      setAdjustQty("1");
+      setAdjustQty(1);
       setAdjustNote("Manual stock adjustment");
     } catch (error) {
       push(
@@ -258,7 +258,7 @@ export function ProductsTable({
             size="sm"
             onClick={() => {
               setAdjustProduct(row.original);
-              setAdjustQty("1");
+              setAdjustQty(1);
             }}
           >
             {t("common.adjust")}
@@ -318,7 +318,7 @@ export function ProductsTable({
                   className={clsx(
                     "touch-card rounded-2xl border p-3 shadow-xs",
                     lowStock
-                      ? "border-amber-200 bg-amber-50"
+                      ? "border-warning/30 bg-warning-soft"
                       : "border-slate-200 bg-white",
                   )}
                 >
@@ -345,7 +345,7 @@ export function ProductsTable({
                       <p
                         className={clsx(
                           "font-black tabular-nums",
-                          lowStock ? "text-amber-700" : "text-slate-900",
+                          lowStock ? "text-warning" : "text-slate-900",
                         )}
                       >
                         {product.quantityInStock}
@@ -379,7 +379,7 @@ export function ProductsTable({
                       size="sm"
                       onClick={() => {
                         setAdjustProduct(product);
-                        setAdjustQty("1");
+                        setAdjustQty(1);
                       }}
                     >
                       {t("common.adjust")}
@@ -491,11 +491,10 @@ export function ProductsTable({
             <span className="text-sm font-medium text-slate-700">
               {t("products.quantityChange")}
             </span>
-            <Input
-              type="number"
-              step="1"
+            <NumberField
               value={adjustQty}
-              onChange={(e) => setAdjustQty(e.target.value)}
+              onValueChange={setAdjustQty}
+              precision="integer"
             />
           </label>
           <label className="flex flex-col gap-1.5">
@@ -524,13 +523,12 @@ export function ProductsTable({
                 <span
                   className={clsx(
                     "font-bold",
-                    adjustProduct.quantityInStock + (Number(adjustQty) || 0) >=
-                      0
-                      ? "text-green-700"
-                      : "text-red-600",
+                    adjustProduct.quantityInStock + (adjustQty || 0) >= 0
+                      ? "text-success"
+                      : "text-danger",
                   )}
                 >
-                  {adjustProduct.quantityInStock + (Number(adjustQty) || 0)}
+                  {adjustProduct.quantityInStock + (adjustQty || 0)}
                 </span>
               </div>
             </div>

@@ -255,7 +255,7 @@ export function BarcodeScannerModal({
             <p className="text-xs text-slate-500 text-center">{hintText}</p>
           )}
           {lastScanned && continuous && (
-            <p className="text-xs text-green-600 text-center font-medium">
+            <p className="text-xs text-success text-center font-medium">
               {t('scanner.lastScanned')} <strong>{lastScanned}</strong>
             </p>
           )}

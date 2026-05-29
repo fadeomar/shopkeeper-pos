@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { productSchema, type ProductSchema } from "@/features/products/schema";
-import { productRepo } from "@/lib/db/repositories";
+import { productRepo, settingsRepo } from "@/lib/db/repositories";
 import {
   createProductWithInitialMovement,
   updateProductDetails,
@@ -13,6 +14,8 @@ import { createId } from "@/lib/utils/id";
 import { localDateKey } from "@/lib/utils/date";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NumberFieldRHF } from "@/components/ui/number-field-rhf";
+import { MoneyInputRHF } from "@/components/ui/money-input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useToast } from "@/components/ui/toast";
 import { BarcodeScannerModal } from "@/components/barcode/barcode-scanner-modal";
@@ -58,7 +61,7 @@ function FormField({
       <span className="text-sm font-medium text-slate-700">{label}</span>
       {children}
       {error && (
-        <span className="text-xs text-red-600 font-medium">{error}</span>
+        <span className="text-xs text-danger font-medium">{error}</span>
       )}
     </label>
   );
@@ -68,6 +71,8 @@ export function ProductForm({ product, onSaved }: Props) {
   const { t } = useLocale();
   const { push } = useToast();
   const { canEditCost } = usePermissions();
+  const settings = useLiveQuery(() => settingsRepo.get(), []);
+  const currency = settings?.currency ?? "ILS";
   const [lossWarning, setLossWarning] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
 
@@ -155,10 +160,11 @@ export function ProductForm({ product, onSaved }: Props) {
           label={t("products.quantityInStock")}
           error={product ? t("products.stockEditNote") : undefined}
         >
-          <Input
-            type="number"
-            step="1"
-            {...form.register("quantityInStock")}
+          <NumberFieldRHF
+            name="quantityInStock"
+            control={form.control}
+            precision="integer"
+            min={0}
             disabled={Boolean(product)}
             className={clsx(Boolean(product) && "opacity-50")}
           />
@@ -166,19 +172,30 @@ export function ProductForm({ product, onSaved }: Props) {
 
         {canEditCost && (
           <FormField label={t("products.buyPrice")}>
-            <Input type="number" step="0.01" {...form.register("buyPrice")} />
+            <MoneyInputRHF
+              name="buyPrice"
+              control={form.control}
+              currency={currency}
+              min={0}
+            />
           </FormField>
         )}
 
         <FormField label={t("products.sellPrice")}>
-          <Input type="number" step="0.01" {...form.register("sellPrice")} />
+          <MoneyInputRHF
+            name="sellPrice"
+            control={form.control}
+            currency={currency}
+            min={0}
+          />
         </FormField>
 
         <FormField label={t("products.minimumStockAlert")}>
-          <Input
-            type="number"
-            step="1"
-            {...form.register("minimumStockAlert")}
+          <NumberFieldRHF
+            name="minimumStockAlert"
+            control={form.control}
+            precision="integer"
+            min={0}
           />
         </FormField>
 
@@ -226,7 +243,7 @@ export function ProductForm({ product, onSaved }: Props) {
         <p
           className={clsx(
             "text-sm",
-            lossWarning ? "text-amber-600 font-semibold" : "text-slate-400",
+            lossWarning ? "text-warning font-semibold" : "text-slate-400",
           )}
         >
           {lossWarning ? t("products.lossWarning") : t("products.editNote")}

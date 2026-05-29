@@ -13,7 +13,8 @@ import type {
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import { MoneyInput } from "@/components/ui/money-input";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Modal } from "@/components/ui/modal";
 import { StatCard } from "@/components/ui/stat-card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -73,7 +74,7 @@ export function ExpensesWorkspace() {
   const [category, setCategory] = useState<ExpenseCategory>("rent");
   const [paymentMethod, setPaymentMethod] =
     useState<ExpensePaymentMethod>("cash");
-  const [amount, setAmount] = useState("");
+  const [amount, setAmount] = useState<number>(0);
   const [payee, setPayee] = useState("");
   const [note, setNote] = useState("");
   const [expenseDate, setExpenseDate] = useState(() => localDateKey());
@@ -101,15 +102,14 @@ export function ExpensesWorkspace() {
   function resetForm() {
     setCategory("rent");
     setPaymentMethod("cash");
-    setAmount("");
+    setAmount(0);
     setPayee("");
     setNote("");
     setExpenseDate(localDateKey());
   }
 
   async function handleSave() {
-    const numeric = Number(amount);
-    if (!Number.isFinite(numeric) || numeric <= 0) {
+    if (!Number.isFinite(amount) || amount <= 0) {
       push(t("common.invalidAmount"), "error");
       return;
     }
@@ -117,7 +117,7 @@ export function ExpensesWorkspace() {
     try {
       await recordExpense({
         category,
-        amount: numeric,
+        amount,
         paymentMethod,
         payee: payee.trim() || undefined,
         note: note.trim() || undefined,
@@ -287,28 +287,27 @@ export function ExpensesWorkspace() {
             <span className="font-medium text-slate-700">
               {t("expenses.category")}
             </span>
-            <Select
+            <SearchableSelect
               value={category}
-              onChange={(e) => setCategory(e.target.value as ExpenseCategory)}
-            >
-              {CATEGORIES.map((c) => (
-                <option key={c} value={c}>
-                  {t(categoryKey(c))}
-                </option>
-              ))}
-            </Select>
+              onValueChange={(v) =>
+                setCategory((v ?? "other") as ExpenseCategory)
+              }
+              options={CATEGORIES.map((c) => ({
+                value: c,
+                label: t(categoryKey(c)),
+              }))}
+            />
           </label>
 
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium text-slate-700">
               {t("expenses.amount")}
             </span>
-            <Input
-              type="number"
-              step="0.01"
+            <MoneyInput
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              dir="ltr"
+              onValueChange={setAmount}
+              currency={currency}
+              min={0}
             />
           </label>
 
@@ -316,18 +315,16 @@ export function ExpensesWorkspace() {
             <span className="font-medium text-slate-700">
               {t("expenses.paymentMethod")}
             </span>
-            <Select
+            <SearchableSelect
               value={paymentMethod}
-              onChange={(e) =>
-                setPaymentMethod(e.target.value as ExpensePaymentMethod)
+              onValueChange={(v) =>
+                setPaymentMethod((v ?? "cash") as ExpensePaymentMethod)
               }
-            >
-              {METHODS.map((m) => (
-                <option key={m} value={m}>
-                  {t(methodKey(m))}
-                </option>
-              ))}
-            </Select>
+              options={METHODS.map((m) => ({
+                value: m,
+                label: t(methodKey(m)),
+              }))}
+            />
           </label>
 
           <label className="flex flex-col gap-1 text-sm">

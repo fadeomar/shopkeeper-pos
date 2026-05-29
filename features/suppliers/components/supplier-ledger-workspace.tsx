@@ -17,6 +17,7 @@ import { useToast } from "@/components/ui/toast";
 import { StatCard } from "@/components/ui/stat-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MoneyInput } from "@/components/ui/money-input";
 import { DataTable } from "@/components/ui/data-table";
 // import { EmptyState } from '@/components/ui/empty-state';
 import { Modal } from "@/components/ui/modal";
@@ -32,17 +33,14 @@ export function SupplierLedgerWorkspace() {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<SupplierLedgerDetails | null>(null);
   const [paymentOpen, setPaymentOpen] = useState(false);
-  const [amount, setAmount] = useState("");
+  const [amount, setAmount] = useState<number>(0);
   const [note, setNote] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<
     "cash" | "card" | "bank" | "other"
   >("cash");
   const currency = settings?.currency ?? "ILS";
 
-  const paymentAmountNumeric = Number(amount);
-  const safePaymentAmount = Number.isFinite(paymentAmountNumeric)
-    ? paymentAmountNumeric
-    : 0;
+  const safePaymentAmount = Number.isFinite(amount) ? amount : 0;
   const balanceOwedAtModal = selected?.balanceOwed ?? 0;
   // Mirror of customer overpayment math: only amounts above a positive
   // outstanding balance count as overpayment. Paying a supplier we already
@@ -71,7 +69,7 @@ export function SupplierLedgerWorkspace() {
       const details = await getSupplierLedgerDetails(selected.key);
       setSelected(details);
       setPaymentOpen(false);
-      setAmount("");
+      setAmount(0);
       setNote("");
       setPaymentMethod("cash");
       push(t("suppliers.paymentSaved"));
@@ -158,11 +156,11 @@ export function SupplierLedgerWorkspace() {
       accessorKey: "balanceOwed",
       cell: ({ row }) => (
         <span
-          className={`tabular-nums font-semibold ${row.original.balanceOwed > MONEY_EPSILON ? "text-red-600" : row.original.balanceOwed < -MONEY_EPSILON ? "text-blue-600" : "text-green-600"}`}
+          className={`tabular-nums font-semibold ${row.original.balanceOwed > MONEY_EPSILON ? "text-danger" : row.original.balanceOwed < -MONEY_EPSILON ? "text-info" : "text-success"}`}
         >
           {formatCurrency(row.original.balanceOwed, currency)}
           {row.original.balanceOwed > MONEY_EPSILON && (
-            <span className="ms-1 text-[10px] font-medium uppercase tracking-wide text-red-500">
+            <span className="ms-1 text-[10px] font-medium uppercase tracking-wide text-danger">
               {t("suppliers.creditBalanceNote")}
             </span>
           )}
@@ -318,7 +316,7 @@ export function SupplierLedgerWorkspace() {
                       <div className="text-end text-sm tabular-nums">
                         <p>{formatCurrency(purchase.totalAmount, currency)}</p>
                         {purchase.creditAmount > MONEY_EPSILON && (
-                          <p className="text-red-600 font-medium">
+                          <p className="text-danger font-medium">
                             {formatCurrency(purchase.creditAmount, currency)}
                           </p>
                         )}
@@ -395,18 +393,15 @@ export function SupplierLedgerWorkspace() {
             <span className="text-xs font-medium text-slate-600 uppercase tracking-wide">
               {t("suppliers.paymentAmount")}
             </span>
-            <Input
-              type="number"
-              inputMode="decimal"
-              enterKeyHint="done"
-              step="0.01"
-              min="0"
+            <MoneyInput
               value={amount}
-              onChange={(event) => setAmount(event.target.value)}
+              onValueChange={setAmount}
+              currency={currency}
+              min={0}
             />
           </label>
           {isOverpayment && (
-            <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            <p className="rounded-xl border border-warning/30 bg-warning-soft px-3 py-2 text-xs text-warning">
               {t("suppliers.overpaymentWarning", {
                 extra: formatCurrency(overpaymentExtra, currency),
               })}
@@ -424,7 +419,7 @@ export function SupplierLedgerWorkspace() {
                   onClick={() => setPaymentMethod(m)}
                   className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                     paymentMethod === m
-                      ? "bg-blue-600 text-white"
+                      ? "bg-brand text-white"
                       : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                   }`}
                 >
