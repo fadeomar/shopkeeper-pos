@@ -333,7 +333,7 @@ export default function UserDetailPage() {
   const billColumns: ColumnDef<Bill, unknown>[] = [
     {
       accessorKey: "billNumber",
-      header: "Bill #",
+      header: t("admin.colBillNumber"),
       cell: ({ row }) => (
         <span className="font-mono text-xs text-slate-600">
           {row.original.billNumber}
@@ -342,7 +342,7 @@ export default function UserDetailPage() {
     },
     {
       accessorKey: "createdAt",
-      header: "Date",
+      header: t("admin.colDate"),
       cell: ({ row }) => (
         <span className="whitespace-nowrap text-slate-500">
           {row.original.createdAt.slice(0, 10)}
@@ -351,13 +351,13 @@ export default function UserDetailPage() {
     },
     {
       accessorKey: "customerName",
-      header: "Customer",
+      header: t("admin.colCustomer"),
       cell: ({ row }) =>
         row.original.customerName || <span className="text-slate-300">—</span>,
     },
     {
       accessorKey: "paymentMethod",
-      header: "Payment",
+      header: t("admin.colPayment"),
       cell: ({ row }) => (
         <span className="capitalize text-slate-500">
           {row.original.paymentMethod}
@@ -366,7 +366,7 @@ export default function UserDetailPage() {
     },
     {
       id: "netTotal",
-      header: "Net Total",
+      header: t("admin.colNetTotal"),
       accessorFn: (row) => netBillTotal(row),
       cell: ({ row }) => (
         <span className="block text-right font-medium tabular-nums text-slate-800">
@@ -376,7 +376,7 @@ export default function UserDetailPage() {
     },
     {
       accessorKey: "status",
-      header: "Status",
+      header: t("admin.colStatus"),
       cell: ({ row }) => (
         <span className="block text-right">
           <BillStatusBadge status={row.original.status} />
@@ -388,23 +388,23 @@ export default function UserDetailPage() {
   const paymentColumns: ColumnDef<CustomerPayment, unknown>[] = [
     {
       accessorKey: "createdAt",
-      header: "Date",
+      header: t("admin.colDate"),
       cell: ({ row }) => (
         <span className="whitespace-nowrap text-slate-500">
           {row.original.createdAt.slice(0, 10)}
         </span>
       ),
     },
-    { accessorKey: "customerName", header: "Customer" },
+    { accessorKey: "customerName", header: t("admin.colCustomer") },
     {
       accessorKey: "note",
-      header: "Note",
+      header: t("admin.colNote"),
       cell: ({ row }) =>
         row.original.note || <span className="text-slate-300">—</span>,
     },
     {
       accessorKey: "amount",
-      header: "Amount",
+      header: t("admin.colAmount"),
       cell: ({ row }) => (
         <span className="block text-right font-medium tabular-nums text-slate-800">
           {row.original.amount.toFixed(2)}
@@ -469,7 +469,7 @@ export default function UserDetailPage() {
   const movementColumns: ColumnDef<StockMovement, unknown>[] = [
     {
       accessorKey: "createdAt",
-      header: "Date",
+      header: t("admin.colDate"),
       cell: ({ row }) => (
         <span className="whitespace-nowrap text-slate-500">
           {row.original.createdAt.slice(0, 10)}
@@ -478,21 +478,21 @@ export default function UserDetailPage() {
     },
     {
       accessorKey: "movementType",
-      header: "Type",
+      header: t("admin.colType"),
       cell: ({ row }) => (
         <span className="capitalize">{row.original.movementType}</span>
       ),
     },
-    { accessorKey: "referenceType", header: "Reference" },
+    { accessorKey: "referenceType", header: t("admin.colReference") },
     {
       accessorKey: "note",
-      header: "Note",
+      header: t("admin.colNote"),
       cell: ({ row }) =>
         row.original.note || <span className="text-slate-300">—</span>,
     },
     {
       accessorKey: "quantityChange",
-      header: "Qty",
+      header: t("admin.colQty"),
       cell: ({ row }) => (
         <span
           className={`block text-right font-medium tabular-nums ${row.original.quantityChange < 0 ? "text-danger" : "text-success"}`}
@@ -819,8 +819,8 @@ export default function UserDetailPage() {
       <DataTable
         columns={paymentColumns}
         data={payments}
-        title="Recent Customer Payments"
-        emptyTitle="No customer payments synced yet"
+        title={t("admin.recentCustomerPayments")}
+        emptyTitle={t("admin.noCustomerPaymentsSynced")}
         pageSize={10}
         labels={tableLabels}
       />
@@ -830,7 +830,7 @@ export default function UserDetailPage() {
         data={products}
         title={
           <>
-            Products{" "}
+            {t("admin.products")}{" "}
             <span className="font-normal text-slate-400">
               ({products.length})
             </span>
@@ -841,10 +841,10 @@ export default function UserDetailPage() {
             onClick={exportProductsCSV}
             className="text-xs font-medium text-info transition-colors hover:text-info/80"
           >
-            Export CSV
+            {t("admin.exportCSV")}
           </button>
         }
-        emptyTitle="No products synced yet"
+        emptyTitle={t("admin.noProductsSynced")}
         pageSize={10}
         labels={tableLabels}
       />
@@ -852,8 +852,8 @@ export default function UserDetailPage() {
       <DataTable
         columns={movementColumns}
         data={movements}
-        title="Recent Stock Movements"
-        emptyTitle="No stock movements synced yet"
+        title={t("admin.recentStockMovements")}
+        emptyTitle={t("admin.noStockMovementsSynced")}
         pageSize={10}
         labels={tableLabels}
       />
@@ -933,6 +933,7 @@ interface SettingsCardProps {
 }
 
 function SettingsCard({ uid, settings, onSaved }: SettingsCardProps) {
+  const { t } = useLocale();
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
@@ -972,7 +973,7 @@ function SettingsCard({ uid, settings, onSaved }: SettingsCardProps) {
       onSaved(updated);
       setEditing(false);
     } catch {
-      setSaveError("Failed to save. Check your connection.");
+      setSaveError(t("admin.errorSaveSettings"));
     } finally {
       setSaving(false);
     }
@@ -981,10 +982,11 @@ function SettingsCard({ uid, settings, onSaved }: SettingsCardProps) {
   if (!settings) {
     return (
       <section>
-        <h2 className="text-sm font-semibold text-slate-700 mb-2">Settings</h2>
+        <h2 className="text-sm font-semibold text-slate-700 mb-2">
+          {t("admin.settingsHeading")}
+        </h2>
         <div className="bg-white border border-slate-200 rounded-2xl px-5 py-4 text-sm text-slate-400">
-          No settings synced yet — appears after the user saves settings at
-          least once.
+          {t("admin.noSettingsSynced")}
         </div>
       </section>
     );
@@ -993,13 +995,15 @@ function SettingsCard({ uid, settings, onSaved }: SettingsCardProps) {
   return (
     <section>
       <div className="flex items-center justify-between mb-2">
-        <h2 className="text-sm font-semibold text-slate-700">Settings</h2>
+        <h2 className="text-sm font-semibold text-slate-700">
+          {t("admin.settingsHeading")}
+        </h2>
         {!editing && (
           <button
             onClick={startEdit}
             className="text-xs font-medium text-info hover:text-info/80 transition-colors"
           >
-            Edit
+            {t("common.edit")}
           </button>
         )}
       </div>
@@ -1008,22 +1012,22 @@ function SettingsCard({ uid, settings, onSaved }: SettingsCardProps) {
         {editing ? (
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <SettingsField label="Store Name">
+              <SettingsField label={t("settings.storeName")}>
                 <input
                   value={storeName}
                   onChange={(e) => setStoreName(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand"
                 />
               </SettingsField>
-              <SettingsField label="Cashier Name">
+              <SettingsField label={t("settings.cashierName")}>
                 <input
                   value={cashierName}
                   onChange={(e) => setCashierName(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand"
-                  placeholder="optional"
+                  placeholder={t("admin.optional")}
                 />
               </SettingsField>
-              <SettingsField label="Currency">
+              <SettingsField label={t("settings.currency")}>
                 <input
                   value={currency}
                   onChange={(e) => setCurrency(e.target.value)}
@@ -1040,7 +1044,7 @@ function SettingsCard({ uid, settings, onSaved }: SettingsCardProps) {
                   checked={allowLossSale}
                   onChange={(e) => setAllowLossSale(e.target.checked)}
                 />
-                Allow selling below cost price
+                {t("settings.allowLossSale")}
               </label>
               <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-700">
                 <input
@@ -1049,7 +1053,7 @@ function SettingsCard({ uid, settings, onSaved }: SettingsCardProps) {
                   checked={lowStockHighlight}
                   onChange={(e) => setLowStockHighlight(e.target.checked)}
                 />
-                Highlight low-stock products
+                {t("settings.lowStockHighlight")}
               </label>
             </div>
 
@@ -1065,32 +1069,32 @@ function SettingsCard({ uid, settings, onSaved }: SettingsCardProps) {
                 disabled={saving}
                 className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800 rounded-xl transition-colors disabled:opacity-50"
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 onClick={handleSave}
                 disabled={saving}
                 className="px-4 py-2 bg-brand hover:bg-brand-hover disabled:opacity-60 text-white text-sm font-medium rounded-xl transition-colors"
               >
-                {saving ? "Saving…" : "Save changes"}
+                {saving ? t("admin.saving") : t("admin.saveChanges")}
               </button>
             </div>
           </>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
-            <ReadRow label="Store Name" value={settings.storeName} />
-            <ReadRow label="Cashier Name" value={settings.cashierName ?? "—"} />
-            <ReadRow label="Currency" value={settings.currency} />
+            <ReadRow label={t("settings.storeName")} value={settings.storeName} />
+            <ReadRow label={t("settings.cashierName")} value={settings.cashierName ?? "—"} />
+            <ReadRow label={t("settings.currency")} value={settings.currency} />
             <ReadRow
-              label="Allow Loss Sale"
-              value={settings.allowLossSale ? "Yes" : "No"}
+              label={t("settings.allowLossSale")}
+              value={settings.allowLossSale ? t("admin.yes") : t("admin.no")}
             />
             <ReadRow
-              label="Low Stock Highlight"
-              value={settings.lowStockHighlight ? "On" : "Off"}
+              label={t("settings.lowStockHighlight")}
+              value={settings.lowStockHighlight ? t("admin.on") : t("admin.off")}
             />
             <ReadRow
-              label="Last Updated"
+              label={t("admin.lastUpdated")}
               value={new Date(settings.updatedAt).toLocaleString(undefined, {
                 year: "numeric",
                 month: "short",

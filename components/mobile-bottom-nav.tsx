@@ -20,7 +20,7 @@
  *    automatically when a link inside is tapped.
  */
 
-import { useState, useEffect, useId } from "react";
+import { useState, useEffect, useId, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
@@ -46,6 +46,8 @@ import {
 } from "lucide-react";
 import { db } from "@/lib/db/schema";
 import { useLocale } from "@/components/providers/locale-context";
+import { useAuth } from "@/components/providers/auth-context";
+import { SafeSignOutButton } from "@/components/auth/safe-sign-out-button";
 
 interface TabRoute {
   href: string;
@@ -78,8 +80,12 @@ const MORE_ROUTES: TabRoute[] = [
 export function MobileBottomNav() {
   const pathname = usePathname();
   const { t } = useLocale();
+  const { user } = useAuth();
   const [moreOpen, setMoreOpen] = useState(false);
   const dialogId = useId();
+  const sheetRef = useRef<HTMLDivElement | null>(null);
+  const moreButtonRef = useRef<HTMLButtonElement | null>(null);
+  const wasOpenRef = useRef(false);
 
   const activeShift = useLiveQuery(
     () => db.shifts.where("status").equals("open").first(),
@@ -101,18 +107,62 @@ export function MobileBottomNav() {
     };
   }, [moreOpen]);
 
-  // Dismiss on Escape for keyboard users.
+  // Focus management for the sheet: focus the first control on open, trap Tab
+  // inside it, and close on Escape. The containment guard means a nested modal
+  // (the sign-out confirm, portaled outside the sheet) keeps its own focus and
+  // Escape handling rather than fighting this trap.
   useEffect(() => {
     if (!moreOpen) return;
+    const focusables = () =>
+      Array.from(
+        sheetRef.current?.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      );
+    const timer = window.setTimeout(() => focusables()[0]?.focus(), 30);
+
     function onKey(e: KeyboardEvent) {
+      const sheet = sheetRef.current;
+      const focusInSheet = !!sheet && sheet.contains(document.activeElement);
       if (e.key === "Escape") {
+        if (focusInSheet) {
+          e.preventDefault();
+          setMoreOpen(false);
+        }
+        return;
+      }
+      if (e.key !== "Tab" || !focusInSheet) return;
+      const items = focusables();
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      if (e.shiftKey && active === first) {
         e.preventDefault();
-        setMoreOpen(false);
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
       }
     }
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("keydown", onKey);
+    };
   }, [moreOpen]);
+
+  // Restore focus to the More trigger when the sheet closes (keyboard users
+  // shouldn't be dropped back at the top of the page).
+  useEffect(() => {
+    if (wasOpenRef.current && !moreOpen) moreButtonRef.current?.focus();
+    wasOpenRef.current = moreOpen;
+  }, [moreOpen]);
+
+  const accountInitial =
+    user?.name?.charAt(0)?.toUpperCase() ??
+    user?.email?.charAt(0)?.toUpperCase() ??
+    "?";
 
   function isActive(href: string) {
     return pathname === href || (href !== "/" && pathname.startsWith(href));
@@ -172,6 +222,7 @@ export function MobileBottomNav() {
 
           {/* More button */}
           <button
+            ref={moreButtonRef}
             type="button"
             aria-label={t("navShort.more")}
             aria-expanded={moreOpen}
@@ -206,6 +257,7 @@ export function MobileBottomNav() {
 
           {/* Sheet panel */}
           <div
+            ref={sheetRef}
             id={dialogId}
             role="dialog"
             aria-modal="true"
@@ -274,6 +326,35 @@ export function MobileBottomNav() {
                   </Link>
                 );
               })}
+            </div>
+
+            {/* Account — sign-out lives here (off the working header). The
+                SafeSignOutButton shows the unsynced-data warning before logout. */}
+            <div className="border-t border-white/10 px-5 py-4">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                {t("nav.account")}
+              </p>
+              <div className="flex items-center gap-3">
+                <span
+                  aria-hidden
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-sm font-semibold text-white"
+                >
+                  {accountInitial}
+                </span>
+                <div className="min-w-0 flex-1">
+                  {user?.name && (
+                    <p className="truncate text-sm font-medium text-white">
+                      {user.name}
+                    </p>
+                  )}
+                  {user?.email && (
+                    <p className="truncate text-xs text-slate-400">
+                      {user.email}
+                    </p>
+                  )}
+                </div>
+                <SafeSignOutButton className="shrink-0 rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 transition-colors hover:bg-slate-700 hover:text-white" />
+              </div>
             </div>
           </div>
         </div>

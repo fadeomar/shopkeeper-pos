@@ -14,7 +14,7 @@ export function Card({
   return (
     <div
       className={clsx(
-        "bg-white border border-slate-200 rounded-2xl shadow-xs",
+        "bg-surface border border-border-default rounded-2xl shadow-xs",
         padding === "none" && "p-0",
         padding === "sm" && "p-4",
         padding === "md" && "p-5",

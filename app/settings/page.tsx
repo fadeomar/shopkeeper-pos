@@ -189,6 +189,25 @@ export default function SettingsPage() {
     { value: "exclusive", label: t("settings.taxModeExclusive") },
   ];
 
+  // Currency is a dropdown of common regional + major codes (ILS first for the
+  // local market) rather than free text, so cashiers can't save a typo'd code.
+  // Any pre-existing value not in the list is preserved as its own option.
+  const currencyValue = form.watch("currency");
+  const COMMON_CURRENCIES = [
+    { value: "ILS", label: "ILS — ₪ Israeli New Shekel" },
+    { value: "JOD", label: "JOD — Jordanian Dinar" },
+    { value: "USD", label: "USD — $ US Dollar" },
+    { value: "EUR", label: "EUR — € Euro" },
+    { value: "EGP", label: "EGP — Egyptian Pound" },
+    { value: "SAR", label: "SAR — Saudi Riyal" },
+    { value: "AED", label: "AED — UAE Dirham" },
+    { value: "GBP", label: "GBP — £ British Pound" },
+  ];
+  const currencyOptions =
+    currencyValue && !COMMON_CURRENCIES.some((c) => c.value === currencyValue)
+      ? [{ value: currencyValue, label: currencyValue }, ...COMMON_CURRENCIES]
+      : COMMON_CURRENCIES;
+
   const watchEnable = {
     cash: form.watch("enableCash"),
     card: form.watch("enableCard"),
@@ -261,10 +280,15 @@ export default function SettingsPage() {
               label={t("settings.currency")}
               hint={t("settings.currencyHint")}
             >
-              <Input
-                {...form.register("currency")}
-                autoCapitalize="characters"
-                maxLength={3}
+              <SearchableSelect
+                value={currencyValue}
+                onValueChange={(value) =>
+                  form.setValue("currency", (value ?? "ILS").toUpperCase(), {
+                    shouldDirty: true,
+                  })
+                }
+                options={currencyOptions}
+                searchPlaceholder={t("settings.currency")}
               />
             </FormField>
 
@@ -536,7 +560,7 @@ function RolePermissionsCard() {
                   {roleLabels[role]}
                   {role === "owner" && (
                     <span className="block text-[10px] font-normal text-slate-400">
-                      (full)
+                      {t("settings.roleFullAccess")}
                     </span>
                   )}
                 </th>

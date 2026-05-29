@@ -24,10 +24,27 @@ import type { LucideIcon } from "lucide-react";
 // stays backward compatible — tone is optional and defaults to "success".
 type ToastTone = "success" | "error" | "info" | "warning";
 
+/**
+ * Structured toast input. `push` accepts either a plain string (the original
+ * API — title only) or this object for richer offline-first feedback with an
+ * optional secondary line and a single inline action (e.g. "Open receipt").
+ */
+export interface ToastInput {
+  title: string;
+  description?: string;
+  tone?: ToastTone;
+  /** Optional inline action button. */
+  actionLabel?: string;
+  onAction?: () => void;
+}
+
 interface ToastItem {
   id: string;
-  message: string;
+  title: string;
+  description?: string;
   tone: ToastTone;
+  actionLabel?: string;
+  onAction?: () => void;
 }
 
 // Per-tone presentation: a semantic-token icon chip + icon. The toast body is
@@ -52,7 +69,7 @@ const TONE_DURATION_MS: Record<ToastTone, number> = {
 };
 
 const ToastContext = createContext<{
-  push: (message: string, tone?: ToastTone) => void;
+  push: (input: string | ToastInput, tone?: ToastTone) => void;
 } | null>(null);
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
@@ -63,11 +80,23 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     setToasts((cur) => cur.filter((toast) => toast.id !== id));
   }, []);
 
+  // Backward compatible: push("msg") / push("msg", "error") still work, and
+  // push({ title, description, tone, actionLabel, onAction }) adds structure.
   const push = useCallback(
-    (message: string, tone: ToastTone = "success") => {
-      const id = createUuid();
-      setToasts((cur) => [...cur, { id, message, tone }]);
-      window.setTimeout(() => dismiss(id), TONE_DURATION_MS[tone]);
+    (input: string | ToastInput, tone: ToastTone = "success") => {
+      const item: ToastItem =
+        typeof input === "string"
+          ? { id: createUuid(), title: input, tone }
+          : {
+              id: createUuid(),
+              title: input.title,
+              description: input.description,
+              tone: input.tone ?? "success",
+              actionLabel: input.actionLabel,
+              onAction: input.onAction,
+            };
+      setToasts((cur) => [...cur, item]);
+      window.setTimeout(() => dismiss(item.id), TONE_DURATION_MS[item.tone]);
     },
     [dismiss],
   );
@@ -92,28 +121,49 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             <div
               key={toast.id}
               className={clsx(
-                "pointer-events-auto flex items-center gap-3 animate-toast-in",
+                "pointer-events-auto flex items-start gap-3 animate-toast-in",
                 "max-w-xs w-max rounded-xl border border-border-default bg-surface",
                 "ps-3 pe-2 py-2.5 shadow-lg",
               )}
             >
               <span
                 className={clsx(
-                  "shrink-0 inline-flex h-7 w-7 items-center justify-center rounded-lg",
+                  "mt-0.5 shrink-0 inline-flex h-7 w-7 items-center justify-center rounded-lg",
                   chip,
                 )}
               >
                 <Icon size={16} aria-hidden className={iconColor} />
               </span>
-              <p className="min-w-0 flex-1 text-sm font-medium text-fg">
-                {toast.message}
-              </p>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-fg">{toast.title}</p>
+                {toast.description && (
+                  <p className="mt-0.5 text-xs text-fg-muted">
+                    {toast.description}
+                  </p>
+                )}
+                {toast.actionLabel && toast.onAction && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      toast.onAction?.();
+                      dismiss(toast.id);
+                    }}
+                    className={clsx(
+                      "mt-1.5 inline-flex rounded-lg px-2 py-1 text-xs font-semibold",
+                      "bg-brand-soft text-brand transition-colors hover:brightness-95",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
+                    )}
+                  >
+                    {toast.actionLabel}
+                  </button>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={() => dismiss(toast.id)}
                 aria-label={t("common.close")}
                 className={clsx(
-                  "shrink-0 rounded-lg p-1 text-fg-muted transition-colors",
+                  "mt-0.5 shrink-0 rounded-lg p-1 text-fg-muted transition-colors",
                   "hover:bg-surface-soft hover:text-fg",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
                 )}

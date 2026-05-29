@@ -148,6 +148,10 @@ Settings-driven enforcement (POS + purchases): store settings are authoritative 
 
 These rules are enforced in the UI **and** defensively in the service layer via the shared helpers in `lib/services/settings-policy.ts` — `assertPaymentMethodEnabled(settings, method)` and `effectiveTaxAmount(settings, taxAmount)` — called by both `billing-service.ts` and `purchase-service.ts` so a stale/offline client can't bypass store policy (bad data would otherwise sync to the cloud). `AppError` codes: `BILL_SHIFT_REQUIRED` (bills only), `PAYMENT_METHOD_DISABLED` and `DISCOUNT_EXCEEDS_LIMIT` (shared).
 
+Role permissions are likewise enforced at the service layer, not just hidden in the UI. `lib/services/permission-service.ts` exposes `assertPermission(key)` / `getCurrentPermissions()` — resolved offline from `firebase auth.currentUser` + Dexie `authCache` + `settings.rolePermissions`, defaulting to `cashier` (fail closed). High-risk service ops assert before opening their transaction: `voidBill`→`canVoid`, `returnBillItem`→`canReturn`, discounted `createFinalizedBill`→`canDiscount`, cost-changing `updateProductDetails`→`canEditCost`. Throws `PERMISSION_DENIED`. The store model is single-user-per-store (`/users/{uid}/*`); these checks defend against stale clients / direct callers, not multi-tenant access.
+
+Toasts support a structured form: `push(message)` (title only) or `push({ title, description?, tone?, actionLabel?, onAction? })` — see `components/ui/toast.tsx`. Offline-only navigation affordances (e.g. the success panel's "Open bill" link to the dynamic `/bills/[id]` route) must degrade when `useOnlineStatus()` reports offline, since dynamic routes aren't guaranteed in the SW cache.
+
 ## 20. Inventory/stock UI rules
 
 Use `StockBadge` for stock status display. Do not mutate inventory or stock calculations inside UI display components.
@@ -163,6 +167,8 @@ Migrate one feature at a time. First introduce foundation components, then repla
 - **Modal dialogs** — Use `role="dialog" aria-modal="true" aria-labelledby={titleId}`. Use `useId()` for `titleId` and `descId` per instance (never hardcoded IDs). Wire `aria-describedby={descId}` when a description is present. The `Modal` component handles this automatically — do not duplicate description text in both the `description` prop and the body children.
 - **Combobox / searchable select** — The search input inside `SearchableSelect` must carry `role="combobox" aria-expanded aria-autocomplete="list" aria-controls={listboxId} aria-activedescendant={highlightedOptionId}`. Each option must have a stable `id`.
 - **Live regions / toasts** — Toast containers must carry `role="status" aria-live="polite" aria-atomic="false"` so screen readers announce new messages without interrupting.
+- **Sheet / dialog focus management** — Modal-like sheets must focus their first control on open, trap `Tab`/`Shift+Tab` within the sheet, close on `Escape`, and restore focus to the trigger on close. The mobile More sheet (`mobile-bottom-nav.tsx`) implements this with a containment guard (`sheet.contains(document.activeElement)`) so a nested portaled modal — e.g. the sign-out confirm — keeps its own focus/Escape rather than fighting the trap. The shared `Modal` already handles its own trap.
+- **Reduced motion** — `app/globals.css` has a global `@media (prefers-reduced-motion: reduce)` block that collapses animation/transition durations. Don't gate essential feedback on animation; keep elements visible without it.
 - **Sortable tables** — Sortable `<th>` elements must set `aria-sort="ascending" | "descending" | "none"`. Pagination must be wrapped in `<nav aria-label={t('dataTable.paginationNav')}>`. Search inputs without a visible `<label>` must have `aria-label`.
 - **i18n-only ARIA labels** — All `aria-label` strings must come from translation keys. Never hardcode English in ARIA attributes of shared components.
 
@@ -174,6 +180,7 @@ Migrate one feature at a time. First introduce foundation components, then repla
 - **More sheet close on navigate**: `MobileBottomNav` closes the sheet automatically when `pathname` changes. Don't add manual close logic to individual links inside the sheet.
 - **Bottom nav hidden on `/billing`**: `MobileBottomNav` returns `null` when `pathname.startsWith("/billing")`. The POS Sell screen owns the bottom of the viewport with its sticky checkout bar — the nav would overlap it. Do not remove this guard.
 - **Bottom nav z-index is `z-40`**; the More sheet overlay is `z-50`. Toasts are `z-[100]`. Modals are `z-50`. This ordering is intentional — modals and toasts always appear above the bottom nav.
+- **Sign-out lives in More → Account, not the mobile header.** The mobile POS header carries only store name + sync state. Sign-out is risky offline (unsynced data) and infrequent for a cashier, so it sits in the More sheet's Account section via the shared `SafeSignOutButton` (which still shows the unsynced-data warning modal). The desktop sidebar foot and the admin shell keep their own sign-out.
 
 ## 24. Rules for what must not be changed during UI refactors
 

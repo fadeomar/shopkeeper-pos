@@ -6,6 +6,7 @@ import { useLocale } from "@/components/providers/locale-context";
 
 const OFFLINE_NAV_ROUTES = [
   "/",
+  "/guide",
   "/products",
   "/inventory",
   "/reports",
@@ -27,6 +28,7 @@ const OFFLINE_NAV_ROUTES = [
 // suppliers and purchases are required for daily open/close and stock receiving.
 const REQUIRED_OFFLINE_ROUTES = [
   "/",
+  "/guide",
   "/products",
   "/billing",
   "/bills",

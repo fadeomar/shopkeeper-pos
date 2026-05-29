@@ -35,8 +35,19 @@ import {
 } from "@/lib/services/account-data-service";
 import { setRestoreDecisionPending } from "@/lib/services/sync-gate";
 import { SyncStatusBadge } from "@/components/sync/sync-status-badge";
+import { SafeSignOutButton } from "@/components/auth/safe-sign-out-button";
 import { ConflictResolverModal } from "@/components/sync/conflict-resolver-modal";
 import { MobileBottomNav } from "@/components/mobile-bottom-nav";
+import { PublicShell } from "@/components/auth/public-shell";
+
+// Routes reachable WITHOUT authentication. Prefix-matched, allowlist-only: only
+// these paths bypass the auth gate; every other route keeps its existing
+// behaviour. Public pages render in PublicShell (no DB, no sync).
+const PUBLIC_PATHS = ["/guide"] as const;
+
+function isPublicPath(pathname: string): boolean {
+  return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"));
+}
 
 export function AuthenticatedShell({
   children,
@@ -44,6 +55,12 @@ export function AuthenticatedShell({
   children: React.ReactNode;
 }) {
   const { status, user, logout } = useAuth();
+  const pathname = usePathname();
+
+  // Public allowlist takes precedence over the auth gate so /guide is reachable
+  // when logged out. Checked before status so it never flashes the login screen.
+  if (isPublicPath(pathname)) return <PublicShell>{children}</PublicShell>;
+
   if (status === "loading") return <LoadingScreen />;
   if (status === "unauthenticated") return <AuthScreen />;
   if (status === "pending") return <PendingScreen onLogout={logout} />;
@@ -145,7 +162,7 @@ function AdminShell({ children }: { children: React.ReactNode }) {
 function CashierShell({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const { t } = useLocale();
-  const { setSettings } = useSettings();
+  const { settings, setSettings } = useSettings();
   const uid = user?.uid;
 
   // Restore flow state
@@ -362,14 +379,17 @@ function CashierShell({ children }: { children: React.ReactNode }) {
             <AppSidebarBrand />
           </div>
 
-          {/* Mobile: compact header bar — store name, sync pill, sign-out */}
+          {/* Mobile: compact header bar — store name + sync state only. Sign-out
+              lives in the More → Account section (it is risky offline and not a
+              frequent cashier action, so it shouldn't sit in the working header). */}
           <div className="flex lg:hidden items-center gap-2 px-4 py-3 border-b border-white/10">
+            {/* Store name gives the cashier working context; falls back to the
+                product brand only until settings load. */}
             <span className="font-bold text-sm tracking-tight truncate">
-              Shopkeeper POS
+              {settings?.storeName?.trim() || "Shopkeeper POS"}
             </span>
             <div className="ms-auto flex items-center gap-2 shrink-0">
               <SyncStatusBadge compact />
-              <SafeSignOutButton className="rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700 hover:text-white transition-colors" />
             </div>
           </div>
 
@@ -625,6 +645,12 @@ function PendingScreen({ onLogout }: { onLogout: () => void }) {
           >
             {t("auth.signOut")}
           </button>
+          <Link
+            href={"/guide" as Route}
+            className="w-full text-center text-sm text-info hover:underline font-medium pt-1"
+          >
+            {t("guide.common.learnHow")}
+          </Link>
         </div>
       </div>
     </div>
@@ -676,6 +702,12 @@ function InactiveScreen({ onLogout }: { onLogout: () => void }) {
           >
             {t("auth.signOut")}
           </button>
+          <Link
+            href={"/guide" as Route}
+            className="w-full text-center text-sm text-info hover:underline font-medium pt-1"
+          >
+            {t("guide.common.learnHow")}
+          </Link>
         </div>
       </div>
     </div>
@@ -737,7 +769,7 @@ function LoginForm({ onShowSignUp }: { onShowSignUp: () => void }) {
                 autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
+                placeholder={t("auth.emailPlaceholder")}
               />
             </FormField>
             <FormField label={t("auth.password")}>
@@ -764,6 +796,11 @@ function LoginForm({ onShowSignUp }: { onShowSignUp: () => void }) {
           >
             {t("auth.requestAccess")}
           </button>
+        </p>
+        <p className="text-center text-sm text-slate-500 mt-2">
+          <Link href={"/guide" as Route} className="text-info hover:underline font-medium">
+            {t("guide.common.learnHow")}
+          </Link>
         </p>
       </div>
     </div>
@@ -817,7 +854,7 @@ function SignUpForm({ onBack }: { onBack: () => void }) {
                 required
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Jane Smith"
+                placeholder={t("auth.namePlaceholder")}
               />
             </FormField>
             <FormField label={t("auth.email")}>
@@ -827,7 +864,7 @@ function SignUpForm({ onBack }: { onBack: () => void }) {
                 autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
+                placeholder={t("auth.emailPlaceholder")}
               />
             </FormField>
             <FormField
@@ -843,7 +880,7 @@ function SignUpForm({ onBack }: { onBack: () => void }) {
                 autoComplete="tel"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                placeholder="+1 555 0123"
+                placeholder={t("auth.phonePlaceholder")}
               />
             </FormField>
             <FormField label={t("auth.password")}>
@@ -879,6 +916,11 @@ function SignUpForm({ onBack }: { onBack: () => void }) {
           >
             {t("auth.signIn")}
           </button>
+        </p>
+        <p className="text-center text-sm text-slate-500 mt-2">
+          <Link href={"/guide" as Route} className="text-info hover:underline font-medium">
+            {t("guide.common.learnHow")}
+          </Link>
         </p>
       </div>
     </div>
@@ -923,193 +965,3 @@ function ErrorBox({ message }: { message: string }) {
   );
 }
 
-function SafeSignOutButton({ className }: { className?: string }) {
-  const { user, logout } = useAuth();
-  const { t } = useLocale();
-  const [open, setOpen] = useState(false);
-  const [summary, setSummary] = useState<Awaited<
-    ReturnType<typeof getLocalDataSummary>
-  > | null>(null);
-  const [syncing, setSyncing] = useState(false);
-  const [signingOut, setSigningOut] = useState(false);
-
-  async function openModal() {
-    setSummary(await getLocalDataSummary());
-    setOpen(true);
-  }
-  async function signOutKeepingDeviceData() {
-    setSigningOut(true);
-    try {
-      if (user?.uid) {
-        await saveCurrentAccountSnapshot(user.uid);
-        // Stamp the UID so runRestoreCheck can wipe local Dexie if a different
-        // account signs in on the same device next time.
-        try { localStorage.setItem('shopkeeper_last_active_uid', user.uid); } catch { /* non-fatal */ }
-      }
-      await logout();
-    } finally {
-      setSigningOut(false);
-    }
-  }
-  async function syncThenSignOut() {
-    if (!user?.uid) return signOutKeepingDeviceData();
-    setSyncing(true);
-    const result = await syncAllToCloud(user.uid);
-    setSyncing(false);
-    if (!result) {
-      setSummary(await getLocalDataSummary());
-      return;
-    }
-    await signOutKeepingDeviceData();
-  }
-
-  const isOffline = typeof navigator !== "undefined" && !navigator.onLine;
-  const hasUnsynced = Boolean(summary?.hasUnsyncedWork);
-  // Include blocked (Sprint A) so the sign-out modal accurately shows how
-  // much work hasn't yet reached the cloud. Conflicts have their own dedicated
-  // banner below so they aren't double-counted here.
-  const pendingCount = summary
-    ? summary.pending + summary.failed + summary.syncing + summary.blocked
-    : 0;
-  return (
-    <>
-      <button
-        type="button"
-        onClick={openModal}
-        className={className ?? "text-sm text-slate-500 hover:text-slate-700"}
-      >
-        {t("auth.signOut")}
-      </button>
-      <Modal
-        open={open}
-        title={
-          isOffline
-            ? t("auth.offlineTitle")
-            : hasUnsynced
-              ? t("auth.unsyncedTitle")
-              : t("auth.signOutTitle")
-        }
-        description={
-          isOffline
-            ? t("auth.offlineDesc")
-            : hasUnsynced
-              ? t("auth.unsyncedDesc")
-              : t("auth.signOutDesc")
-        }
-        onClose={() => setOpen(false)}
-        footer={
-          <>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setOpen(false)}
-              disabled={signingOut || syncing}
-            >
-              {t("common.cancel")}
-            </Button>
-            {!isOffline && hasUnsynced && (
-              <Button
-                type="button"
-                onClick={syncThenSignOut}
-                disabled={signingOut || syncing}
-              >
-                {syncing ? t("auth.syncing") : t("auth.syncThenSignOut")}
-              </Button>
-            )}
-            <Button
-              type="button"
-              variant={hasUnsynced || isOffline ? "danger" : "primary"}
-              onClick={signOutKeepingDeviceData}
-              disabled={signingOut || syncing}
-            >
-              {signingOut
-                ? t("auth.signingOut")
-                : hasUnsynced || isOffline
-                  ? t("auth.signOutAnyway")
-                  : t("auth.signOut")}
-            </Button>
-          </>
-        }
-      >
-        {summary && (
-          <div className="space-y-3 text-sm text-slate-600">
-            <p>{t("auth.signOutDataNote")}</p>
-            <div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-50 p-3 text-xs">
-              <div>
-                <span className="font-semibold text-slate-800">
-                  {summary.products}
-                </span>{" "}
-                {t("auth.signOutStatProducts")}
-              </div>
-              <div>
-                <span className="font-semibold text-slate-800">
-                  {summary.bills}
-                </span>{" "}
-                {t("auth.signOutStatBills")}
-              </div>
-              <div>
-                <span className="font-semibold text-slate-800">
-                  {summary.customers}
-                </span>{" "}
-                {t("auth.signOutStatCustomers")}
-              </div>
-              <div>
-                <span className="font-semibold text-slate-800">
-                  {summary.suppliers}
-                </span>{" "}
-                {t("auth.signOutStatSuppliers")}
-              </div>
-              <div>
-                <span className="font-semibold text-slate-800">
-                  {summary.purchases}
-                </span>{" "}
-                {t("auth.signOutStatPurchases")}
-              </div>
-              <div>
-                <span className="font-semibold text-slate-800">
-                  {summary.shifts}
-                </span>{" "}
-                {t("auth.signOutStatShifts")}
-              </div>
-              <div>
-                <span className="font-semibold text-slate-800">
-                  {summary.stockMovements}
-                </span>{" "}
-                {t("auth.signOutStatMovements")}
-              </div>
-              <div>
-                <span className="font-semibold text-slate-800">
-                  {summary.customerPayments}
-                </span>{" "}
-                {t("auth.signOutStatPayments")}
-              </div>
-              <div>
-                <span className="font-semibold text-slate-800">
-                  {summary.supplierPayments}
-                </span>{" "}
-                {t("auth.signOutStatSupplierPayments")}
-              </div>
-              <div>
-                <span className="font-semibold text-slate-800">
-                  {pendingCount}
-                </span>{" "}
-                {t("auth.signOutStatPending")}
-              </div>
-              <div>
-                <span className="font-semibold text-slate-800">
-                  {summary.conflicts}
-                </span>{" "}
-                {t("auth.signOutStatConflicts")}
-              </div>
-            </div>
-            {summary.conflicts > 0 && (
-              <p className="rounded-xl border border-warning/30 bg-warning-soft px-3 py-2 text-warning">
-                {t("auth.signOutConflictsWarning")}
-              </p>
-            )}
-          </div>
-        )}
-      </Modal>
-    </>
-  );
-}

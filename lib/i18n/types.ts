@@ -64,6 +64,7 @@ export interface TranslationDict {
     shiftOpen: string;
     /** Title / aria-label for the mobile "More" sheet dialog */
     moreMenuLabel: string;
+    account: string;
   };
   navShort: {
     dashboard: string;
@@ -587,6 +588,10 @@ export interface TranslationDict {
     billFailed: string;
     saleCompleted: string;
     openBillDetail: string;
+    billDetailOfflineHint: string;
+    saleCompletedNumber: string;
+    saleSavedSyncing: string;
+    saleSavedOffline: string;
     newSale: string;
     quickCash: string;
     exact: string;
@@ -718,6 +723,7 @@ export interface TranslationDict {
     saved: string;
     invalidCurrency: string;
     atLeastOnePaymentMethod: string;
+    roleFullAccess: string;
     language: string;
     languageDesc: string;
     english: string;
@@ -1133,6 +1139,55 @@ export interface TranslationDict {
     joined: string;
     healthyBackup: string;
     needsAttention: string;
+    onlyAdminsManage: string;
+    loadingUsers: string;
+    searchUsers: string;
+    noUsers: string;
+    noUsersFound: string;
+    allUsers: string;
+    usersTableDesc: string;
+    errorLoadUsers: string;
+    errorRefreshHealth: string;
+    errorUpdateUser: string;
+    errorEmailExists: string;
+    errorPasswordShort: string;
+    errorCreateUser: string;
+    newUserTitle: string;
+    fullName: string;
+    fullNamePlaceholder: string;
+    email: string;
+    emailPlaceholder: string;
+    phone: string;
+    optional: string;
+    phonePlaceholder: string;
+    password: string;
+    passwordPlaceholder: string;
+    role: string;
+    selectRole: string;
+    searchRoles: string;
+    noRoles: string;
+    roleCashier: string;
+    roleManager: string;
+    roleAccountant: string;
+    roleOwner: string;
+    createUser: string;
+    creating: string;
+    saveChanges: string;
+    saving: string;
+    colName: string;
+    products: string;
+    exportCSV: string;
+    noCustomerPaymentsSynced: string;
+    noProductsSynced: string;
+    noStockMovementsSynced: string;
+    settingsHeading: string;
+    noSettingsSynced: string;
+    errorSaveSettings: string;
+    lastUpdated: string;
+    yes: string;
+    no: string;
+    on: string;
+    off: string;
   };
   errors: {
     UNKNOWN: string;
@@ -1167,6 +1222,7 @@ export interface TranslationDict {
     BILL_VOIDED_NO_RETURN: string;
     BILL_SHIFT_REQUIRED: string;
     PAYMENT_METHOD_DISABLED: string;
+    PERMISSION_DENIED: string;
     // Purchase-specific
     PURCHASE_NO_ITEMS: string;
     PURCHASE_CREDIT_NEEDS_SUPPLIER: string;
@@ -1196,5 +1252,109 @@ export interface TranslationDict {
     PAYMENT_AMOUNT_INVALID: string;
     // Import
     IMPORT_DUPLICATES: string;
+  };
+  guide: GuideDict;
+}
+
+/**
+ * Guide / Help namespace — Sprint 1 (public guide only). Plain strings only so
+ * the existing t() engine (string leaves) can read them. Later sprints extend it.
+ */
+export interface GuideDict {
+  common: {
+    signIn: string;
+    learnHow: string;
+    privacyNote: string;
+    versionLabel: string;
+  };
+  public: {
+    heroTitle: string;
+    heroSubtitle: string;
+    requestAccess: string;
+    canDoTitle: string;
+    canDoSellTitle: string;
+    canDoSellDesc: string;
+    canDoStockTitle: string;
+    canDoStockDesc: string;
+    canDoNumbersTitle: string;
+    canDoNumbersDesc: string;
+    canDoAccountsTitle: string;
+    canDoAccountsDesc: string;
+    canDoDevicesTitle: string;
+    canDoDevicesDesc: string;
+    fitTitle: string;
+    fitGreatTitle: string;
+    fitGreat1: string;
+    fitGreat2: string;
+    fitGreat3: string;
+    fitGreat4: string;
+    fitNotTitle: string;
+    fitNot1: string;
+    fitNot2: string;
+    fitNot3: string;
+    fitNot4: string;
+    fitUnsure: string;
+    pagesTitle: string;
+    pagesSubtitle: string;
+    pageDashboard: string;
+    pageBilling: string;
+    pageBills: string;
+    pageProducts: string;
+    pagePurchases: string;
+    pageInventory: string;
+    pageCustomers: string;
+    pageSuppliers: string;
+    pageShift: string;
+    pageReports: string;
+    pageSettings: string;
+    pageAdminUsers: string;
+    offlineTitle: string;
+    offlineBody: string;
+    installTitle: string;
+    installSubtitle: string;
+    installAndroidTitle: string;
+    installAndroidSteps: string;
+    installIosTitle: string;
+    installIosSteps: string;
+    installDesktopTitle: string;
+    installDesktopSteps: string;
+    installOptional: string;
+    accessTitle: string;
+    accessStep1Title: string;
+    accessStep1Desc: string;
+    accessStep2Title: string;
+    accessStep2Desc: string;
+    accessStep3Title: string;
+    accessStep3Desc: string;
+    accessManualNote: string;
+  };
+  offline: {
+    title: string;
+    subtitle: string;
+    worksTitle: string;
+    works1: string;
+    works2: string;
+    works3: string;
+    works4: string;
+    works5: string;
+    works6: string;
+    works7: string;
+    needsTitle: string;
+    needs1: string;
+    needs2: string;
+    needs3: string;
+    needs4: string;
+    reassurance: string;
+  };
+  support: {
+    title: string;
+    subtitle: string;
+    whatsapp: string;
+    call: string;
+    email: string;
+    requestUser: string;
+    none: string;
+    requestPrefill: string;
+    emailSubject: string;
   };
 }

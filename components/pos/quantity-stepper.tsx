@@ -2,6 +2,7 @@
 
 import clsx from "clsx";
 import { NumberField } from "@/components/ui/number-field";
+import { useLocale } from "@/components/providers/locale-context";
 
 /**
  * QuantityStepper — POS quantity input with built-in +/- buttons.
@@ -24,6 +25,7 @@ export function QuantityStepper({
   disabled,
   onChange,
   className,
+  ariaLabel,
 }: {
   value: number;
   min?: number;
@@ -31,7 +33,10 @@ export function QuantityStepper({
   disabled?: boolean;
   onChange: (value: number) => void;
   className?: string;
+  /** Override the field's accessible name; defaults to the localized "Quantity". */
+  ariaLabel?: string;
 }) {
+  const { t } = useLocale();
   return (
     <NumberField
       value={value}
@@ -44,7 +49,7 @@ export function QuantityStepper({
       disabled={disabled}
       fullWidth={false}
       className={clsx("w-[160px]", className)}
-      aria-label="Quantity"
+      aria-label={ariaLabel ?? t("common.quantity")}
     />
   );
 }

@@ -54,7 +54,7 @@ export default function AdminUsersPage() {
       setUsers(sorted);
       void loadSupportHealth(sorted);
     } catch {
-      setError("Failed to load users. Check your connection.");
+      setError(t("admin.errorLoadUsers"));
     } finally {
       setLoading(false);
     }
@@ -69,7 +69,7 @@ export default function AdminUsersPage() {
       );
       setSummaries(Object.fromEntries(entries));
     } catch {
-      setError("Users loaded, but support health could not be refreshed.");
+      setError(t("admin.errorRefreshHealth"));
     } finally {
       setLoadingHealth(false);
     }
@@ -88,7 +88,7 @@ export default function AdminUsersPage() {
         ),
       );
     } catch {
-      setError("Failed to update user.");
+      setError(t("admin.errorUpdateUser"));
     }
   }
 
@@ -101,7 +101,7 @@ export default function AdminUsersPage() {
         ),
       );
     } catch {
-      setError("Failed to update user.");
+      setError(t("admin.errorUpdateUser"));
     }
   }
 
@@ -116,7 +116,7 @@ export default function AdminUsersPage() {
         ),
       );
     } catch {
-      setError("Failed to update user.");
+      setError(t("admin.errorUpdateUser"));
     }
   }
 
@@ -136,8 +136,8 @@ export default function AdminUsersPage() {
   if (!isAdmin) {
     return (
       <div className="max-w-md mx-auto mt-12 p-6 bg-white border border-danger/20 rounded-2xl text-center">
-        <p className="font-semibold text-danger mb-1">Access Denied</p>
-        <p className="text-sm text-slate-500">Only admins can manage users.</p>
+        <p className="font-semibold text-danger mb-1">{t("admin.accessDenied")}</p>
+        <p className="text-sm text-slate-500">{t("admin.onlyAdminsManage")}</p>
       </div>
     );
   }
@@ -316,7 +316,7 @@ export default function AdminUsersPage() {
         </p>
       )}
 
-      {loading && <LoadingState title="Loading users…" />}
+      {loading && <LoadingState title={t("admin.loadingUsers")} />}
 
       {showCreate && (
         <CreateUserForm
@@ -380,12 +380,12 @@ export default function AdminUsersPage() {
         <DataTable
           columns={userColumns}
           data={managedUsers}
-          title={pending.length > 0 ? "All Users" : "Users"}
-          description="Search, review backup health, and manage account status."
-          emptyTitle="No users found."
-          searchPlaceholder="Search users…"
+          title={pending.length > 0 ? t("admin.allUsers") : t("admin.users")}
+          description={t("admin.usersTableDesc")}
+          emptyTitle={t("admin.noUsersFound")}
+          searchPlaceholder={t("admin.searchUsers")}
           labels={{
-            searchPlaceholder: "Search users…",
+            searchPlaceholder: t("admin.searchUsers"),
             loading: t("dataTable.loading"),
             page: t("dataTable.page"),
             of: t("dataTable.of"),
@@ -400,7 +400,7 @@ export default function AdminUsersPage() {
         />
       )}
 
-      {!loading && users.length === 0 && <EmptyState title="No users yet." />}
+      {!loading && users.length === 0 && <EmptyState title={t("admin.noUsers")} />}
     </PageShell>
   );
 }
@@ -470,6 +470,7 @@ function CreateUserForm({
   onCreated: () => void;
   onCancel: () => void;
 }) {
+  const { t } = useLocale();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -488,42 +489,43 @@ function CreateUserForm({
     } catch (err: unknown) {
       const code = (err as { code?: string }).code ?? "";
       if (code === "auth/email-already-in-use")
-        setError("That email is already registered.");
+        setError(t("admin.errorEmailExists"));
       else if (code === "auth/weak-password")
-        setError("Password must be at least 6 characters.");
-      else setError("Failed to create user. Check your connection.");
+        setError(t("admin.errorPasswordShort"));
+      else setError(t("admin.errorCreateUser"));
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <SectionCard title="New User">
+    <SectionCard title={t("admin.newUserTitle")}>
       <form
         onSubmit={handleSubmit}
         className="grid grid-cols-1 sm:grid-cols-2 gap-4"
       >
-        <FormField label="Full Name">
+        <FormField label={t("admin.fullName")}>
           <Input
             required
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Jane Smith"
+            placeholder={t("admin.fullNamePlaceholder")}
           />
         </FormField>
-        <FormField label="Email">
+        <FormField label={t("admin.email")}>
           <Input
             type="email"
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="jane@example.com"
+            placeholder={t("admin.emailPlaceholder")}
           />
         </FormField>
         <FormField
           label={
             <span>
-              Phone <span className="text-slate-400">(optional)</span>
+              {t("admin.phone")}{" "}
+              <span className="text-slate-400">{t("admin.optional")}</span>
             </span>
           }
         >
@@ -531,34 +533,34 @@ function CreateUserForm({
             type="tel"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
-            placeholder="+1 555 0123"
+            placeholder={t("admin.phonePlaceholder")}
           />
         </FormField>
-        <FormField label="Password">
+        <FormField label={t("admin.password")}>
           <Input
             type="password"
             required
             minLength={6}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="Min 6 characters"
+            placeholder={t("admin.passwordPlaceholder")}
           />
         </FormField>
-        <FormField label="Role">
+        <FormField label={t("admin.role")}>
           <SearchableSelect
             value={role}
             onValueChange={(value) =>
               setRole((value as UserRole) ?? "cashier")
             }
             options={[
-              { value: "cashier", label: "Cashier" },
-              { value: "manager", label: "Manager" },
-              { value: "accountant", label: "Accountant" },
-              { value: "owner", label: "Owner" },
+              { value: "cashier", label: t("admin.roleCashier") },
+              { value: "manager", label: t("admin.roleManager") },
+              { value: "accountant", label: t("admin.roleAccountant") },
+              { value: "owner", label: t("admin.roleOwner") },
             ]}
-            placeholder="Select role"
-            searchPlaceholder="Search roles…"
-            emptyMessage="No roles found"
+            placeholder={t("admin.selectRole")}
+            searchPlaceholder={t("admin.searchRoles")}
+            emptyMessage={t("admin.noRoles")}
           />
         </FormField>
         {error && (
@@ -568,10 +570,10 @@ function CreateUserForm({
         )}
         <div className="sm:col-span-2 flex gap-2 justify-end">
           <Button type="button" variant="outline" onClick={onCancel}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button type="submit" loading={loading}>
-            {loading ? "Creating…" : "Create User"}
+            {loading ? t("admin.creating") : t("admin.createUser")}
           </Button>
         </div>
       </form>

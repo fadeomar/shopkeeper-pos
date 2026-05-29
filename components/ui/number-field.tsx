@@ -34,6 +34,7 @@ import {
 } from "react";
 import clsx from "clsx";
 import { Minus, Plus } from "lucide-react";
+import { useLocale } from "@/components/providers/locale-context";
 
 type NumberFieldSize = "xs" | "sm" | "md" | "lg";
 
@@ -146,6 +147,7 @@ export const NumberField = forwardRef<HTMLInputElement, NumberFieldProps>(
   ) {
     const innerRef = useRef<HTMLInputElement>(null);
     useImperativeHandle(forwardedRef, () => innerRef.current as HTMLInputElement);
+    const { t } = useLocale();
 
     // Internal string buffer — the source of truth WHILE the field is focused.
     // When unfocused, we render the parent's numeric value formatted for display.
@@ -295,7 +297,7 @@ export const NumberField = forwardRef<HTMLInputElement, NumberFieldProps>(
           <button
             type="button"
             tabIndex={-1}
-            aria-label="Decrease"
+            aria-label={t("common.decrease")}
             disabled={!canDecrement}
             onClick={() => step1(-1)}
             className={clsx(
@@ -380,7 +382,7 @@ export const NumberField = forwardRef<HTMLInputElement, NumberFieldProps>(
           <button
             type="button"
             tabIndex={-1}
-            aria-label="Increase"
+            aria-label={t("common.increase")}
             disabled={!canIncrement}
             onClick={() => step1(1)}
             className={clsx(

@@ -4,6 +4,7 @@ import { createId } from '@/lib/utils/id';
 import { nowIso } from '@/lib/utils/date';
 import { buildSyncQueueItem } from '@/lib/services/sync-queue-service';
 import { logAudit } from '@/lib/services/audit-service';
+import { assertPermission } from '@/lib/services/permission-service';
 import type { Product, StockMovement, StockMovementType } from '@/types/domain';
 
 function requestSync(): void {
@@ -48,6 +49,15 @@ export async function createProductWithInitialMovement(product: Product) {
 }
 
 export async function updateProductDetails(product: Product, changes: Partial<Product>) {
+  // Editing the cost (buy price) requires canEditCost. The product form already
+  // hides the field for roles without it; this is the service-layer backstop.
+  if (
+    typeof changes.buyPrice === "number" &&
+    changes.buyPrice !== product.buyPrice
+  ) {
+    await assertPermission("canEditCost");
+  }
+
   const updatedAt = nowIso();
   await db.transaction('rw', db.products, db.syncQueue, async () => {
     await db.products.update(product.id, {

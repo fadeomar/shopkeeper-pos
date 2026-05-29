@@ -7,6 +7,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db/schema";
 import { settingsRepo } from "@/lib/db/repositories";
 import { isLowStock } from "@/lib/utils/stock";
+import { RecordSyncBadge } from "@/components/sync/record-sync-badge";
 import { countProductStock } from "@/lib/services/inventory-service";
 import { formatCurrency } from "@/lib/utils/money";
 import { Card } from "@/components/ui/card";
@@ -200,6 +201,11 @@ export function InventoryWorkspace() {
           {row.original.note || row.original.referenceType}
         </span>
       ),
+    },
+    {
+      header: t("sync.status"),
+      accessorKey: "syncStatus",
+      cell: ({ row }) => <RecordSyncBadge status={row.original.syncStatus} />,
     },
   ];
 

@@ -37,18 +37,18 @@ export const Input = forwardRef<HTMLInputElement, Props>(function Input(
       disabled={disabled}
       aria-invalid={error ? true : props["aria-invalid"]}
       className={clsx(
-        "rounded-xl border bg-white text-slate-900 placeholder:text-slate-400",
+        "rounded-xl border bg-surface text-fg placeholder:text-fg-muted",
         "transition-colors duration-150",
         "focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand",
-        "disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-50",
-        "read-only:bg-slate-50 read-only:cursor-default",
+        "disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-surface-soft",
+        "read-only:bg-surface-soft read-only:cursor-default",
         sizeClasses[inputSize],
         leftSlot && "ps-10",
         rightSlot && "pe-10",
         fullWidth && "w-full",
         error
           ? "border-danger focus:ring-danger focus:border-danger"
-          : "border-slate-200",
+          : "border-border-default",
         className,
       )}
       {...props}
@@ -60,13 +60,13 @@ export const Input = forwardRef<HTMLInputElement, Props>(function Input(
   return (
     <span className={clsx("relative inline-flex", fullWidth && "w-full")}>
       {leftSlot ? (
-        <span className="pointer-events-none absolute inset-y-0 start-3 flex items-center text-slate-400">
+        <span className="pointer-events-none absolute inset-y-0 start-3 flex items-center text-fg-muted">
           {leftSlot}
         </span>
       ) : null}
       {input}
       {rightSlot ? (
-        <span className="absolute inset-y-0 end-3 flex items-center text-slate-400">
+        <span className="absolute inset-y-0 end-3 flex items-center text-fg-muted">
           {rightSlot}
         </span>
       ) : null}

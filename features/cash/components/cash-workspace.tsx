@@ -25,6 +25,7 @@ import { useLocale } from "@/components/providers/locale-context";
 import { formatCurrency, MONEY_EPSILON, roundMoney } from "@/lib/utils/money";
 import { formatDateTime } from "@/lib/utils/date";
 import { getServiceErrorMessage } from "@/lib/errors/get-error-message";
+import { RecordSyncBadge } from "@/components/sync/record-sync-badge";
 
 const TYPE_OPTIONS: CashMovementType[] = [
   "cash_in",
@@ -178,6 +179,11 @@ export function CashWorkspace() {
             {row.original.shiftId ?? "—"}
           </span>
         ),
+      },
+      {
+        accessorKey: "syncStatus",
+        header: t("sync.status"),
+        cell: ({ row }) => <RecordSyncBadge status={row.original.syncStatus} />,
       },
     ],
     [t, currency],

@@ -24,6 +24,7 @@ import { DataTable } from "@/components/ui/data-table";
 // import { EmptyState } from "@/components/ui/empty-state";
 import { Modal } from "@/components/ui/modal";
 import { formatCurrency, MONEY_EPSILON } from "@/lib/utils/money";
+import { RecordSyncBadge } from "@/components/sync/record-sync-badge";
 import { netSplitField, normalizeBillSplit } from "@/lib/utils/bill-split";
 import { settingsRepo } from "@/lib/db/repositories";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -368,9 +369,12 @@ export function CustomerLedgerWorkspace() {
                           {payment.note || t("customers.payment")}
                         </p>
                       </div>
-                      <p className="text-xs text-slate-500">
-                        {new Date(payment.createdAt).toLocaleString()}
-                      </p>
+                      <div className="flex flex-col items-end gap-1">
+                        <p className="text-xs text-slate-500">
+                          {new Date(payment.createdAt).toLocaleString()}
+                        </p>
+                        <RecordSyncBadge status={payment.syncStatus} />
+                      </div>
                     </div>
                   ))
                 )}

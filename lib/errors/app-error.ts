@@ -71,6 +71,8 @@ export const AppErrorCode = {
   PAYMENT_AMOUNT_INVALID: 'PAYMENT_AMOUNT_INVALID',
   // Shared by bills + purchases — a disabled payment method was submitted.
   PAYMENT_METHOD_DISABLED: 'PAYMENT_METHOD_DISABLED',
+  // The current user's role lacks the permission for this action.
+  PERMISSION_DENIED: 'PERMISSION_DENIED',
 
   // ── Import ─────────────────────────────────────────────────────────────────
   IMPORT_DUPLICATES: 'IMPORT_DUPLICATES',

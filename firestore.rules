@@ -30,10 +30,16 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(uid)).data;
     }
 
+    // Admin capability is the 'owner' role in this app's model
+    // (UserRole = owner | manager | cashier | accountant; there is no 'admin').
+    // 'admin' is accepted too as a defensive fallback for any legacy profile,
+    // but 'owner' is the canonical admin-capable role the app checks
+    // (auth-context: isAdmin = user.role === 'owner').
     function isActiveAdmin() {
       return isSignedIn()
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && userDoc(request.auth.uid).role == 'admin'
+        && (userDoc(request.auth.uid).role == 'owner'
+            || userDoc(request.auth.uid).role == 'admin')
         && userDoc(request.auth.uid).isActive == true;
     }
 

@@ -1063,3 +1063,192 @@ Verified: `npm run typecheck` clean, `npm run build` succeeds, no stale
 
 Note: real browser offline→online multi-device sync test still required before
 production (cannot be run from source inspection).
+
+## P1/P2 polish — a11y, mobile logout, currency, reduced motion
+
+- **Mobile logout → More → Account.** Extracted `SafeSignOutButton` into
+  `components/auth/safe-sign-out-button.tsx`. Removed it from the POS mobile
+  header (now store name + sync state only); added an Account section
+  (avatar + name/email + sign-out) to the More sheet. Desktop sidebar foot and
+  the admin shell keep their own sign-out. Unsynced-data warning modal unchanged.
+- **More-sheet focus management.** Focus first control on open, trap Tab/Shift+Tab,
+  Escape-to-close, restore focus to the More trigger on close. Containment guard
+  (`sheet.contains(document.activeElement)`) lets the nested portaled sign-out
+  modal keep its own focus/Escape.
+- **Currency dropdown.** Settings currency is now a `SearchableSelect` (ILS first
+  for the local market); pre-existing non-listed codes are preserved. No more
+  free-text typos.
+- **`prefers-reduced-motion`** global block in `globals.css` (WCAG 2.3.3).
+- New i18n: `nav.account` (en + ar).
+
+## Security — Firestore admin role mismatch (P0)
+
+`firestore.rules` `isActiveAdmin()` checked `role == 'admin'`, but the app has no
+'admin' role (`UserRole = owner | manager | cashier | accountant`; `isAdmin =
+role === 'owner'`). So every admin-support Firestore op (reading other profiles,
+creating users, admin settings writes) was silently rejected against real
+Firestore. Fixed to accept `'owner'` (canonical) with `'admin'` as a legacy
+fallback. The admin-support settings `hasOnly` allow-list was left intentionally
+narrow (support shouldn't silently rewrite a store's tax/payment rules) — flagged
+for a product decision. No rules test runner is configured; validate with the
+Firebase emulator before deploy.
+
+## Payment-method setting scope clarified
+
+`settings.paymentMethodsDesc` now states the toggles apply to sales + purchase
+checkout, and that customer/supplier payments and expenses keep their own methods
+(en + ar). The gating is intentionally scoped to POS sale/purchase, not ledgers.
+
+Verified: `npm run typecheck` + `npm run build` green for the code changes
+(rules excluded — no emulator here).
+
+## Scope decision + four follow-up items
+
+**Store model decision:** single-user-per-store is the intended release model.
+The per-user data layer (`/users/{uid}/*`) is correct by design; the review's
+"multi-user shared store" gap is intentionally OUT OF SCOPE. Roles
+(manager/cashier/accountant) exist but each login still owns its own data.
+
+### Service-level permission guards (P1, security)
+
+UI hiding isn't enough offline. New `lib/services/permission-service.ts`
+(`getCurrentPermissions`, `assertPermission`) mirrors `usePermissions` but reads
+role offline via `firebase auth.currentUser` + Dexie `authCache`, then
+`DEFAULT_ROLE_PERMISSIONS` + `settings.rolePermissions`. Unknown role falls back
+to `cashier` (fail closed). Guards added (called before the rw transaction):
+- `voidBill` → `canVoid`
+- `returnBillItem` → `canReturn`
+- `createFinalizedBill` → `canDiscount` when `discountAmount > 0`
+- `updateProductDetails` → `canEditCost` when `buyPrice` changes
+New error `PERMISSION_DENIED` (en/ar/types). Export actions left to the UI for now.
+
+### Offline bill-detail handling (P1)
+
+The success panel's "Open bill" links to the dynamic `/bills/[id]` route, which
+may not be SW-cached offline. New `lib/hooks/use-online-status.ts`; when offline
+the link becomes a disabled chip with "Opens when back online"
+(`billing.billDetailOfflineHint`). The full receipt is already shown inline, so
+nothing is lost offline.
+
+### Structured toast API (P2)
+
+`push()` now accepts `string` (unchanged) OR
+`{ title, description?, tone?, actionLabel?, onAction? }`. Renders title +
+optional description + an optional inline action button. All existing call sites
+keep working (string path). `ToastInput` exported.
+
+### Shared-component design tokens (P2)
+
+Migrated raw slate/blue/emerald/amber/red to semantic tokens in `Card`,
+`Button`, `Input`, `EmptyState`, and `lib/design/variants.ts` (badge/alert/panel
+tones → `*-soft` + `text-*`; surfaces → `bg-surface*`/`text-fg*`; borders →
+`border-border-*`; spinner accent → `border-t-brand`). Modal backdrop scrim kept
+as raw `slate-900/50` intentionally (neutral overlay, not status/brand).
+
+### Plus: Firestore role fix + payment-scope copy (this session)
+
+- `firestore.rules` `isActiveAdmin()` now accepts `'owner'` (canonical; the app
+  has no 'admin' role) with `'admin'` as a legacy fallback. Was silently
+  rejecting all admin-support ops. Validate with the Firebase emulator before deploy.
+- `settings.paymentMethodsDesc` clarified: the toggles scope to sales + purchase
+  checkout; customer/supplier payments + expenses keep their own methods.
+
+Verified: `npm run typecheck` + `npm run build` green (rules excluded — no emulator here).
+
+## Structured toast in POS + admin localization
+
+### POS sale-completed toast
+`finalize()` now fires a structured success toast on top of the SuccessPanel:
+title `Sale completed · {billNumber}` + a sync-aware description
+(`saleSavedSyncing` online / `saleSavedOffline` offline) — reinforces
+offline-first trust. No action button (the panel owns open-bill / new-sale).
+`PosScreen` now uses `useOnlineStatus()`. New billing keys (en/ar/types).
+
+### Admin-page localization
+- **`app/admin/users/page.tsx` — fully localized**: access-denied screen,
+  load/refresh/update errors, loading + empty + search, the table title/desc,
+  and the entire New User form (labels, placeholders, role options, buttons,
+  create errors). `CreateUserForm` gained `useLocale`. ~30 new `admin.*` keys
+  (en/ar/types).
+- **`app/admin/users/[uid]/page.tsx`**: localized the Recent Customer Payments /
+  Recent Stock Movements / Products table titles + empty states + Export CSV,
+  and the **SettingsCard** in full (heading, Edit, field labels — reusing
+  `settings.*` keys — toggles, save/cancel buttons, save error, read-only rows,
+  Yes/No/On/Off, Last Updated). `SettingsCard` gained `useLocale`.
+- **`app/settings/page.tsx`**: the role-matrix "(full)" marker →
+  `settings.roleFullAccess`.
+
+Intentionally left English: **CSV export column headers** (`exportBillsCSV` /
+`exportProductsCSV` arrays) — these are data-interchange field names, not UI.
+
+**Still remaining (admin localization follow-up):** the visible `ColumnDef`
+headers in the `[uid]` support-detail DataTables (Bill #, Date, Customer,
+Payment, Subtotal, … and the product/movement/payment column headers). These
+are admin-support-only table headers; ~30 strings. Not done this pass.
+
+Verified: `npm run typecheck` (both locales satisfy the expanded dict) +
+`npm run build` green.
+
+## Sync badges everywhere + mobile store name + QA guide
+
+- **`PRODUCTION_QA.md`** added — step-by-step guide for the human-only checks:
+  (A) real offline→online multi-device sync test, (B) Firestore rules emulator
+  validation, (C) CI `npm ci && typecheck && build`.
+- **Per-record sync badges** — extracted shared `components/sync/record-sync-badge.tsx`
+  (`RecordSyncBadge`, the per-row pill; distinct from the global `SyncStatusBadge`)
+  and added a sync column/badge to: cash movements, expenses, inventory stock
+  movements, and the customer + supplier payment detail lists. Bills and products
+  already had it. Header uses `t("sync.status")`. (The two pre-existing local
+  `SyncBadge` copies in bills/products were left as-is to avoid churn — candidates
+  for later dedup onto the shared component.)
+- **Mobile header store name** — the POS mobile header now shows
+  `settings.storeName` (falls back to the "Shopkeeper POS" brand until settings
+  load), giving cashiers store context instead of the brand.
+
+Verified: `npm run typecheck` + `npm run build` green.
+
+### Still on the code side (not yet done)
+Conflict resolver → human-readable diff; Reports → source navigation links;
+`[uid]` admin DataTable column headers (~30 strings); login/auth placeholders +
+SW offline fallback copy. And a decision needed: number/quantity primitive
+aria-labels (Increase/Decrease/Quantity) live in the designated do-not-touch
+primitives — needs explicit approval to modify.
+
+## Final review pass — conflict resolver, reports nav, aria-labels, localization tail
+
+- **Conflict resolver is now human-readable** (`components/sync/conflict-resolver-modal.tsx`).
+  Replaced the raw `JSON.stringify` dumps with a field-by-field table showing only
+  the **changed fields** as "This device" vs "Cloud", with humanized field names
+  and friendly value formatting. Buttons reordered to Keep-this-device / Keep-cloud
+  / Mark-reviewed. New `sync.*` keys: field, localValue, cloudValue, conflictGeneric.
+- **Reports cards link to their source** (`StatCard` gained an optional `href`;
+  the whole card becomes a link with a chevron + hover/focus affordance). Wired:
+  Total Sales/Bill Count → /bills, Cash Expected → /shift, Customer Payments →
+  /customers, Purchase Cost → /purchases/new, Cash Paid Out → /cash, Supplier
+  Payments → /suppliers.
+- **Number/Quantity aria-labels localized** — `NumberField` (+/- buttons) and
+  `QuantityStepper` (field label) now pull `common.increase` / `common.decrease`
+  / `common.quantity` via `useLocale`. Done as a **behavior-preserving, additive**
+  change (QuantityStepper also gained an optional `ariaLabel` override); the
+  visible/functional behaviour of these primitives is unchanged — only the
+  screen-reader label is now translated. (Touched the two "do-not-touch"
+  primitives only for this a11y label, with the user's explicit go-ahead.)
+- **Login/register placeholders localized** — `auth.emailPlaceholder` /
+  `namePlaceholder` / `phonePlaceholder` (the sign-in + sign-up gate in
+  authenticated-shell). Labels/buttons/errors were already localized.
+- **`[uid]` admin DataTable column headers localized** — bill/payment/movement
+  table headers (Bill #, Date, Customer, Payment, Net Total, Status, Note,
+  Amount, Type, Reference, Qty) now use new `admin.col*` keys. The CSV **export**
+  header arrays are intentionally left English (data-interchange field names).
+
+Left intentionally English: the service-worker offline fallback HTML — a plain
+SW can't use the React i18n system, and it's a rare edge screen (reviewer agreed
+this is acceptable).
+
+Verified: `npm run typecheck` (both locales satisfy the dict) + `npm run build` green.
+
+### Status
+All code items from the review series are now addressed. The only outstanding
+work is the human-run verification in PRODUCTION_QA.md (offline multi-device
+sync test, Firestore rules emulator, CI build) + optional `pos-screen.tsx` split
+(maintainability, explicitly post-QA).

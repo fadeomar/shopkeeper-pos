@@ -283,6 +283,7 @@ export function ReportsWorkspace() {
         <StatCard
           label={t("reports.totalSales")}
           value={formatCurrency(summary.sales, currency)}
+          href="/bills"
         />
         <StatCard
           label={t("reports.totalProfit")}
@@ -292,14 +293,17 @@ export function ReportsWorkspace() {
           label={t("reports.billCount")}
           value={String(summary.billCount)}
           helper={`${t("reports.averageBill")}: ${formatCurrency(summary.averageBill, currency)}`}
+          href="/bills"
         />
         <StatCard
           label={t("reports.cashExpected")}
           value={formatCurrency(summary.cashExpected, currency)}
+          href="/shift"
         />
         <StatCard
           label={t("reports.customerPaymentsCashIn")}
           value={formatCurrency(customerPaymentsCashIn, currency)}
+          href="/customers"
         />
       </section>
 
@@ -308,16 +312,19 @@ export function ReportsWorkspace() {
           label={t("reports.purchaseCost")}
           value={formatCurrency(purchaseSummary.purchaseCost, currency)}
           helper={`${t("reports.purchaseCount")}: ${purchaseSummary.purchaseCount}`}
+          href="/purchases/new"
         />
         <StatCard
           label={t("reports.cashPaidOut")}
           value={formatCurrency(purchaseSummary.cashPaidOut, currency)}
           helper={t("reports.cashPaidOutHelper")}
+          href="/cash"
         />
         <StatCard
           label={t("reports.supplierPayments")}
           value={formatCurrency(purchaseSummary.supplierPayments, currency)}
           helper={`${filteredSupplierPayments.length} ${t("reports.entries")}`}
+          href="/suppliers"
         />
         <StatCard
           label={t("reports.netSupplierDebt")}

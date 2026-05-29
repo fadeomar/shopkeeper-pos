@@ -49,6 +49,7 @@ import { ReceiptView } from "./receipt-view";
 import { normalizeBarcode } from "@/lib/utils/barcode";
 import { useAuth } from "@/components/providers/auth-context";
 import { usePermissions } from "@/lib/hooks/use-permissions";
+import { useOnlineStatus } from "@/lib/hooks/use-online-status";
 import type {
   Bill,
   BillDraftItem,
@@ -143,6 +144,7 @@ function SuccessPanel({
   onDismiss: () => void;
 }) {
   const { t } = useLocale();
+  const online = useOnlineStatus();
   const newSaleRef = useRef<HTMLButtonElement | null>(null);
   const amountDue = Math.max(0, bill.totalAmount - bill.paidAmount);
 
@@ -218,21 +220,45 @@ function SuccessPanel({
       <ReceiptView bill={bill} items={items} settings={settings} />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <Link
-          href={`/bills/${bill.id}`}
-          // Visually a "secondary action" — uses the same outline-button
-          // styling as the Button component, with a leading receipt icon
-          // to anchor "view the bill we just made".
-          className={clsx(
-            "inline-flex items-center justify-center gap-2 rounded-xl border font-semibold transition-colors",
-            "border-border-default bg-surface text-fg-secondary hover:bg-surface-soft hover:border-border-strong",
-            "px-4 py-2.5 text-sm min-h-11",
-            "focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-brand)_22%,transparent)]",
-          )}
-        >
-          <ReceiptText size={16} aria-hidden />
-          {t("billing.openBillDetail")}
-        </Link>
+        {/* The bill-detail route is dynamic (/bills/[id]); when offline it may
+            not be in the SW cache, so the link would dead-end. The full receipt
+            is already shown above, so offline we disable the link and explain
+            rather than letting the cashier tap into a broken navigation. */}
+        {online ? (
+          <Link
+            href={`/bills/${bill.id}`}
+            // Visually a "secondary action" — uses the same outline-button
+            // styling as the Button component, with a leading receipt icon
+            // to anchor "view the bill we just made".
+            className={clsx(
+              "inline-flex items-center justify-center gap-2 rounded-xl border font-semibold transition-colors",
+              "border-border-default bg-surface text-fg-secondary hover:bg-surface-soft hover:border-border-strong",
+              "px-4 py-2.5 text-sm min-h-11",
+              "focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-brand)_22%,transparent)]",
+            )}
+          >
+            <ReceiptText size={16} aria-hidden />
+            {t("billing.openBillDetail")}
+          </Link>
+        ) : (
+          <span
+            aria-disabled
+            title={t("billing.billDetailOfflineHint")}
+            className={clsx(
+              "inline-flex flex-col items-center justify-center gap-0.5 rounded-xl border",
+              "border-border-default bg-surface-soft px-4 py-2 text-sm min-h-11",
+              "cursor-not-allowed text-fg-muted",
+            )}
+          >
+            <span className="inline-flex items-center gap-2 font-semibold">
+              <ReceiptText size={16} aria-hidden />
+              {t("billing.openBillDetail")}
+            </span>
+            <span className="text-[11px] font-medium">
+              {t("billing.billDetailOfflineHint")}
+            </span>
+          </span>
+        )}
         <Button
           ref={newSaleRef}
           type="button"
@@ -260,6 +286,7 @@ export function PosScreen() {
   const activeShift = useLiveQuery(() => getActiveShift(), []);
   const settings = useLiveQuery(() => settingsRepo.get(), []);
   const { push } = useToast();
+  const online = useOnlineStatus();
   const currency = settings?.currency ?? "ILS";
   const draftKey = user?.uid ? `${POS_DRAFT_KEY_PREFIX}:${user.uid}` : null;
 
@@ -843,6 +870,17 @@ export function PosScreen() {
       clearDraft();
       setConfirmOpen(false);
       setLastFinalized({ bill, items: billItems });
+      // Structured success toast that reinforces offline-first trust: it tells
+      // the cashier the sale is saved and whether it's syncing now or queued
+      // until reconnect. The SuccessPanel owns the actions (open bill / new
+      // sale), so the toast intentionally carries no action button.
+      push({
+        title: t("billing.saleCompletedNumber", { number: bill.billNumber }),
+        description: online
+          ? t("billing.saleSavedSyncing")
+          : t("billing.saleSavedOffline"),
+        tone: "success",
+      });
     } catch (error) {
       push(getServiceErrorMessage(error, t, t("billing.billFailed")), "error");
     }

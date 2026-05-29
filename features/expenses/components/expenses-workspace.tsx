@@ -25,6 +25,7 @@ import { useToast } from "@/components/ui/toast";
 import { useLocale } from "@/components/providers/locale-context";
 import { formatCurrency, roundMoney } from "@/lib/utils/money";
 import { formatDateTime, localDateKey } from "@/lib/utils/date";
+import { RecordSyncBadge } from "@/components/sync/record-sync-badge";
 import { getServiceErrorMessage } from "@/lib/errors/get-error-message";
 
 const CATEGORIES: ExpenseCategory[] = [
@@ -194,6 +195,11 @@ export function ExpensesWorkspace() {
             {row.original.shiftId ?? "—"}
           </span>
         ),
+      },
+      {
+        accessorKey: "syncStatus",
+        header: t("sync.status"),
+        cell: ({ row }) => <RecordSyncBadge status={row.original.syncStatus} />,
       },
     ],
     [t, currency],

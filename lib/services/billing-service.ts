@@ -15,6 +15,7 @@ import type { BillSplit } from "@/lib/utils/bill-split";
 import { createBillNumber, createId } from "@/lib/utils/id";
 import { buildSyncQueueItem, getSyncQueueId } from "@/lib/services/sync-queue-service";
 import { assertPaymentMethodEnabled, effectiveTaxAmount } from "@/lib/services/settings-policy";
+import { assertPermission } from "@/lib/services/permission-service";
 import type {
   Bill,
   BillDraftItem,
@@ -127,6 +128,13 @@ export async function createFinalizedBill(input: {
 }): Promise<{ bill: Bill; billItems: BillItem[] }> {
   if (input.items.length === 0) {
     throw new AppError(AppErrorCode.BILL_NO_ITEMS);
+  }
+
+  // A discounted sale requires the canDiscount permission (defense-in-depth
+  // beyond the UI hiding the discount field). Checked before the transaction
+  // since the permission helper reads tables outside this transaction's scope.
+  if ((Number(input.form.discountAmount) || 0) > 0) {
+    await assertPermission("canDiscount");
   }
 
   // Normalise tax up front so the pre-transaction payment checks below use the
@@ -457,6 +465,7 @@ export async function voidBill(input: {
 }): Promise<void> {
   const reason = input.reason.trim();
   if (!reason) throw new AppError(AppErrorCode.VOID_REASON_REQUIRED);
+  await assertPermission("canVoid");
 
   // Captured inside the transaction for the post-commit audit log entry.
   let auditBillNumber = '';
@@ -579,6 +588,7 @@ export async function returnBillItem(input: {
   if (!reason) throw new AppError(AppErrorCode.RETURN_REASON_REQUIRED);
   if (!Number.isInteger(quantity) || quantity <= 0)
     throw new AppError(AppErrorCode.RETURN_QTY_INVALID);
+  await assertPermission("canReturn");
 
   let auditBillNumber = '';
   let auditProductName = '';
