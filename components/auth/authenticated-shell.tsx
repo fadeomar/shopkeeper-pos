@@ -23,16 +23,11 @@ import { DbBootstrap } from "@/components/providers/db-bootstrap";
 import { AppSidebarBrand } from "@/components/app-sidebar-brand";
 import { SidebarNav } from "@/components/sidebar-nav";
 import { useSettings } from "@/components/providers/settings-context";
-import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import {
-  getLocalDataSummary,
-  saveCurrentAccountSnapshot,
-} from "@/lib/services/account-data-service";
 import { setRestoreDecisionPending } from "@/lib/services/sync-gate";
 import { SyncStatusBadge } from "@/components/sync/sync-status-badge";
 import { SafeSignOutButton } from "@/components/auth/safe-sign-out-button";
@@ -46,7 +41,9 @@ import { PublicShell } from "@/components/auth/public-shell";
 const PUBLIC_PATHS = ["/guide"] as const;
 
 function isPublicPath(pathname: string): boolean {
-  return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"));
+  return PUBLIC_PATHS.some(
+    (p) => pathname === p || pathname.startsWith(p + "/"),
+  );
 }
 
 export function AuthenticatedShell({
@@ -148,7 +145,10 @@ function AdminShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <main id="main-content" className="min-w-0 p-3 pb-24 sm:p-4 sm:pb-24 lg:p-6 lg:pb-6">
+      <main
+        id="main-content"
+        className="min-w-0 p-3 pb-24 sm:p-4 sm:pb-24 lg:p-6 lg:pb-6"
+      >
         {children}
       </main>
     </div>
@@ -192,12 +192,12 @@ function CashierShell({ children }: { children: React.ReactNode }) {
       // wipe local Dexie so the incoming user starts fresh and gets a fair
       // restore offer — rather than briefly seeing the previous user's data.
       try {
-        const lastUid = localStorage.getItem('shopkeeper_last_active_uid');
+        const lastUid = localStorage.getItem("shopkeeper_last_active_uid");
         if (lastUid && lastUid !== userId) {
-          await db.transaction('rw', db.tables, async () => {
+          await db.transaction("rw", db.tables, async () => {
             await Promise.all(db.tables.map((t) => t.clear()));
           });
-          localStorage.setItem('shopkeeper_last_active_uid', userId);
+          localStorage.setItem("shopkeeper_last_active_uid", userId);
         }
       } catch {
         // Non-fatal — if the wipe fails, proceed with whatever is in IndexedDB.
@@ -214,7 +214,7 @@ function CashierShell({ children }: { children: React.ReactNode }) {
         const hasCloudData =
           !!meta &&
           Object.values(meta.recordCounts).some(
-            (count) => typeof count === 'number' && count > 0,
+            (count) => typeof count === "number" && count > 0,
           );
         if (hasCloudData && meta) {
           const skippedBackup = readSkippedRestoreMeta(userId);
@@ -413,7 +413,10 @@ function CashierShell({ children }: { children: React.ReactNode }) {
           pb-24 on mobile keeps content above the fixed bottom nav.
           lg:pb-6 reverts to normal desktop padding once the sidebar takes over.
         */}
-        <main id="main-content" className="min-w-0 p-3 pb-24 sm:p-4 sm:pb-24 lg:p-6 lg:pb-6">
+        <main
+          id="main-content"
+          className="min-w-0 p-3 pb-24 sm:p-4 sm:pb-24 lg:p-6 lg:pb-6"
+        >
           <DbBootstrap>
             <ConflictResolverModal userId={uid} />
             {cloudMeta && (
@@ -508,7 +511,10 @@ function RestoreModal({
           </svg>
         </div>
 
-        <h2 id={titleId} className="text-base font-bold text-slate-800 text-center mb-1">
+        <h2
+          id={titleId}
+          className="text-base font-bold text-slate-800 text-center mb-1"
+        >
           {t("auth.useExistingTitle")}
         </h2>
         <p className="text-sm text-slate-500 text-center mb-4">
@@ -623,9 +629,13 @@ function PendingScreen({ onLogout }: { onLogout: () => void }) {
             />
           </svg>
         </div>
-        <h2 className="font-semibold text-slate-800 mb-2">{t("auth.pendingTitle")}</h2>
+        <h2 className="font-semibold text-slate-800 mb-2">
+          {t("auth.pendingTitle")}
+        </h2>
         <p className="text-sm text-slate-500 mb-2">{t("auth.pendingDesc")}</p>
-        <p className="text-xs text-slate-400 mb-6">{t("auth.pendingContactAdmin")}</p>
+        <p className="text-xs text-slate-400 mb-6">
+          {t("auth.pendingContactAdmin")}
+        </p>
         {checked && (
           <p className="text-xs text-warning bg-warning-soft border border-warning/30 rounded-xl px-3 py-2 mb-4">
             {t("auth.pendingStillWaiting")}
@@ -686,7 +696,9 @@ function InactiveScreen({ onLogout }: { onLogout: () => void }) {
             />
           </svg>
         </div>
-        <h2 className="font-semibold text-slate-800 mb-2">{t("auth.inactiveTitle")}</h2>
+        <h2 className="font-semibold text-slate-800 mb-2">
+          {t("auth.inactiveTitle")}
+        </h2>
         <p className="text-sm text-slate-500 mb-6">{t("auth.inactiveDesc")}</p>
         <div className="flex flex-col gap-2">
           <button
@@ -798,7 +810,10 @@ function LoginForm({ onShowSignUp }: { onShowSignUp: () => void }) {
           </button>
         </p>
         <p className="text-center text-sm text-slate-500 mt-2">
-          <Link href={"/guide" as Route} className="text-info hover:underline font-medium">
+          <Link
+            href={"/guide" as Route}
+            className="text-info hover:underline font-medium"
+          >
             {t("guide.common.learnHow")}
           </Link>
         </p>
@@ -871,7 +886,9 @@ function SignUpForm({ onBack }: { onBack: () => void }) {
               label={
                 <span>
                   {t("auth.phone")}{" "}
-                  <span className="font-normal text-slate-400">{t("auth.phoneOptional")}</span>
+                  <span className="font-normal text-slate-400">
+                    {t("auth.phoneOptional")}
+                  </span>
                 </span>
               }
             >
@@ -918,7 +935,10 @@ function SignUpForm({ onBack }: { onBack: () => void }) {
           </button>
         </p>
         <p className="text-center text-sm text-slate-500 mt-2">
-          <Link href={"/guide" as Route} className="text-info hover:underline font-medium">
+          <Link
+            href={"/guide" as Route}
+            className="text-info hover:underline font-medium"
+          >
             {t("guide.common.learnHow")}
           </Link>
         </p>
@@ -947,7 +967,9 @@ function AppLogo({ subtitle }: { subtitle?: string }) {
         </svg>
       </div>
       <h1 className="text-xl font-bold text-slate-800">Shopkeeper POS</h1>
-      <p className="text-sm text-slate-500 mt-1">{subtitle ?? t("auth.signInToContinue")}</p>
+      <p className="text-sm text-slate-500 mt-1">
+        {subtitle ?? t("auth.signInToContinue")}
+      </p>
     </div>
   );
 }
@@ -964,4 +986,3 @@ function ErrorBox({ message }: { message: string }) {
     </div>
   );
 }
-

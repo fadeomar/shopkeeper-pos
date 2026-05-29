@@ -2,7 +2,6 @@
 
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
-import { typographyClasses } from "@/lib/design/variants";
 
 export function ConfirmDialog({
   open,

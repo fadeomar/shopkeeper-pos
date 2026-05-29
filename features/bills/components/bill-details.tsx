@@ -12,7 +12,6 @@ import { formatDateTime } from "@/lib/utils/date";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { QuantityStepper } from "@/components/pos/quantity-stepper";
 import { Modal } from "@/components/ui/modal";
 import { DataTable, useDataTableLabels } from "@/components/ui/data-table";
