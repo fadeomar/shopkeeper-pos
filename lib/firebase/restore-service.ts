@@ -12,6 +12,7 @@ import { firestore } from "./config";
 import { db } from "@/lib/db/schema";
 import { setRestoreInProgress } from "@/lib/services/sync-gate";
 import { createBillNumber } from "@/lib/utils/id";
+import { mergedSequences } from "@/lib/services/settings-sync-fields";
 import { normalizeBillSplit } from "@/lib/utils/bill-split";
 import { normalizePhone } from "@/lib/utils/customer-key";
 import type {
@@ -415,6 +416,17 @@ function getBillSequenceFromNumber(
   return Number.isFinite(value) && value > 0 ? value : null;
 }
 
+function getPurchaseSequenceFromNumber(
+  purchaseNumber: string | undefined,
+): number | null {
+  if (!purchaseNumber) return null;
+  const match =
+    purchaseNumber.match(/^(?:PO-)?(\d+)$/i) ?? purchaseNumber.match(/(\d+)$/);
+  if (!match) return null;
+  const value = Number(match[1]);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
 function makeUniqueBillNumber(
   usedBillNumbers: Set<string>,
   nextSequence: { value: number },
@@ -479,6 +491,7 @@ function normalizeUniqueBillNumbers(bills: Bill[]): Bill[] {
 function buildRestoredDefaultSettings(
   restoredAt: string,
   nextBillSequence: number,
+  nextPurchaseSequence: number,
 ): Settings {
   return {
     id: SETTINGS_ID,
@@ -487,7 +500,7 @@ function buildRestoredDefaultSettings(
     currency: "ILS",
     allowLossSale: false,
     nextBillSequence,
-    nextPurchaseSequence: nextBillSequence,
+    nextPurchaseSequence,
     lowStockHighlight: true,
     createdAt: restoredAt,
     updatedAt: restoredAt,
@@ -498,20 +511,37 @@ function buildRestoredDefaultSettings(
 function ensureRestoredSettings(
   settings: Settings[],
   bills: Bill[],
+  purchases: Purchase[],
   restoredAt: string,
 ): Settings[] {
   const maxSequence = bills.reduce((max, bill) => {
     const sequence = getBillSequenceFromNumber(bill.billNumber);
     return sequence ? Math.max(max, sequence) : max;
   }, 0);
+  // Mirror the bill logic for purchase numbers so a restore never reissues a
+  // PO number that already exists in the restored purchases.
+  const maxPurchaseSequence = purchases.reduce((max, purchase) => {
+    const sequence = getPurchaseSequenceFromNumber(purchase.purchaseNumber);
+    return sequence ? Math.max(max, sequence) : max;
+  }, 0);
 
   if (!settings.length) {
-    return [buildRestoredDefaultSettings(restoredAt, maxSequence + 1)];
+    return [
+      buildRestoredDefaultSettings(
+        restoredAt,
+        maxSequence + 1,
+        maxPurchaseSequence + 1,
+      ),
+    ];
   }
 
   return settings.map((setting) => ({
     ...setting,
     nextBillSequence: Math.max(setting.nextBillSequence || 1, maxSequence + 1),
+    nextPurchaseSequence: Math.max(
+      setting.nextPurchaseSequence || 1,
+      maxPurchaseSequence + 1,
+    ),
   }));
 }
 
@@ -744,16 +774,13 @@ export async function pullSettingsFromCloud(
       return null;
     }
 
-    // Only overwrite local if cloud is strictly newer. The bill sequence is
-    // monotonic, so never pull it backwards.
+    // Only overwrite local if cloud is strictly newer. The bill + purchase
+    // sequences are monotonic, so never pull either backwards.
     if (!local || cloud.updatedAt > local.updatedAt) {
       const merged = local
         ? {
             ...cloud,
-            nextBillSequence: Math.max(
-              local.nextBillSequence || 1,
-              cloud.nextBillSequence || 1,
-            ),
+            ...mergedSequences(local, cloud),
           }
         : cloud;
       await db.settings.put(merged);
@@ -945,7 +972,7 @@ async function doRestoreFromCloud(
   );
 
   bills = normalizeUniqueBillNumbers(bills);
-  settings = ensureRestoredSettings(settings, bills, restoredAt);
+  settings = ensureRestoredSettings(settings, bills, purchases, restoredAt);
 
   const meta: SyncMeta = {
     lastSyncedAt: restoredAt,

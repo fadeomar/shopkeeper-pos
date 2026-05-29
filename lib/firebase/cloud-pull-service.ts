@@ -3,6 +3,12 @@ import { firestore } from '@/lib/firebase/config';
 import { db } from '@/lib/db/schema';
 import { saveConflict } from '@/lib/services/sync-conflict-service';
 import { buildSyncQueueItem, getSyncQueueId } from '@/lib/services/sync-queue-service';
+import {
+  SETTINGS_TRACKED_FIELDS,
+  finiteSequence,
+  isSettingsSequenceField,
+  mergedSequences,
+} from '@/lib/services/settings-sync-fields';
 import { normalizeBillSplit } from '@/lib/utils/bill-split';
 import type { AuditEvent, Bill, BillItem, CashMovement, Customer, CustomerPayment, Expense, Product, Purchase, PurchaseItem, Settings, Shift, StockMovement, Supplier, SupplierPayment, SyncEntity, SyncQueueItem } from '@/types/domain';
 
@@ -10,10 +16,6 @@ const PRODUCT_FIELDS: Array<keyof Product> = [
   'barcode', 'name', 'category', 'brand', 'unit', 'quantityInStock', 'buyPrice', 'sellPrice',
   'minimumStockAlert', 'supplierName', 'expiryDate', 'shelfLocation', 'notes', 'status',
 ];
-const SETTINGS_FIELDS: Array<keyof Settings> = [
-  'storeName', 'cashierName', 'currency', 'allowLossSale', 'nextBillSequence', 'lowStockHighlight',
-];
-
 function valuesDiffer(a: unknown, b: unknown): boolean {
   return JSON.stringify(a ?? null) !== JSON.stringify(b ?? null);
 }
@@ -26,11 +28,6 @@ function isCloudNewer(localSyncedAt?: string, cloudSyncedAt?: string): boolean {
   if (!cloudSyncedAt) return false;
   if (!localSyncedAt) return true;
   return new Date(cloudSyncedAt).getTime() > new Date(localSyncedAt).getTime();
-}
-
-function finiteSequence(value: unknown, fallback = 1): number {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) && numeric > 0 ? Math.floor(numeric) : fallback;
 }
 
 function laterIso(a?: string, b?: string): string | undefined {
@@ -133,20 +130,23 @@ async function pullSettings(uid: string): Promise<void> {
     const fields = changedFields(
       local as unknown as Record<string, unknown>,
       cloud as unknown as Record<string, unknown>,
-      SETTINGS_FIELDS as string[],
+      SETTINGS_TRACKED_FIELDS,
     );
     if (fields.length === 0 || !isCloudNewer(local.syncedAt ?? pendingJob?.createdAt, cloud.syncedAt)) continue;
 
-    const businessFields = fields.filter((field) => field !== 'nextBillSequence');
+    const businessFields = fields.filter((field) => !isSettingsSequenceField(field));
     if (businessFields.length === 0) {
-      const nextBillSequence = Math.max(
-        finiteSequence(local.nextBillSequence),
-        finiteSequence(cloud.nextBillSequence),
-      );
-      if (nextBillSequence > finiteSequence(cloud.nextBillSequence)) {
+      // Only monotonic counters differ — max-merge both bill + purchase
+      // sequences. If this device is ahead on either, push the merged value
+      // up; otherwise accept the cloud copy with the maxed counters.
+      const sequences = mergedSequences(local, cloud);
+      const localAhead =
+        sequences.nextBillSequence > finiteSequence(cloud.nextBillSequence) ||
+        sequences.nextPurchaseSequence > finiteSequence(cloud.nextPurchaseSequence);
+      if (localAhead) {
         const merged = {
           ...local,
-          nextBillSequence,
+          ...sequences,
           updatedAt: laterIso(local.updatedAt, cloud.updatedAt) ?? local.updatedAt,
           syncStatus: 'pending' as const,
           lastSyncError: undefined,
@@ -158,7 +158,7 @@ async function pullSettings(uid: string): Promise<void> {
           existingJob,
         ));
       } else {
-        await db.settings.put({ ...cloud, nextBillSequence, syncStatus: 'synced', lastSyncError: undefined });
+        await db.settings.put({ ...cloud, ...sequences, syncStatus: 'synced', lastSyncError: undefined });
       }
       continue;
     }

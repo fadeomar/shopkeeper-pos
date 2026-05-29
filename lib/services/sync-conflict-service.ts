@@ -1,6 +1,7 @@
 import { db } from '@/lib/db/schema';
 import { nowIso } from '@/lib/utils/date';
 import { getSyncQueueId } from '@/lib/services/sync-queue-service';
+import { isSettingsSequenceField } from '@/lib/services/settings-sync-fields';
 import type { Settings, Product, SyncConflict, SyncConflictResolution } from '@/types/domain';
 
 function requestSync(): void {
@@ -44,12 +45,12 @@ function isOnlyQuantityProductConflict(conflict: SyncConflict): boolean {
     conflict.changedFields.every((field) => field === 'quantityInStock');
 }
 
-function isOnlyBillSequenceConflict(conflict: SyncConflict): boolean {
+function isOnlySequenceConflict(conflict: SyncConflict): boolean {
   return conflict.entity === 'settings' &&
     conflict.status === 'open' &&
     conflict.conflictType === 'settings_conflict' &&
     conflict.changedFields.length > 0 &&
-    conflict.changedFields.every((field) => field === 'nextBillSequence');
+    conflict.changedFields.every((field) => isSettingsSequenceField(field));
 }
 
 async function isFalseOfflineBillStockConflict(conflict: SyncConflict): Promise<boolean> {
@@ -109,7 +110,7 @@ export async function autoDismissFalseOfflineSaleConflicts(): Promise<number> {
       continue;
     }
 
-    if (isOnlyBillSequenceConflict(conflict)) {
+    if (isOnlySequenceConflict(conflict)) {
       await db.transaction('rw', [db.syncConflicts, db.settings, db.syncQueue], async () => {
         await markConflictIgnored(conflict);
         await db.settings.update(conflict.entityId, { syncStatus: 'pending', lastSyncError: undefined });

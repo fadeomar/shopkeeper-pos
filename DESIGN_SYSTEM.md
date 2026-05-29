@@ -138,6 +138,8 @@ Use centralized sync statuses: online, offline, synced, pendingSync, conflict, a
 
 Offline route coverage: every route reachable from the nav (sidebar + mobile "More" sheet) must be in the service-worker warm/precache lists so it works offline. Keep `NAV_ROUTES` in `public/sw.js` and `OFFLINE_NAV_ROUTES` in `components/pwa/sw-register.tsx` in sync with the nav, and **bump `CACHE_VERSION` in `sw.js`** whenever the precache list changes so clients pick it up.
 
+Settings sync field coverage: `Settings` drives business rules, so all of its sync handling reads from one source of truth — `lib/services/settings-sync-fields.ts`. When you add a settings field, add it to `SETTINGS_BUSINESS_FIELDS` (so it participates in conflict detection + cloud pull) or `SETTINGS_SEQUENCE_FIELDS` (monotonic counters that max-merge and never conflict). Every sync site — `cloud-merge-service`, `cloud-pull-service`, `sync-service`, `sync-conflict-service`, `sync-provider`, `restore-service` — consumes these lists / `mergedSequences()`, so a field is never tracked in one place but silently dropped in another. The two counters (`nextBillSequence`, `nextPurchaseSequence`) must always be max-merged together, never last-write-wins.
+
 ## 19. Billing/cart/payment UI rules
 
 Billing UI must not change calculations. Use `PriceDisplay`, `PaymentBadge`, `CartSummaryCard`, and `CheckoutActionBar` as presentational wrappers only.

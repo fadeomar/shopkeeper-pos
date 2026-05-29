@@ -373,7 +373,7 @@ export async function createFinalizedBill(input: {
       });
 
       // Bill creation only changes settings.nextBillSequence. Tagging the
-      // job as 'bill-sequence' routes it through syncBillSequenceToCloud
+      // job as 'bill-sequence' routes it through syncSettingsSequencesToCloud
       // instead of a full settings overwrite, so another device editing
       // storeName/currency offline does not conflict with offline sales.
       // But if a broader manual settings edit is already queued, keep that

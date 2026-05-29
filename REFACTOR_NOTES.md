@@ -1022,3 +1022,44 @@ Verified: `npm run typecheck` clean, `npm run build` succeeds, no stale
    mismatch where the POS fell back to cash but the service rejected cash.
 
 Verified: `npm run typecheck` clean, `npm run build` succeeds.
+
+## Offline multi-device sync correctness (two P0s)
+
+Settings now drives business rules, which surfaced two offline/multi-device
+data-correctness bugs. New single source of truth: `lib/services/settings-sync-fields.ts`
+(`SETTINGS_BUSINESS_FIELDS`, `SETTINGS_SEQUENCE_FIELDS`, `SETTINGS_TRACKED_FIELDS`,
+`mergedSequences()`, `finiteSequence()`, `isSettingsSequenceField()`).
+
+### P0-1 — nextPurchaseSequence was not sync-safe
+
+`nextBillSequence` had monotonic (max-merge, never-conflict) handling in 6 places;
+`nextPurchaseSequence` had none, so across devices the purchase counter could
+regress / be overwritten and reissue PO numbers. Fixed everywhere bill sequence
+was handled, now covering BOTH counters via `mergedSequences()`:
+- `cloud-merge-service.ts` — `prepareSettingsForCloudSync` max-merges both; business
+  vs sequence split via `isSettingsSequenceField`.
+- `cloud-pull-service.ts` — pull max-merges both; "local ahead" checks either counter.
+- `sync-service.ts` — `mergeSettingsSequenceFromCloud` + `syncSettingsToCloud` handle
+  both; `syncBillSequenceToCloud` → renamed `syncSettingsSequencesToCloud` (merges both).
+- `sync-conflict-service.ts` — `isOnlyBillSequenceConflict` → `isOnlySequenceConflict`
+  (auto-ignores conflicts where only counter fields changed).
+- `sync-provider.tsx` — `isBillSequenceJob` → `isSequenceJob` (bill-sequence OR
+  purchase-sequence) routes both through `syncSettingsSequencesToCloud`.
+- `restore-service.ts` — restore recomputes `nextPurchaseSequence` from restored PO
+  numbers (new `getPurchaseSequenceFromNumber`) and cloud-restore max-merges both.
+
+### P0-2 — settings conflict/pull field list was incomplete
+
+`cloud-merge-service` and `cloud-pull-service` only tracked 6 of ~20 settings
+fields, so an offline device could silently overwrite another device's changes to
+`taxMode`, `enableCash/Card/Credit`, `requireShift`, `defaultDiscountLimit`,
+`rolePermissions`, receipt header/footer, business address/phone, low-stock
+threshold, expiry warning days. Both files now compare `SETTINGS_TRACKED_FIELDS`
+(all business fields + both counters), so every editable setting participates in
+conflict detection and cloud pull.
+
+Verified: `npm run typecheck` clean, `npm run build` succeeds, no stale
+`syncBillSequenceToCloud` / `isBillSequenceJob` / `SETTINGS_FIELDS` references.
+
+Note: real browser offline→online multi-device sync test still required before
+production (cannot be run from source inspection).

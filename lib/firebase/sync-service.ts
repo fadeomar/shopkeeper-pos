@@ -3,6 +3,7 @@ import { firestore } from './config';
 import { db } from '@/lib/db/schema';
 import { nowIso } from '@/lib/utils/date';
 import { detectProductCloudConflict, detectSettingsCloudConflict } from '@/lib/firebase/cloud-merge-service';
+import { mergedSequences } from '@/lib/services/settings-sync-fields';
 import type { AuditEvent, Bill, BillItem, CashMovement, Customer, Expense, Product, Purchase, PurchaseItem, Settings, Shift, StockMovement, CustomerPayment, Supplier, SupplierPayment, SyncQueueItem } from '@/types/domain';
 
 const BATCH_SIZE = 400; // Firestore max is 500; stay under
@@ -87,7 +88,8 @@ async function mergeSettingsSequenceFromCloud(uid: string, settings: Settings): 
     const cloud = snap.data() as Settings;
     return {
       ...settings,
-      nextBillSequence: Math.max(settings.nextBillSequence || 1, cloud.nextBillSequence || 1),
+      // Both bill + purchase counters are monotonic — keep the higher of each.
+      ...mergedSequences(settings, cloud),
     };
   } catch {
     return settings;
@@ -357,17 +359,25 @@ export async function syncSettingsToCloud(uid: string, settings: Settings): Prom
     doc(firestore, `users/${uid}/settings/${settings.id}`),
     asSyncedRecord(settingsToSync, syncedAt),
   );
-  if (settingsToSync.nextBillSequence !== settings.nextBillSequence) {
-    await db.settings.update(settings.id, { nextBillSequence: settingsToSync.nextBillSequence });
+  if (
+    settingsToSync.nextBillSequence !== settings.nextBillSequence ||
+    settingsToSync.nextPurchaseSequence !== settings.nextPurchaseSequence
+  ) {
+    await db.settings.update(settings.id, {
+      nextBillSequence: settingsToSync.nextBillSequence,
+      nextPurchaseSequence: settingsToSync.nextPurchaseSequence,
+    });
   }
   return syncedAt;
 }
 
 /**
- * Merge only the bill sequence after an offline bill. This keeps bill numbers
- * monotonic without overwriting store settings from another device.
+ * Merge only the monotonic sequence counters after an offline bill OR purchase.
+ * This keeps bill/purchase numbers monotonic across devices without
+ * overwriting store settings (payment methods, tax mode, etc.) from another
+ * device. Both counters are max-merged regardless of which one advanced.
  */
-export async function syncBillSequenceToCloud(uid: string, settings: Settings): Promise<Settings> {
+export async function syncSettingsSequencesToCloud(uid: string, settings: Settings): Promise<Settings> {
   const syncedAt = nowIso();
   const settingsRef = doc(firestore, `users/${uid}/settings/${settings.id}`);
   return runTransaction(firestore, async (transaction) => {
@@ -377,7 +387,7 @@ export async function syncBillSequenceToCloud(uid: string, settings: Settings): 
       cloud
         ? {
             ...cloud,
-            nextBillSequence: Math.max(settings.nextBillSequence || 1, cloud.nextBillSequence || 1),
+            ...mergedSequences(settings, cloud),
             updatedAt: newestIso(cloud.updatedAt, settings.updatedAt, syncedAt),
           }
         : settings,
