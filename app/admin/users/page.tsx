@@ -76,8 +76,11 @@ export default function AdminUsersPage() {
   }
 
   useEffect(() => {
+    if (!isAdmin) return;
     void loadUsers();
-  }, []);
+  // loadUsers is stable within this render; isAdmin is the real trigger
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin]);
 
   async function approve(uid: string) {
     try {

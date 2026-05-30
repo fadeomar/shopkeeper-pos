@@ -843,6 +843,9 @@ export interface TranslationDict {
     fullName: string;
     phone: string;
     phoneOptional: string;
+    namePlaceholder: string;
+    emailPlaceholder: string;
+    phonePlaceholder: string;
     passwordMinLength: string;
     signingIn: string;
     sendingRequest: string;
