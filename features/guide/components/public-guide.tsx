@@ -122,7 +122,7 @@ export function PublicGuide() {
             href={requestUrl ?? "#support"}
             target={requestUrl ? "_blank" : undefined}
             rel={requestUrl ? "noopener noreferrer" : undefined}
-            className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
+            className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-brand px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-hover"
           >
             <UserPlusIcon size={18} />
             {t("guide.public.requestAccess")}
@@ -145,7 +145,7 @@ export function PublicGuide() {
               key={title}
               className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4"
             >
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-soft text-brand">
                 <Icon size={20} />
               </span>
               <div>
@@ -161,12 +161,12 @@ export function PublicGuide() {
       <section className="flex flex-col gap-4">
         <SectionTitle>{t("guide.public.fitTitle")}</SectionTitle>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <div className="rounded-2xl border border-green-200 bg-green-50 p-4">
-            <p className="mb-3 text-sm font-bold text-green-700">{t("guide.public.fitGreatTitle")}</p>
+          <div className="rounded-2xl border border-success/20 bg-success-soft p-4">
+            <p className="mb-3 text-sm font-bold text-success">{t("guide.public.fitGreatTitle")}</p>
             <ul className="flex flex-col gap-2">
               {fitGreat.map((line, i) => (
                 <li key={i} className="flex items-start gap-2 text-sm text-slate-600">
-                  <span className="mt-0.5 shrink-0 text-green-600">
+                  <span className="mt-0.5 shrink-0 text-success">
                     <CheckIcon size={16} />
                   </span>
                   <span>{line}</span>
@@ -211,7 +211,7 @@ export function PublicGuide() {
       <section className="flex flex-col gap-4">
         <SectionTitle>{t("guide.public.offlineTitle")}</SectionTitle>
         <div className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-green-50 text-green-600">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-success-soft text-success">
             <WifiOffIcon size={20} />
           </span>
           <p className="text-sm text-slate-600">{t("guide.public.offlineBody")}</p>
@@ -244,7 +244,7 @@ export function PublicGuide() {
         <ol className="flex flex-col gap-3">
           {accessSteps.map((step, i) => (
             <li key={i} className="flex items-start gap-3">
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand text-xs font-bold text-white">
                 {i + 1}
               </span>
               <div>
@@ -254,7 +254,7 @@ export function PublicGuide() {
             </li>
           ))}
         </ol>
-        <p className="rounded-xl bg-blue-50 px-4 py-3 text-sm text-blue-800">
+        <p className="rounded-xl bg-info-soft px-4 py-3 text-sm text-info">
           {t("guide.public.accessManualNote")}
         </p>
       </section>
@@ -282,7 +282,7 @@ export function PublicGuide() {
           href={requestUrl ?? "#support"}
           target={requestUrl ? "_blank" : undefined}
           rel={requestUrl ? "noopener noreferrer" : undefined}
-          className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
+          className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-brand px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-hover"
         >
           <UserPlusIcon size={18} />
           {t("guide.public.requestAccess")}

@@ -34,7 +34,7 @@ if (IS_DEV_HOST && !ENABLE_DEV_SW) {
     );
   });
 } else {
-  const CACHE_VERSION = "0.1.12";
+  const CACHE_VERSION = "0.1.13";
 
   const CACHE_HTML = `sk-pages-${CACHE_VERSION}`;
   const CACHE_STATIC = `sk-static-${CACHE_VERSION}`;
@@ -56,6 +56,7 @@ if (IS_DEV_HOST && !ENABLE_DEV_SW) {
     "/suppliers",
     "/billing",
     "/bills",
+    "/purchases",
     "/purchases/new",
     "/shift",
     "/cash",

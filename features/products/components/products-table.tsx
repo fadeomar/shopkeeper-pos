@@ -6,6 +6,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db/schema";
 import { formatCurrency } from "@/lib/utils/money";
 import { formatDate } from "@/lib/utils/date";
+import { blurInputOnEnter } from "@/lib/utils/dismiss-on-enter";
 import {
   adjustProductStock,
   updateProductDetails,
@@ -223,7 +224,11 @@ export function ProductsTable({
     {
       header: t("products.dateAdded"),
       accessorKey: "dateAdded",
-      cell: ({ row }) => formatDate(row.original.dateAdded),
+      cell: ({ row }) => (
+        <span className="whitespace-nowrap">
+          {formatDate(row.original.dateAdded)}
+        </span>
+      ),
     },
     {
       header: t("products.status"),
@@ -486,7 +491,7 @@ export function ProductsTable({
           </>
         }
       >
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4" onKeyDown={blurInputOnEnter}>
           <label className="flex flex-col gap-1.5">
             <span className="text-sm font-medium text-slate-700">
               {t("products.quantityChange")}

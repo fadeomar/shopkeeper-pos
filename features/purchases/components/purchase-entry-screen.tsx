@@ -25,6 +25,7 @@ import {
   calculateLineSubtotal,
 } from "@/lib/utils/calculations";
 import { MONEY_EPSILON, formatCurrency } from "@/lib/utils/money";
+import { blurInputOnEnter } from "@/lib/utils/dismiss-on-enter";
 import { createFinalizedPurchase } from "@/lib/services/purchase-service";
 import { useAuth } from "@/components/providers/auth-context";
 import { Button } from "@/components/ui/button";
@@ -382,7 +383,6 @@ export function PurchaseEntryScreen() {
     const methods: PurchaseFormSchema["paymentMethod"][] = [];
     if (enableCash) methods.push("cash");
     if (enableCard) methods.push("card");
-    if (enableCash && enableCard) methods.push("mixed");
     if (enableCredit) methods.push("credit");
     return methods.length ? methods : ["cash"];
   }, [enableCash, enableCard, enableCredit]);
@@ -1208,7 +1208,7 @@ export function PurchaseEntryScreen() {
           setSupplierSearch("");
         }}
       >
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3" onKeyDown={blurInputOnEnter}>
           {/* Search input */}
           <div className="relative">
             <Search

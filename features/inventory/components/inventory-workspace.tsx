@@ -11,6 +11,7 @@ import { RecordSyncBadge } from "@/components/sync/record-sync-badge";
 import { countProductStock } from "@/lib/services/inventory-service";
 import { formatCurrency } from "@/lib/utils/money";
 import { Card } from "@/components/ui/card";
+import { FitText } from "@/components/ui/fit-text";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { QuantityStepper } from "@/components/pos/quantity-stepper";
@@ -350,7 +351,18 @@ export function InventoryWorkspace() {
           </>
         }
       >
-        <div className="flex flex-col gap-4">
+        <div
+          className="flex flex-col gap-4"
+          onKeyDown={(e) => {
+            // The on-screen numeric keyboard's "done/✓" key sends Enter but
+            // doesn't blur, so the keyboard lingers. Blur the field on Enter to
+            // dismiss it (without submitting — Save is an explicit tap).
+            if (e.key === "Enter" && e.target instanceof HTMLInputElement) {
+              e.preventDefault();
+              e.target.blur();
+            }
+          }}
+        >
           <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
             {t("inventory.product")}
             <SearchableSelect
@@ -417,7 +429,11 @@ function StatCard({
       <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
         {label}
       </p>
-      <p className="text-2xl font-bold text-slate-900">{value}</p>
+      <FitText
+        value={String(value)}
+        size="2xl"
+        className="font-bold text-slate-900"
+      />
       {helper && <p className="text-xs text-slate-400">{helper}</p>}
     </Card>
   );

@@ -90,9 +90,9 @@ export function SupportContactCard() {
           target="_blank"
           rel="noopener noreferrer"
           className={
-            "inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 " +
+            "inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand " +
             (a.primary
-              ? "bg-blue-600 text-white hover:bg-blue-700"
+              ? "bg-brand text-white hover:bg-brand-hover"
               : "bg-slate-100 text-slate-700 hover:bg-slate-200")
           }
         >

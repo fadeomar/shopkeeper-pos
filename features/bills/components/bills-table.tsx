@@ -9,6 +9,7 @@ import { formatDateTime } from "@/lib/utils/date";
 import { formatCurrency } from "@/lib/utils/money";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Card } from "@/components/ui/card";
+import { FitText } from "@/components/ui/fit-text";
 import { DataTable } from "@/components/ui/data-table";
 import { Badge } from "@/components/ui/badge";
 import { PriceDisplay } from "@/components/pos/price-display";
@@ -58,9 +59,11 @@ function SummaryCard({ label, value }: { label: string; value: string }) {
       <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
         {label}
       </p>
-      <p className="mt-1 text-lg font-black text-slate-900 tabular-nums">
-        {value}
-      </p>
+      <FitText
+        value={value}
+        size="lg"
+        className="mt-1 font-black text-slate-900"
+      />
     </div>
   );
 }
@@ -135,7 +138,11 @@ export function BillsTable() {
     {
       header: t("bills.dateTime"),
       accessorKey: "createdAt",
-      cell: ({ row }) => formatDateTime(row.original.createdAt),
+      cell: ({ row }) => (
+        <span className="whitespace-nowrap">
+          {formatDateTime(row.original.createdAt)}
+        </span>
+      ),
     },
     {
       header: t("bills.customer"),
@@ -254,10 +261,14 @@ export function BillsTable() {
             {t("common.card")}:{" "}
             <strong>{formatCurrency(summary.byPayment.card, currency)}</strong>
           </div>
-          <div>
-            {t("common.mixed")}:{" "}
-            <strong>{formatCurrency(summary.byPayment.mixed, currency)}</strong>
-          </div>
+          {summary.byPayment.mixed > 0 && (
+            <div>
+              {t("common.mixed")}:{" "}
+              <strong>
+                {formatCurrency(summary.byPayment.mixed, currency)}
+              </strong>
+            </div>
+          )}
           <div>
             {t("common.credit")}:{" "}
             <strong>

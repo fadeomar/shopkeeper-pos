@@ -15,6 +15,7 @@ const OFFLINE_NAV_ROUTES = [
   "/suppliers",
   "/billing",
   "/bills",
+  "/purchases",
   "/purchases/new",
   "/shift",
   "/cash",

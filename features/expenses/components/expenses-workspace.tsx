@@ -24,6 +24,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { useToast } from "@/components/ui/toast";
 import { useLocale } from "@/components/providers/locale-context";
 import { formatCurrency, roundMoney } from "@/lib/utils/money";
+import { blurInputOnEnter } from "@/lib/utils/dismiss-on-enter";
 import { formatDateTime, localDateKey } from "@/lib/utils/date";
 import { RecordSyncBadge } from "@/components/sync/record-sync-badge";
 import { getServiceErrorMessage } from "@/lib/errors/get-error-message";
@@ -288,7 +289,7 @@ export function ExpensesWorkspace() {
           </>
         }
       >
-        <div className="space-y-3">
+        <div className="space-y-3" onKeyDown={blurInputOnEnter}>
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium text-slate-700">
               {t("expenses.category")}

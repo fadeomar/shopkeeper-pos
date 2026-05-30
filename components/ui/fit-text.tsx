@@ -5,96 +5,85 @@
  *
  * Why this exists:
  *   POS values can be legitimately long: "$115,540.30", "₪1,234,567.89".
- *   At a fixed `text-2xl` the string clips inside small dashboard cards.
+ *   At a fixed `text-2xl` the string clips or wraps inside small cards.
  *
  *   Cutting money values with ellipsis is NEVER acceptable — a cashier
  *   reading "$7,020…" cannot tell if it's $7,020.43 or $7,020,432.10.
- *   This component picks a size that lets the FULL value render, stepping
- *   down through the size ladder as length grows. Truncation is never
- *   used as a fallback.
+ *   Wrapping a number mid-digit ("US$280.0" / "0") is just as unreadable.
  *
- *   Three approaches were considered for sizing:
- *     1. CSS clamp() + container queries — pure CSS, but requires
- *        @container setup on every parent and tunes are coarse.
- *     2. Runtime measurement (fitty-style) — most flexible, but adds a
- *        ResizeObserver per cell and creates a flash of unstyled text on
- *        mount. Bad for offline-first where we want everything paint-
- *        ready immediately.
- *     3. Length-based size buckets — deterministic, same value always
- *        renders at the same size, no JS measurement, no flicker.
+ * How it works:
+ *   The value renders on a SINGLE line and we measure how wide it would be
+ *   at the maximum font size against the actual content width of the parent
+ *   (via canvas text measurement). If it doesn't fit, we scale the font down
+ *   just enough that it does — never truncating, never wrapping.
  *
- *   We use option 3. Currency strings are highly predictable in length
- *   so a simple length->size lookup gets us 95% of the way.
+ *   An earlier version used static length→size buckets calibrated for the
+ *   one-card-per-row dashboard (~320px). That mis-fired in denser 2-col
+ *   layouts (shift / reports cards ≈ 130px) where the same value needed to
+ *   shrink far more — so it wrapped. Measuring the real width fixes every
+ *   layout without per-card calibration.
  *
- * Usage:
- *   <FitText value={formatCurrency(totalSales, currency)} size="2xl" />
- *
- *   That renders the value at text-2xl when short and scales down to
- *   text-xs when extremely long. The `size` prop is the MAXIMUM — it
- *   never scales up.
+ * Offline note: canvas + ResizeObserver are browser-native, no network. The
+ * app uses system font stacks, so there's no late web-font reflow.
  */
 
 import clsx from "clsx";
-import type { HTMLAttributes } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type HTMLAttributes,
+} from "react";
 
 type FitSize = "lg" | "xl" | "2xl" | "3xl";
 
-interface FitTextProps extends Omit<HTMLAttributes<HTMLSpanElement>, "children"> {
-  value: string;
-  /** Maximum size for short strings. Scales down from here as length grows. */
-  size?: FitSize;
-  /** Direction override — defaults to "ltr" for currency/numeric strings
-   * so the digit order and currency symbol stay readable in Arabic mode. */
-  dir?: "ltr" | "rtl" | "auto";
+// Maximum font size (px) per ladder rung — mirrors Tailwind's text-* sizes.
+const MAX_PX: Record<FitSize, number> = {
+  lg: 18,
+  xl: 20,
+  "2xl": 24,
+  "3xl": 30,
+};
+
+// Never shrink below this — past it the value is unreadable and the card
+// should grow / wrap the layout instead. Realistic POS values never reach it.
+const MIN_PX = 11;
+
+// Tabular numerals render slightly wider than the canvas's proportional
+// measurement, and symbols like "US$" add a little. Pad the measured width so
+// we err on the side of shrinking rather than overflowing.
+const WIDTH_SAFETY = 1.06;
+
+// SSR-safe layout effect (avoids the useLayoutEffect-on-server warning).
+const useIsoLayoutEffect =
+  typeof window !== "undefined" ? useLayoutEffect : useEffect;
+
+// One shared offscreen canvas for all measurements — cheap and never painted.
+let sharedCanvas: HTMLCanvasElement | null = null;
+function measureTextWidth(
+  text: string,
+  fontPx: number,
+  fontFamily: string,
+  fontWeight: string,
+): number {
+  if (typeof document === "undefined") return 0;
+  sharedCanvas ??= document.createElement("canvas");
+  const ctx = sharedCanvas.getContext("2d");
+  if (!ctx) return 0;
+  ctx.font = `${fontWeight} ${fontPx}px ${fontFamily}`;
+  return ctx.measureText(text).width;
 }
 
-/**
- * Length thresholds picked against the dashboard card width at the new
- * one-card-per-row mobile layout (≈320px content width on a 360px viewport).
- * At that width, with bold weights:
- *
- *   - text-3xl: ~14 characters fit
- *   - text-2xl: ~16 characters
- *   - text-xl:  ~20 characters
- *   - text-lg:  ~24 characters
- *   - text-base:~28 characters
- *   - text-sm:  ~32 characters
- *
- * Currency formatting adds ~3-4 chars overhead ("$" + ",." + 2 decimals),
- * so even values like $1,234,567,890.12 (18 chars) land at text-xl which
- * fits comfortably. Beyond text-sm we still step further rather than ever
- * truncate, because cut-off money values are dangerous in a POS context.
- */
-const sizeLadders: Record<FitSize, string[]> = {
-  "3xl": ["text-3xl", "text-2xl", "text-xl", "text-lg", "text-base", "text-sm", "text-xs"],
-  "2xl": ["text-2xl", "text-xl", "text-lg", "text-base", "text-sm", "text-xs"],
-  xl:    ["text-xl", "text-lg", "text-base", "text-sm", "text-xs"],
-  lg:    ["text-lg", "text-base", "text-sm", "text-xs"],
-};
-
-/**
- * Map each step on the ladder to the maximum character count it can
- * comfortably hold inside a one-card-per-row mobile layout. Calibrated
- * for bold weights with tabular numerals.
- */
-const sizeMaxChars: Record<string, number> = {
-  "text-3xl": 12,
-  "text-2xl": 14,
-  "text-xl": 18,
-  "text-lg": 22,
-  "text-base": 26,
-  "text-sm": 30,
-  "text-xs": Infinity, // last resort — always wins, never truncate
-};
-
-function pickSize(length: number, ladder: FitSize): string {
-  const rungs = sizeLadders[ladder];
-  for (const cls of rungs) {
-    if (length <= sizeMaxChars[cls]) return cls;
-  }
-  // Logically unreachable because text-xs has Infinity, but typed as
-  // a safety net.
-  return rungs[rungs.length - 1];
+interface FitTextProps
+  extends Omit<HTMLAttributes<HTMLSpanElement>, "children"> {
+  value: string;
+  /** Maximum size for short strings. Scales down from here as needed. */
+  size?: FitSize;
+  /** Direction override — defaults to "ltr" for currency/numeric strings so
+   * the digit order and currency symbol stay readable in Arabic mode. */
+  dir?: "ltr" | "rtl" | "auto";
 }
 
 export function FitText({
@@ -102,34 +91,67 @@ export function FitText({
   size = "2xl",
   dir = "ltr",
   className,
+  style,
   ...rest
 }: FitTextProps) {
-  const sizeClass = pickSize(value.length, size);
+  const ref = useRef<HTMLSpanElement>(null);
+  const [fontPx, setFontPx] = useState<number>(MAX_PX[size]);
+
+  useIsoLayoutEffect(() => {
+    const el = ref.current;
+    const parent = el?.parentElement;
+    if (!el || !parent) return;
+    const maxPx = MAX_PX[size];
+
+    const recompute = () => {
+      const cs = window.getComputedStyle(parent);
+      const padX =
+        parseFloat(cs.paddingLeft || "0") + parseFloat(cs.paddingRight || "0");
+      const avail = parent.clientWidth - padX;
+      if (!Number.isFinite(avail) || avail <= 0) return;
+
+      const elStyle = window.getComputedStyle(el);
+      const naturalWidth =
+        measureTextWidth(value, maxPx, elStyle.fontFamily, elStyle.fontWeight) *
+        WIDTH_SAFETY;
+
+      let next = maxPx;
+      if (naturalWidth > avail && naturalWidth > 0) {
+        next = Math.max(MIN_PX, Math.floor((avail / naturalWidth) * maxPx));
+      }
+      // Only update when it actually changes — avoids needless renders and
+      // keeps the ResizeObserver from churning.
+      setFontPx((prev) => (prev !== next ? next : prev));
+    };
+
+    recompute();
+
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(recompute);
+    ro.observe(parent);
+    return () => ro.disconnect();
+  }, [value, size]);
+
+  const mergedStyle: CSSProperties = {
+    fontSize: `${fontPx}px`,
+    display: "inline-block",
+    maxWidth: "100%",
+    minWidth: 0,
+    ...style,
+  };
+
   return (
     <span
+      ref={ref}
       dir={dir}
       className={clsx(
-        "tabular-nums leading-tight",
-        // Allow the value to break onto two lines as the ULTIMATE safety
-        // net for extreme cases (e.g. very long localized currencies on
-        // very narrow ancestors). Truncation with ellipsis is explicitly
-        // avoided — wrapping is always better than hiding digits.
-        "whitespace-normal break-words",
-        sizeClass,
+        "tabular-nums leading-tight whitespace-nowrap",
         className,
       )}
-      // min-width:0 lets us live inside a flex/grid cell that would
-      // otherwise refuse to shrink and clip us; max-width:100% bounds the
-      // span to its container.
-      style={{
-        minWidth: 0,
-        maxWidth: "100%",
-        display: "inline-block",
-      }}
+      style={mergedStyle}
       {...rest}
     >
       {value}
     </span>
   );
 }
-

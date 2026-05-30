@@ -23,7 +23,6 @@ import { createFinalizedBill } from "@/lib/services/billing-service";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Check,
   CircleCheck,
   Cloud,
   CloudUpload,
@@ -43,6 +42,8 @@ import { useToast } from "@/components/ui/toast";
 import { BarcodeScannerModal } from "@/components/barcode/barcode-scanner-modal";
 import { useLocale } from "@/components/providers/locale-context";
 import { Card } from "@/components/ui/card";
+import { FitText } from "@/components/ui/fit-text";
+import { blurInputOnEnter } from "@/lib/utils/dismiss-on-enter";
 import { PaymentMethodControl } from "@/components/pos/payment-method-control";
 import { QuickProductModal } from "./quick-product-modal";
 import { ReceiptView } from "./receipt-view";
@@ -306,7 +307,6 @@ export function PosScreen() {
 
   const [draftItems, setDraftItems] = useState<BillDraftItem[]>([]);
   const staleDraftChecked = useRef(false);
-  const [productId, setProductId] = useState("");
   const [barcodeQuery, setBarcodeQuery] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -338,11 +338,6 @@ export function PosScreen() {
     [products, currency, t],
   );
 
-  const [lastAdded, setLastAdded] = useState<{
-    name: string;
-    qty: number;
-    subtotal: number;
-  } | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
 
   const barcodeInputRef = useRef<HTMLInputElement | null>(null);
@@ -583,7 +578,6 @@ export function PosScreen() {
     const methods: BillFormSchema["paymentMethod"][] = [];
     if (enableCash) methods.push("cash");
     if (enableCard) methods.push("card");
-    if (enableCash && enableCard) methods.push("mixed");
     if (enableCredit) methods.push("credit");
     // Never leave the cashier with zero ways to take payment.
     return methods.length ? methods : ["cash"];
@@ -688,15 +682,6 @@ export function PosScreen() {
     return () => window.clearTimeout(id);
   }, [lastFinalized]);
 
-  // Last-scanned banner fades out after a couple of seconds — long enough for
-  // the cashier to glance and confirm, short enough not to obscure the next
-  // scan's feedback.
-  useEffect(() => {
-    if (!lastAdded) return;
-    const id = window.setTimeout(() => setLastAdded(null), 2500);
-    return () => window.clearTimeout(id);
-  }, [lastAdded]);
-
   // Global Ctrl/Cmd+Enter opens the finalize confirm modal so the cashier
   // can finish a sale without leaving the keyboard. Skipped when any modal
   // is already open (Esc handles those) and when nothing is finalizable.
@@ -741,11 +726,6 @@ export function PosScreen() {
         ),
       );
       push(t("billing.itemUpdated", { name: product.name, qty: nextQty }));
-      setLastAdded({
-        name: product.name,
-        qty: nextQty,
-        subtotal: calculateLineSubtotal(nextQty, product.sellPrice),
-      });
     } else {
       const newItem: BillDraftItem = {
         productId: product.id,
@@ -759,21 +739,9 @@ export function PosScreen() {
       };
       setDraftItems((cur) => [...cur, newItem]);
       push(t("billing.itemAdded", { name: product.name }));
-      setLastAdded({
-        name: product.name,
-        qty: 1,
-        subtotal: calculateLineSubtotal(1, product.sellPrice),
-      });
     }
 
     setTimeout(() => barcodeInputRef.current?.focus(), 0);
-  }
-
-  function addBySelection() {
-    const product = products?.find((p) => p.id === productId);
-    if (!product) return;
-    appendProduct(product);
-    setProductId("");
   }
 
   function promptQuickAddProduct(barcode: string) {
@@ -1014,26 +982,6 @@ export function PosScreen() {
             )}
           </div>
 
-          {lastAdded && (
-            <div
-              role="status"
-              aria-live="polite"
-              className="flex items-center gap-2 rounded-xl border border-success/30 bg-success-soft px-3 py-2 text-sm text-success"
-            >
-              <Check
-                aria-hidden
-                size={16}
-                strokeWidth={3}
-                className="shrink-0 text-success"
-              />
-              <span className="font-medium truncate">{lastAdded.name}</span>
-              <span className="ml-auto shrink-0 text-xs font-semibold tabular-nums text-success">
-                ×{lastAdded.qty} ·{" "}
-                {formatCurrency(lastAdded.subtotal, currency)}
-              </span>
-            </div>
-          )}
-
           {/* Barcode input row */}
           <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto_auto] gap-2">
             <Input
@@ -1094,22 +1042,22 @@ export function PosScreen() {
             </div>
           </div>
 
-          {/* Product select row */}
-          <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">
-            <SearchableSelect
-              value={productId}
-              onValueChange={(value) => setProductId(value ?? "")}
-              options={productOptions}
-              placeholder={t("billing.selectProduct")}
-              searchPlaceholder={t("products.searchPlaceholder")}
-              emptyMessage={t("products.noProducts")}
-              disabled={!products?.length}
-              className="flex-1"
-            />
-            <Button type="button" variant="secondary" onClick={addBySelection}>
-              {t("billing.addItem")}
-            </Button>
-          </div>
+          {/* Product select row — picking a product adds it to the bill
+              immediately (no separate "Add item" tap). The selection resets to
+              the placeholder so the same product can be picked again. */}
+          <SearchableSelect
+            value=""
+            onValueChange={(value) => {
+              if (!value) return;
+              const product = products?.find((p) => p.id === value);
+              if (product) appendProduct(product);
+            }}
+            options={productOptions}
+            placeholder={t("billing.selectProduct")}
+            searchPlaceholder={t("products.searchPlaceholder")}
+            emptyMessage={t("common.noResults")}
+            disabled={!products?.length}
+          />
 
           {/* Items */}
           {draftItems.length === 0 ? (
@@ -1579,12 +1527,11 @@ export function PosScreen() {
               <p className="text-xs font-medium text-fg-muted">
                 {draftItems.length} {t("billing.items")}
               </p>
-              <p
-                className="truncate text-lg font-black text-fg tabular-nums"
-                dir="ltr"
-              >
-                {formatCurrency(billSummary.totalAmount, currency)}
-              </p>
+              <FitText
+                value={formatCurrency(billSummary.totalAmount, currency)}
+                size="lg"
+                className="font-black text-fg"
+              />
             </div>
             <Button
               type="button"
@@ -1658,7 +1605,7 @@ export function PosScreen() {
           setCustomerSearch("");
         }}
       >
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3" onKeyDown={blurInputOnEnter}>
           {/* Search input */}
           <div className="relative">
             <Search

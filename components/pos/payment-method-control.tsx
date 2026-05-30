@@ -17,7 +17,7 @@
  */
 
 import clsx from 'clsx';
-import { Banknote, CreditCard, Coins, Clock } from 'lucide-react';
+import { Banknote, CreditCard, Clock } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-context';
 import type { LucideIcon } from 'lucide-react';
 
@@ -40,12 +40,13 @@ const SM_COLS: Record<number, string> = {
 // Icon choices:
 //   Banknote → Cash: physical note, universal "cash" metaphor
 //   CreditCard → Card: self-evident
-//   Coins → Mixed: coins + card together = mixed payment
 //   Clock → Credit: deferred payment / "pay later"
+// NOTE: "mixed" is intentionally omitted — it is no longer offered as a payment
+// option (it confused cashiers). The PaymentMethod type still includes 'mixed'
+// so historical bills saved as mixed continue to display/aggregate correctly.
 const OPTIONS: readonly PaymentOption[] = [
   { value: 'cash',   icon: Banknote,    labelKey: 'common.cash'   },
   { value: 'card',   icon: CreditCard,  labelKey: 'common.card'   },
-  { value: 'mixed',  icon: Coins,       labelKey: 'common.mixed'  },
   { value: 'credit', icon: Clock,       labelKey: 'common.credit' },
 ] as const;
 

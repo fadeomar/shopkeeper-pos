@@ -327,13 +327,15 @@ export function ZReport() {
             label={t("reports.zTenderCard")}
             value={formatCurrency(result.salesSummary.byPayment.card, currency)}
           />
-          <Row
-            label={t("reports.zTenderMixed")}
-            value={formatCurrency(
-              result.salesSummary.byPayment.mixed,
-              currency,
-            )}
-          />
+          {result.salesSummary.byPayment.mixed > 0 && (
+            <Row
+              label={t("reports.zTenderMixed")}
+              value={formatCurrency(
+                result.salesSummary.byPayment.mixed,
+                currency,
+              )}
+            />
+          )}
           <Row
             label={t("reports.zTenderCredit")}
             value={formatCurrency(
