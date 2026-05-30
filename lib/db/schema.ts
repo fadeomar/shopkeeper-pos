@@ -275,6 +275,18 @@ export class ShopkeeperDB extends Dexie {
     this.version(14).stores({
       expenses: 'id, category, paymentMethod, shiftId, expenseDate, createdAt, syncStatus',
     });
+
+    // v15: the shop operates in ILS (₪). Flip any settings row still carrying
+    // the old "USD"/"$" currency over to ILS so existing installs show ₪
+    // without a manual step. Runs exactly once on upgrade; a store that later
+    // deliberately picks another currency in Settings keeps its choice.
+    this.version(15).stores({}).upgrade(async (tx) => {
+      await tx.table('settings').toCollection().modify((s: Record<string, unknown>) => {
+        if (s.currency === 'USD' || s.currency === '$') {
+          s.currency = 'ILS';
+        }
+      });
+    });
   }
 }
 

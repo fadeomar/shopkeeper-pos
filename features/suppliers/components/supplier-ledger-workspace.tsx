@@ -173,9 +173,13 @@ export function SupplierLedgerWorkspace() {
       header: t("suppliers.lastActivity"),
       accessorKey: "lastActivityAt",
       cell: ({ row }) =>
-        row.original.lastActivityAt
-          ? new Date(row.original.lastActivityAt).toLocaleString()
-          : "—",
+        row.original.lastActivityAt ? (
+          <span className="whitespace-nowrap">
+            {new Date(row.original.lastActivityAt).toLocaleString()}
+          </span>
+        ) : (
+          "—"
+        ),
     },
     {
       header: "",
@@ -310,7 +314,7 @@ export function SupplierLedgerWorkspace() {
                         <p className="font-medium text-slate-900">
                           {purchase.purchaseNumber}
                         </p>
-                        <p className="text-xs text-slate-500">
+                        <p className="whitespace-nowrap text-xs text-slate-500">
                           {new Date(purchase.createdAt).toLocaleString()}
                         </p>
                       </div>
@@ -352,7 +356,7 @@ export function SupplierLedgerWorkspace() {
                         </p>
                       </div>
                       <div className="flex flex-col items-end gap-1">
-                        <p className="text-xs text-slate-500">
+                        <p className="whitespace-nowrap text-xs text-slate-500">
                           {new Date(payment.createdAt).toLocaleString()}
                         </p>
                         <RecordSyncBadge status={payment.syncStatus} />

@@ -145,9 +145,13 @@ export function CustomerLedgerWorkspace() {
       header: t("customers.lastActivity"),
       accessorKey: "lastActivityAt",
       cell: ({ row }) =>
-        row.original.lastActivityAt
-          ? new Date(row.original.lastActivityAt).toLocaleString()
-          : "—",
+        row.original.lastActivityAt ? (
+          <span className="whitespace-nowrap">
+            {new Date(row.original.lastActivityAt).toLocaleString()}
+          </span>
+        ) : (
+          "—"
+        ),
     },
     {
       header: "",
@@ -328,7 +332,7 @@ export function CustomerLedgerWorkspace() {
                           >
                             {bill.billNumber}
                           </Link>
-                          <p className="text-xs text-slate-500">
+                          <p className="whitespace-nowrap text-xs text-slate-500">
                             {new Date(bill.createdAt).toLocaleString()}
                           </p>
                         </div>
@@ -370,7 +374,7 @@ export function CustomerLedgerWorkspace() {
                         </p>
                       </div>
                       <div className="flex flex-col items-end gap-1">
-                        <p className="text-xs text-slate-500">
+                        <p className="whitespace-nowrap text-xs text-slate-500">
                           {new Date(payment.createdAt).toLocaleString()}
                         </p>
                         <RecordSyncBadge status={payment.syncStatus} />

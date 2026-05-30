@@ -54,12 +54,12 @@ export function AccordionItem({
           aria-expanded={open}
           aria-controls={panelId}
           onClick={() => setOpen((v) => !v)}
-          className="flex w-full items-center gap-3 px-4 py-3.5 text-start transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 sm:px-5"
+          className="flex w-full items-center gap-3 px-4 py-3.5 text-start transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand sm:px-5"
         >
           {icon && (
             <span
               aria-hidden
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-soft text-brand"
             >
               {icon}
             </span>

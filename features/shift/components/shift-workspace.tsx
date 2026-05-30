@@ -145,7 +145,7 @@ export function ShiftWorkspace() {
         accessorKey: "openedAt",
         header: t("shift.openedAt"),
         cell: ({ row }) => (
-          <span className="text-slate-700">
+          <span className="whitespace-nowrap text-slate-700">
             {formatDateTime(row.original.openedAt)}
           </span>
         ),

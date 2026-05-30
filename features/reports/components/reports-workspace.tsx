@@ -279,54 +279,77 @@ export function ReportsWorkspace() {
         </div>
       </Card>
 
-      <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      {/* Money-in: 5 cards spread across the row on desktop (lg:grid-cols-5)
+          so the 5th card no longer wraps onto an orphan row; on small screens
+          the trailing odd card stretches full-width instead of sitting alone. */}
+      <section className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         <StatCard
+          filled
+          tone="brand"
           label={t("reports.totalSales")}
           value={formatCurrency(summary.sales, currency)}
           href="/bills"
         />
         <StatCard
+          filled
+          tone="positive"
           label={t("reports.totalProfit")}
           value={formatCurrency(summary.profit, currency)}
         />
         <StatCard
+          filled
+          tone="neutral"
           label={t("reports.billCount")}
           value={String(summary.billCount)}
           helper={`${t("reports.averageBill")}: ${formatCurrency(summary.averageBill, currency)}`}
           href="/bills"
         />
         <StatCard
+          filled
+          tone="info"
           label={t("reports.cashExpected")}
           value={formatCurrency(summary.cashExpected, currency)}
           href="/shift"
         />
         <StatCard
+          filled
+          tone="positive"
+          className="col-span-2 lg:col-span-1"
           label={t("reports.customerPaymentsCashIn")}
           value={formatCurrency(customerPaymentsCashIn, currency)}
           href="/customers"
         />
       </section>
 
+      {/* Money-out */}
       <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard
+          filled
+          tone="warning"
           label={t("reports.purchaseCost")}
           value={formatCurrency(purchaseSummary.purchaseCost, currency)}
           helper={`${t("reports.purchaseCount")}: ${purchaseSummary.purchaseCount}`}
           href="/purchases/new"
         />
         <StatCard
+          filled
+          tone="warning"
           label={t("reports.cashPaidOut")}
           value={formatCurrency(purchaseSummary.cashPaidOut, currency)}
           helper={t("reports.cashPaidOutHelper")}
           href="/cash"
         />
         <StatCard
+          filled
+          tone="info"
           label={t("reports.supplierPayments")}
           value={formatCurrency(purchaseSummary.supplierPayments, currency)}
           helper={`${filteredSupplierPayments.length} ${t("reports.entries")}`}
           href="/suppliers"
         />
         <StatCard
+          filled
+          tone="danger"
           label={t("reports.netSupplierDebt")}
           value={formatCurrency(purchaseSummary.netSupplierDebt, currency)}
           helper={t("reports.netSupplierDebtHelper")}
@@ -340,18 +363,30 @@ export function ReportsWorkspace() {
           </h3>
           <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
             <StatCard
+              filled
+              tone="positive"
               label={t("common.cash")}
               value={formatCurrency(summary.byPayment.cash, currency)}
             />
             <StatCard
+              filled
+              tone="info"
               label={t("common.card")}
               value={formatCurrency(summary.byPayment.card, currency)}
             />
+            {/* Mixed is a retired payment method — only shown if historical
+                bills still carry a mixed total. */}
+            {summary.byPayment.mixed > 0 && (
+              <StatCard
+                filled
+                tone="neutral"
+                label={t("common.mixed")}
+                value={formatCurrency(summary.byPayment.mixed, currency)}
+              />
+            )}
             <StatCard
-              label={t("common.mixed")}
-              value={formatCurrency(summary.byPayment.mixed, currency)}
-            />
-            <StatCard
+              filled
+              tone="warning"
               label={t("common.credit")}
               value={formatCurrency(summary.byPayment.credit, currency)}
             />

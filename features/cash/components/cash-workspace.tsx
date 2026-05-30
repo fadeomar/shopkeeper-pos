@@ -24,6 +24,7 @@ import { useToast } from "@/components/ui/toast";
 import { useLocale } from "@/components/providers/locale-context";
 import { formatCurrency, MONEY_EPSILON, roundMoney } from "@/lib/utils/money";
 import { formatDateTime } from "@/lib/utils/date";
+import { blurInputOnEnter } from "@/lib/utils/dismiss-on-enter";
 import { getServiceErrorMessage } from "@/lib/errors/get-error-message";
 import { RecordSyncBadge } from "@/components/sync/record-sync-badge";
 
@@ -250,7 +251,7 @@ export function CashWorkspace() {
           </>
         }
       >
-        <div className="space-y-3">
+        <div className="space-y-3" onKeyDown={blurInputOnEnter}>
           {!activeShift && (
             <p className="rounded-xl border border-warning/30 bg-warning-soft px-3 py-2 text-xs text-warning">
               {t("cash.noActiveShiftLabel")}

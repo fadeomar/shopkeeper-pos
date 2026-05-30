@@ -27,7 +27,7 @@ export function PublicShell({ children }: { children: React.ReactNode }) {
             href={"/" as Route}
             className="flex items-center gap-2 font-bold tracking-tight text-slate-900"
           >
-            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-600 text-sm font-black text-white">
+            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-brand text-sm font-black text-white">
               S
             </span>
             <span className="text-sm sm:text-base">Shopkeeper POS</span>
@@ -48,7 +48,7 @@ export function PublicShell({ children }: { children: React.ReactNode }) {
                   className={
                     "rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors " +
                     (locale === lng
-                      ? "bg-blue-600 text-white"
+                      ? "bg-brand text-white"
                       : "text-slate-500 hover:text-slate-800")
                   }
                 >

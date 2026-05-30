@@ -35,15 +35,15 @@ export function OfflineMatrix() {
   return (
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className="rounded-2xl border border-green-200 bg-green-50 p-4">
-          <div className="mb-3 flex items-center gap-2 text-green-700">
+        <div className="rounded-2xl border border-success/20 bg-success-soft p-4">
+          <div className="mb-3 flex items-center gap-2 text-success">
             <WifiOffIcon size={18} />
             <h3 className="text-sm font-bold">{t("guide.offline.worksTitle")}</h3>
           </div>
           <ul className="flex flex-col gap-2">
             {works.map((line, i) => (
               <li key={i} className="flex items-start gap-2 text-sm text-slate-600">
-                <span className="mt-0.5 shrink-0 text-green-600">
+                <span className="mt-0.5 shrink-0 text-success">
                   <CheckIcon size={16} />
                 </span>
                 <span>{line}</span>
@@ -52,15 +52,15 @@ export function OfflineMatrix() {
           </ul>
         </div>
 
-        <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
-          <div className="mb-3 flex items-center gap-2 text-blue-700">
+        <div className="rounded-2xl border border-info/20 bg-info-soft p-4">
+          <div className="mb-3 flex items-center gap-2 text-info">
             <CloudIcon size={18} />
             <h3 className="text-sm font-bold">{t("guide.offline.needsTitle")}</h3>
           </div>
           <ul className="flex flex-col gap-2">
             {needs.map((line, i) => (
               <li key={i} className="flex items-start gap-2 text-sm text-slate-600">
-                <span className="mt-0.5 shrink-0 text-blue-600">
+                <span className="mt-0.5 shrink-0 text-info">
                   <CloudIcon size={16} />
                 </span>
                 <span>{line}</span>
@@ -70,7 +70,7 @@ export function OfflineMatrix() {
         </div>
       </div>
 
-      <p className="rounded-xl bg-blue-50 px-4 py-3 text-sm font-medium text-blue-800">
+      <p className="rounded-xl bg-info-soft px-4 py-3 text-sm font-medium text-info">
         {t("guide.offline.reassurance")}
       </p>
     </div>
