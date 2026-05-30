@@ -76,8 +76,11 @@ export default function AdminUsersPage() {
   }
 
   useEffect(() => {
+    if (!isAdmin) return;
     void loadUsers();
-  }, []);
+  // loadUsers is stable within this render; isAdmin is the real trigger
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin]);
 
   async function approve(uid: string) {
     try {
@@ -197,7 +200,7 @@ export default function AdminUsersPage() {
       cell: ({ row }) => {
         const summary = summaries[row.original.uid];
         return summary?.lastSyncAt ? (
-          relativeTime(summary.lastSyncAt)
+          relativeTime(summary.lastSyncAt, t)
         ) : (
           <span className="text-slate-300">{t("admin.noBackup")}</span>
         );
@@ -332,7 +335,7 @@ export default function AdminUsersPage() {
         <section>
           <h2 className="text-sm font-semibold text-warning mb-2 flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-warning inline-block" />
-            Pending Approval ({pending.length})
+            {t("admin.pendingApproval")} ({pending.length})
           </h2>
           <div className="bg-white border border-warning/20 rounded-2xl overflow-hidden divide-y divide-warning/10">
             {pending.map((u) => (
@@ -359,7 +362,7 @@ export default function AdminUsersPage() {
                     variant="success"
                     onClick={() => void approve(u.uid)}
                   >
-                    Approve
+                    {t("admin.approve")}
                   </Button>
                   <Button
                     type="button"
@@ -367,7 +370,7 @@ export default function AdminUsersPage() {
                     variant="danger"
                     onClick={() => void reject(u.uid)}
                   >
-                    Reject
+                    {t("admin.reject")}
                   </Button>
                 </div>
               </div>
@@ -406,12 +409,13 @@ export default function AdminUsersPage() {
 }
 
 function HealthBadge({ health }: { health: SupportHealth }) {
+  const { t } = useLocale();
   const label =
     health === "healthy"
-      ? "Healthy"
+      ? t("admin.healthy")
       : health === "needs_attention"
-        ? "Needs attention"
-        : "No backup";
+        ? t("admin.needsAttention")
+        : t("admin.noBackup");
   return (
     <Badge
       tone={
@@ -450,17 +454,19 @@ function SupportCard({
   );
 }
 
-function relativeTime(value: string) {
+type TFn = ReturnType<typeof useLocale>["t"];
+
+function relativeTime(value: string, t: TFn): string {
   const time = new Date(value).getTime();
-  if (!Number.isFinite(time)) return "Unknown";
+  if (!Number.isFinite(time)) return t("admin.timeUnknown");
   const diffMs = Date.now() - time;
   const minutes = Math.floor(diffMs / 60_000);
-  if (minutes < 1) return "Just now";
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 1) return t("admin.timeJustNow");
+  if (minutes < 60) return t("admin.timeMinutesAgo", { count: minutes });
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return t("admin.timeHoursAgo", { count: hours });
   const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+  return t("admin.timeDaysAgo", { count: days });
 }
 
 function CreateUserForm({

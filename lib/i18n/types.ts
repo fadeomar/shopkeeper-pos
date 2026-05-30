@@ -843,6 +843,9 @@ export interface TranslationDict {
     fullName: string;
     phone: string;
     phoneOptional: string;
+    namePlaceholder: string;
+    emailPlaceholder: string;
+    phonePlaceholder: string;
     passwordMinLength: string;
     signingIn: string;
     sendingRequest: string;
@@ -1149,6 +1152,12 @@ export interface TranslationDict {
     errorLoadUsers: string;
     errorRefreshHealth: string;
     errorUpdateUser: string;
+    healthy: string;
+    timeUnknown: string;
+    timeJustNow: string;
+    timeMinutesAgo: string;
+    timeHoursAgo: string;
+    timeDaysAgo: string;
     errorEmailExists: string;
     errorPasswordShort: string;
     errorCreateUser: string;

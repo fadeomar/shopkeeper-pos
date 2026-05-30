@@ -8,18 +8,50 @@ import { AuthProvider } from '@/components/providers/auth-context';
 import { SyncProvider } from '@/components/providers/sync-provider';
 import { AuthenticatedShell } from '@/components/auth/authenticated-shell';
 
+const APP_NAME = 'Asas POS';
+const APP_DESCRIPTION =
+  'Asas — the offline-first point-of-sale app built for small shops. Manage products, bills, inventory, customers, and reports. Works without internet.';
+
 export const metadata: Metadata = {
-  title: 'Shopkeeper POS',
-  description: 'Offline-first supermarket POS and inventory management system.',
-  applicationName: 'Shopkeeper POS',
-  appleWebApp: { capable: true, statusBarStyle: 'default', title: 'Shopkeeper POS' },
+  title: { default: APP_NAME, template: `%s — ${APP_NAME}` },
+  description: APP_DESCRIPTION,
+  applicationName: APP_NAME,
+  keywords: ['POS', 'point of sale', 'inventory', 'offline POS', 'small business', 'أساس', 'نقطة بيع'],
+  authors: [{ name: 'Asas' }],
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: APP_NAME,
+  },
+  openGraph: {
+    title: APP_NAME,
+    description: APP_DESCRIPTION,
+    type: 'website',
+    locale: 'ar_PS',
+    alternateLocale: 'en_US',
+  },
+  twitter: {
+    card: 'summary',
+    title: APP_NAME,
+    description: APP_DESCRIPTION,
+  },
   icons: {
-    icon: '/favicon.ico',
+    icon: [
+      { url: '/favicon.ico', sizes: 'any' },
+      { url: '/icons/icon-192.svg', type: 'image/svg+xml' },
+    ],
     apple: '/icons/icon-192.png',
   },
+  manifest: '/manifest.webmanifest',
 };
 
-export const viewport: Viewport = { themeColor: '#0b1220' };
+export const viewport: Viewport = {
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#1F6F43' },
+    { media: '(prefers-color-scheme: dark)', color: '#1F6F43' },
+  ],
+  colorScheme: 'light',
+};
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

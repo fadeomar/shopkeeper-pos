@@ -70,17 +70,25 @@ export async function registerUser(
     const cred = await createUserWithEmailAndPassword(tempAuth, email, password);
     uid = cred.user.uid;
 
-    // Write Firestore doc before signing in on main auth — no race condition
-    await setDoc(doc(firestore, 'users', uid), {
-      uid,
-      email,
-      name,
-      ...(phone ? { phone } : {}),
-      role: 'cashier',
-      isActive: false,
-      pendingApproval: true,
-      createdAt: new Date().toISOString(),
-    } satisfies AppUser);
+    // Write Firestore doc before signing in on main auth — no race condition.
+    // If the write fails (e.g. rules not deployed, network error), delete the
+    // orphaned Firebase Auth user so the same email can be retried immediately
+    // instead of getting "email already in use" forever.
+    try {
+      await setDoc(doc(firestore, 'users', uid), {
+        uid,
+        email,
+        name,
+        ...(phone ? { phone } : {}),
+        role: 'cashier',
+        isActive: false,
+        pendingApproval: true,
+        createdAt: new Date().toISOString(),
+      } satisfies AppUser);
+    } catch (firestoreError) {
+      try { await cred.user.delete(); } catch { /* best-effort — ignore if already gone */ }
+      throw firestoreError;
+    }
   } finally {
     await deleteApp(tempApp);
   }
