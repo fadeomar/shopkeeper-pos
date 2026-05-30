@@ -1152,6 +1152,12 @@ export interface TranslationDict {
     errorLoadUsers: string;
     errorRefreshHealth: string;
     errorUpdateUser: string;
+    healthy: string;
+    timeUnknown: string;
+    timeJustNow: string;
+    timeMinutesAgo: string;
+    timeHoursAgo: string;
+    timeDaysAgo: string;
     errorEmailExists: string;
     errorPasswordShort: string;
     errorCreateUser: string;

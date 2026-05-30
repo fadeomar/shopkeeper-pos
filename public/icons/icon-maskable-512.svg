@@ -1,13 +1,13 @@
 <svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Asas app icon">
-  <!-- Background: rounded square, solid deep green -->
-  <rect x="0" y="0" width="512" height="512" rx="102" fill="#1F6F43"/>
+  <!-- Maskable: full-bleed background so the OS can apply any mask shape -->
+  <rect x="0" y="0" width="512" height="512" fill="#1F6F43"/>
 
-  <!-- Foundation bar (the "أساس" / foundation) -->
+  <!-- Foundation bar — kept within the maskable safe zone (central 80%) -->
   <rect x="116" y="364" width="280" height="62" rx="20" fill="#FFFFFF"/>
 
-  <!-- Alef vertical stroke (heavy, stroke-like), sits on the foundation -->
+  <!-- Alef vertical stroke -->
   <rect x="221" y="168" width="70" height="210" rx="16" fill="#FFFFFF"/>
 
-  <!-- Nuqta / accent dot above the alef, gold brand accent -->
+  <!-- Nuqta / accent dot, gold brand accent -->
   <circle cx="256" cy="112" r="42" fill="#C9992A"/>
 </svg>
