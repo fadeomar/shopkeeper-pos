@@ -33,15 +33,20 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canManageSettings: true,
     canManageRolePermissions: false,
   },
+  // Cashier is the top role on the shop/user side: the POS owner's own
+  // account. It controls the whole shop — editing buy price, managing settings,
+  // viewing profit, voiding, etc. The `owner` role above is the SaaS operator
+  // who only manages users from the admin dashboard and never touches the POS,
+  // so the cashier (not owner) is the role that needs full POS capability.
   cashier: {
-    canVoid: false,
+    canVoid: true,
     canReturn: true,
     canDiscount: true,
-    canViewProfit: false,
-    canEditCost: false,
-    canExport: false,
-    canManageSettings: false,
-    canManageRolePermissions: false,
+    canViewProfit: true,
+    canEditCost: true,
+    canExport: true,
+    canManageSettings: true,
+    canManageRolePermissions: true,
   },
   accountant: {
     canVoid: false,
@@ -53,6 +58,24 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canManageSettings: false,
     canManageRolePermissions: false,
   },
+};
+
+/**
+ * The "deny everything" permission set. Used as a fail-closed fallback when the
+ * current user's role cannot be determined (e.g. no cached auth entry). We can
+ * no longer fall back to a real role for this: `cashier` — the old "most
+ * restrictive" default — is now the top shop-side role with full permissions,
+ * so assuming any role would fail OPEN. An unknown caller must get nothing.
+ */
+export const NO_PERMISSIONS: RolePermissions = {
+  canVoid: false,
+  canReturn: false,
+  canDiscount: false,
+  canViewProfit: false,
+  canEditCost: false,
+  canExport: false,
+  canManageSettings: false,
+  canManageRolePermissions: false,
 };
 
 /**

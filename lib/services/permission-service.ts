@@ -2,7 +2,7 @@ import { auth } from "@/lib/firebase/config";
 import { db } from "@/lib/db/schema";
 import { SETTINGS_ID } from "@/lib/db/repositories";
 import { AppError, AppErrorCode } from "@/lib/errors/app-error";
-import { resolveRolePermissions } from "@/types/domain";
+import { resolveRolePermissions, NO_PERMISSIONS } from "@/types/domain";
 import type { RolePermissions, UserRole } from "@/types/domain";
 
 /**
@@ -14,8 +14,10 @@ import type { RolePermissions, UserRole } from "@/types/domain";
  *
  * Resolution mirrors the hook exactly:
  *   role  ← cached auth entry (offline-safe: firebase auth.currentUser + Dexie
- *           authCache), defaulting to the most restrictive 'cashier' when
- *           unknown (same default the hook uses) so we fail closed, not open.
+ *           authCache). When the role can't be determined we return
+ *           NO_PERMISSIONS (deny all) so we fail closed, not open — we can no
+ *           longer default to a real role because 'cashier' is now the top
+ *           shop-side role and would fail OPEN.
  *   perms ← DEFAULT_ROLE_PERMISSIONS[role] then settings.rolePermissions[role].
  *
  * IMPORTANT: call these BEFORE opening a Dexie rw transaction — they read the
@@ -23,7 +25,7 @@ import type { RolePermissions, UserRole } from "@/types/domain";
  * scope.
  */
 export async function getCurrentPermissions(): Promise<RolePermissions> {
-  let role: UserRole = "cashier";
+  let role: UserRole | null = null;
   try {
     const uid = auth.currentUser?.uid;
     if (uid) {
@@ -31,8 +33,11 @@ export async function getCurrentPermissions(): Promise<RolePermissions> {
       if (entry?.role) role = entry.role as UserRole;
     }
   } catch {
-    /* fall back to cashier */
+    /* role stays null → deny all below */
   }
+
+  // Role unknown → fail closed. Never assume a role here.
+  if (!role) return NO_PERMISSIONS;
 
   let overrides: Partial<RolePermissions> = {};
   try {
