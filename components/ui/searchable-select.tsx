@@ -104,6 +104,53 @@ function useIsMobile() {
   return isMobile;
 }
 
+/**
+ * Tracks the on-screen (visual) viewport so the mobile sheet can stay above
+ * the virtual keyboard. When the keyboard opens, window.innerHeight does NOT
+ * change but visualViewport.height shrinks; the difference is the keyboard
+ * inset. Only runs while `active` (mobile sheet open) to avoid idle listeners.
+ *
+ * Returns padding (not bottom/left/right offsets) and a height, so it's
+ * RTL-safe and never fights the desktop popover.
+ */
+function useKeyboardViewport(active: boolean): {
+  keyboardInset: number;
+  viewportHeight: number;
+} {
+  const [state, setState] = useState<{
+    keyboardInset: number;
+    viewportHeight: number;
+  }>({ keyboardInset: 0, viewportHeight: 0 });
+
+  useEffect(() => {
+    if (!active || typeof window === "undefined") {
+      setState({ keyboardInset: 0, viewportHeight: 0 });
+      return;
+    }
+    const vv = window.visualViewport;
+    if (!vv) {
+      setState({ keyboardInset: 0, viewportHeight: window.innerHeight });
+      return;
+    }
+    const update = () => {
+      const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      setState({
+        keyboardInset: Math.round(inset),
+        viewportHeight: Math.round(vv.height),
+      });
+    };
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+    };
+  }, [active]);
+
+  return state;
+}
+
 interface FloatingRect {
   top: number;
   left: number;
@@ -186,6 +233,22 @@ export function SearchableSelect({
   const panelRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const isMobile = useIsMobile();
+  // Keyboard awareness for the mobile sheet only.
+  const { keyboardInset, viewportHeight } = useKeyboardViewport(
+    open && isMobile,
+  );
+
+  // Result-list height on mobile: fit within the *visible* viewport (above the
+  // keyboard) after reserving room for the drag handle, search input, and
+  // paddings. Falls back to the old cap when visualViewport is unavailable.
+  const mobileListMaxHeight = useMemo(() => {
+    const vh =
+      viewportHeight ||
+      (typeof window !== "undefined" ? window.innerHeight : 640);
+    const reserved = 168; // drag handle + search input + paddings
+    const available = vh - reserved;
+    return Math.max(140, Math.min(available, 448));
+  }, [viewportHeight]);
 
   const selected = options.find((o) => o.value === value) ?? null;
   const filtered = useMemo(() => {
@@ -361,10 +424,11 @@ export function SearchableSelect({
           id={listboxId}
           role="listbox"
           className="mt-2 overflow-y-auto rounded-xl"
-          // Sheet uses a tall list; popover is constrained by floatingRect.maxHeight.
+          // Sheet height adapts to the visible viewport (keyboard-aware on
+          // mobile); popover is constrained by floatingRect.maxHeight.
           style={
             isMobile
-              ? { maxHeight: "min(60vh, 28rem)" }
+              ? { maxHeight: mobileListMaxHeight }
               : { maxHeight: (floatingRect?.maxHeight ?? 320) - 80 }
           }
         >
@@ -477,8 +541,18 @@ export function SearchableSelect({
                   "relative w-full rounded-t-3xl border-t border-border-default bg-surface p-4 shadow-pop animate-sheet-up",
                   // Safe-area bottom padding so the list sits clear of
                   // iOS home-indicator on devices without a hardware button.
-                  "pb-safe",
+                  // When the keyboard is open we replace it with a keyboard
+                  // inset (below) to lift the sheet content above the keyboard.
+                  keyboardInset === 0 && "pb-safe",
                 )}
+                // Bottom padding equal to the keyboard height pushes the search
+                // input + results up so they stay visible above the keyboard.
+                // Padding (not a bottom offset) keeps this RTL-safe.
+                style={
+                  keyboardInset > 0
+                    ? { paddingBottom: keyboardInset }
+                    : undefined
+                }
               >
                 {/* Drag handle — purely visual, but signals dismissibility */}
                 <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-muted" />

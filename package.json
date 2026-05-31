@@ -1,10 +1,11 @@
 {
   "name": "shopkeeper-pos-offline",
-  "version": "0.1.0",
+  "version": "0.1.14",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "dev:offline": "cross-env NEXT_PUBLIC_ENABLE_OFFLINE_SW=1 next dev",
+    "prebuild": "node scripts/stamp-sw-version.mjs",
     "build": "next build",
     "start": "next start",
     "start:host": "next start -H 0.0.0.0",

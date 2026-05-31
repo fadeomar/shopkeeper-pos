@@ -12,8 +12,7 @@ import {
   getActiveShift,
   listShifts,
   openShift,
-  summarizeShiftBills,
-  summarizeShiftCashOut,
+  summarizeShiftCash,
 } from "@/lib/services/shift-service";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,7 +31,9 @@ import { formatDateTime } from "@/lib/utils/date";
 import { ShiftReport } from "./shift-report";
 import type {
   Bill,
+  CashMovement,
   CustomerPayment,
+  Expense,
   Purchase,
   Shift,
   SupplierPayment,
@@ -82,6 +83,23 @@ export function ShiftWorkspace() {
         : Promise.resolve<CustomerPayment[]>([]),
     [activeShift?.id],
   );
+  // Manual cash movements + cash expenses also move the drawer. Live-querying
+  // them by shiftId is what makes the expected-cash card update the instant the
+  // cashier records an expense or a manual cash in/out.
+  const activeShiftCashMovements = useLiveQuery<CashMovement[]>(
+    () =>
+      activeShift?.id
+        ? db.cashMovements.where("shiftId").equals(activeShift.id).toArray()
+        : Promise.resolve<CashMovement[]>([]),
+    [activeShift?.id],
+  );
+  const activeShiftExpenses = useLiveQuery<Expense[]>(
+    () =>
+      activeShift?.id
+        ? db.expenses.where("shiftId").equals(activeShift.id).toArray()
+        : Promise.resolve<Expense[]>([]),
+    [activeShift?.id],
+  );
   const currency = settings?.currency ?? "ILS";
 
   const [openingCash, setOpeningCash] = useState<number>(0);
@@ -102,31 +120,39 @@ export function ShiftWorkspace() {
 
   const [reportShift, setReportShift] = useState<Shift | null>(null);
 
-  const totals = useMemo(
-    () => summarizeShiftBills(activeShiftBills ?? []),
-    [activeShiftBills],
-  );
-  const cashOut = useMemo(
+  // Single shared helper — identical math to closeShift(), so the live summary
+  // and the final close calculation can never diverge.
+  const cashSummary = useMemo(
     () =>
-      summarizeShiftCashOut(
-        activeShiftPurchases ?? [],
-        activeShiftSupplierPayments ?? [],
+      summarizeShiftCash(
+        { openingCash: activeShift?.openingCash ?? 0 },
+        {
+          bills: activeShiftBills ?? [],
+          purchases: activeShiftPurchases ?? [],
+          supplierPayments: activeShiftSupplierPayments ?? [],
+          customerPayments: activeShiftCustomerPayments ?? [],
+          cashMovements: activeShiftCashMovements ?? [],
+          expenses: activeShiftExpenses ?? [],
+        },
       ),
-    [activeShiftPurchases, activeShiftSupplierPayments],
+    [
+      activeShift?.openingCash,
+      activeShiftBills,
+      activeShiftPurchases,
+      activeShiftSupplierPayments,
+      activeShiftCustomerPayments,
+      activeShiftCashMovements,
+      activeShiftExpenses,
+    ],
   );
-
-  const customerPaymentCashIn = useMemo(() => {
-    return (activeShiftCustomerPayments ?? [])
-      .filter((p) => !p.paymentMethod || p.paymentMethod === "cash")
-      .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
-  }, [activeShiftCustomerPayments]);
-
-  const expectedCash = activeShift
-    ? (activeShift.openingCash ?? 0) +
-      totals.cashCollected +
-      customerPaymentCashIn -
-      cashOut.totalCashOut
-    : 0;
+  const {
+    totals,
+    cashOut,
+    customerPaymentCashIn,
+    cashMovementNet,
+    cashExpensesTotal,
+  } = cashSummary;
+  const expectedCash = activeShift ? cashSummary.expectedCash : 0;
 
   // Used inside the close dialog to show live counted vs expected diff while
   // the cashier is typing.
@@ -409,6 +435,34 @@ export function ShiftWorkspace() {
               label={t("shift.paymentsInShift")}
               value={String(cashOut.supplierPaymentCount)}
               helper={formatCurrency(cashOut.supplierPaymentCashOut, currency)}
+            />
+          </div>
+
+          {/* Drawer adjustments that also feed expected cash — surfaced so the
+              cashier can see why the expected total moved. */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <StatCard
+              label={t("shift.customerCashPayments")}
+              value={formatCurrency(customerPaymentCashIn, currency)}
+              tone={
+                customerPaymentCashIn > MONEY_EPSILON ? "positive" : "neutral"
+              }
+            />
+            <StatCard
+              label={t("shift.manualCashNet")}
+              value={formatCurrency(cashMovementNet, currency)}
+              tone={
+                cashMovementNet > MONEY_EPSILON
+                  ? "positive"
+                  : cashMovementNet < -MONEY_EPSILON
+                    ? "warning"
+                    : "neutral"
+              }
+            />
+            <StatCard
+              label={t("shift.cashExpenses")}
+              value={formatCurrency(cashExpensesTotal, currency)}
+              tone={cashExpensesTotal > MONEY_EPSILON ? "warning" : "neutral"}
             />
           </div>
 

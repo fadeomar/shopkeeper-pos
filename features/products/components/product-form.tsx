@@ -27,6 +27,7 @@ import clsx from "clsx";
 interface Props {
   product?: Product;
   onSaved?: () => void;
+  onCancel?: () => void;
 }
 
 const emptyDefaults: ProductSchema = {
@@ -67,7 +68,7 @@ function FormField({
   );
 }
 
-export function ProductForm({ product, onSaved }: Props) {
+export function ProductForm({ product, onSaved, onCancel }: Props) {
   const { t } = useLocale();
   const { push } = useToast();
   const { canEditCost } = usePermissions();
@@ -99,16 +100,23 @@ export function ProductForm({ product, onSaved }: Props) {
     }
     const now = new Date().toISOString();
     if (product) {
-      await updateProductDetails(product, {
+      const changes: Partial<Product> = {
         ...values,
         quantityInStock: product.quantityInStock,
         lastUpdated: now,
-      });
+      };
+      // Without cost permission, never send buyPrice — this guarantees an edit
+      // can't blank out (or alter) the existing cost. The service also guards.
+      if (!canEditCost) delete changes.buyPrice;
+      await updateProductDetails(product, changes);
       push(t("products.productUpdated"));
     } else {
       const created: Product = {
         id: createId("prod"),
         ...values,
+        // Cost is permission-gated; non-privileged roles create with 0 cost.
+        // The service enforces this too, so this is just an explicit mirror.
+        buyPrice: canEditCost ? values.buyPrice : 0,
         lastUpdated: now,
         syncStatus: "pending",
       };
@@ -170,7 +178,7 @@ export function ProductForm({ product, onSaved }: Props) {
           />
         </FormField>
 
-        {canEditCost && (
+        {canEditCost ? (
           <FormField label={t("products.buyPrice")}>
             <MoneyInputRHF
               name="buyPrice"
@@ -178,6 +186,15 @@ export function ProductForm({ product, onSaved }: Props) {
               currency={currency}
               min={0}
             />
+          </FormField>
+        ) : (
+          // Cost is hidden for roles without canEditCost, but we surface a clear
+          // note so creating a product without a cost is an explicit, visible
+          // outcome rather than a silent buyPrice = 0.
+          <FormField label={t("products.buyPrice")}>
+            <div className="flex min-h-11 items-center rounded-xl bg-slate-50 border border-slate-100 px-3 text-xs text-slate-500">
+              {t("products.buyPriceLocked")}
+            </div>
           </FormField>
         )}
 
@@ -248,9 +265,16 @@ export function ProductForm({ product, onSaved }: Props) {
         >
           {lossWarning ? t("products.lossWarning") : t("products.editNote")}
         </p>
-        <Button type="submit">
-          {product ? t("products.saveProduct") : t("products.addProduct")}
-        </Button>
+        <div className="flex items-center gap-2">
+          {product && onCancel && (
+            <Button type="button" variant="secondary" onClick={onCancel}>
+              {t("common.cancel")}
+            </Button>
+          )}
+          <Button type="submit">
+            {product ? t("products.saveProduct") : t("products.addProduct")}
+          </Button>
+        </div>
       </div>
 
       <BarcodeScannerModal

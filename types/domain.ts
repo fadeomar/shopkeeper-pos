@@ -8,6 +8,8 @@ export interface RolePermissions {
   canViewProfit: boolean;
   canEditCost: boolean;
   canExport: boolean;
+  canManageSettings: boolean;
+  canManageRolePermissions: boolean;
 }
 
 export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
@@ -18,6 +20,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canViewProfit: true,
     canEditCost: true,
     canExport: true,
+    canManageSettings: true,
+    canManageRolePermissions: true,
   },
   manager: {
     canVoid: true,
@@ -26,6 +30,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canViewProfit: true,
     canEditCost: false,
     canExport: true,
+    canManageSettings: true,
+    canManageRolePermissions: false,
   },
   cashier: {
     canVoid: false,
@@ -34,6 +40,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canViewProfit: false,
     canEditCost: false,
     canExport: false,
+    canManageSettings: false,
+    canManageRolePermissions: false,
   },
   accountant: {
     canVoid: false,
@@ -42,8 +50,42 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canViewProfit: true,
     canEditCost: false,
     canExport: true,
+    canManageSettings: false,
+    canManageRolePermissions: false,
   },
 };
+
+/**
+ * Meta-permissions that gate who may change settings and the role-permission
+ * matrix itself. These are deliberately NOT overridable via
+ * settings.rolePermissions: if they were, a low-role user who edited their
+ * local settings object (IndexedDB is fully client-writable) could grant
+ * themselves the very permission that protects the app, then escalate to
+ * everything else. They are always resolved from DEFAULT_ROLE_PERMISSIONS for
+ * the user's role and ignore any stored override.
+ */
+export const NON_OVERRIDABLE_PERMISSIONS = [
+  'canManageSettings',
+  'canManageRolePermissions',
+] as const satisfies ReadonlyArray<keyof RolePermissions>;
+
+/**
+ * Resolve the effective permissions for a role: role defaults with stored
+ * overrides applied on top, EXCEPT the non-overridable meta-permissions which
+ * always come from the role defaults. Shared by the React hook and the
+ * service-layer guard so both compute identical, escalation-proof results.
+ */
+export function resolveRolePermissions(
+  role: UserRole,
+  overrides?: Partial<RolePermissions>,
+): RolePermissions {
+  const base = DEFAULT_ROLE_PERMISSIONS[role] ?? DEFAULT_ROLE_PERMISSIONS.cashier;
+  const resolved: RolePermissions = { ...base, ...(overrides ?? {}) };
+  for (const key of NON_OVERRIDABLE_PERMISSIONS) {
+    resolved[key] = base[key];
+  }
+  return resolved;
+}
 
 export type SyncStatus = 'pending' | 'syncing' | 'synced' | 'failed' | 'conflict' | 'blocked';
 export type SyncEntity = 'bill' | 'product' | 'settings' | 'stockMovement' | 'customerPayment' | 'customer' | 'shift' | 'supplier' | 'purchase' | 'supplierPayment' | 'auditEvent' | 'cashMovement' | 'expense';

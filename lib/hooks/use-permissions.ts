@@ -1,20 +1,21 @@
 import { useAuth } from '@/components/providers/auth-context';
 import { useSettings } from '@/components/providers/settings-context';
 import type { UserRole, RolePermissions } from '@/types/domain';
-import { DEFAULT_ROLE_PERMISSIONS } from '@/types/domain';
+import { resolveRolePermissions } from '@/types/domain';
 
 /**
  * Returns the effective permissions for the currently signed-in user.
  * Base permissions come from DEFAULT_ROLE_PERMISSIONS[role]; per-role
- * overrides stored in settings.rolePermissions are applied on top.
+ * overrides stored in settings.rolePermissions are applied on top — except the
+ * non-overridable meta-permissions (see resolveRolePermissions), which always
+ * follow the role defaults so a tampered local settings object can't escalate.
  */
 export function usePermissions(): RolePermissions {
   const { user } = useAuth();
   const { settings } = useSettings();
 
   const role = ((user?.role ?? 'cashier') as UserRole);
-  const basePerms = DEFAULT_ROLE_PERMISSIONS[role] ?? DEFAULT_ROLE_PERMISSIONS.cashier;
-  const overrides = settings?.rolePermissions?.[role] ?? {};
+  const overrides = settings?.rolePermissions?.[role];
 
-  return { ...basePerms, ...overrides };
+  return resolveRolePermissions(role, overrides);
 }

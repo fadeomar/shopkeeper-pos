@@ -2,7 +2,7 @@ import { auth } from "@/lib/firebase/config";
 import { db } from "@/lib/db/schema";
 import { SETTINGS_ID } from "@/lib/db/repositories";
 import { AppError, AppErrorCode } from "@/lib/errors/app-error";
-import { DEFAULT_ROLE_PERMISSIONS } from "@/types/domain";
+import { resolveRolePermissions } from "@/types/domain";
 import type { RolePermissions, UserRole } from "@/types/domain";
 
 /**
@@ -34,9 +34,6 @@ export async function getCurrentPermissions(): Promise<RolePermissions> {
     /* fall back to cashier */
   }
 
-  const base =
-    DEFAULT_ROLE_PERMISSIONS[role] ?? DEFAULT_ROLE_PERMISSIONS.cashier;
-
   let overrides: Partial<RolePermissions> = {};
   try {
     const settings = await db.settings.get(SETTINGS_ID);
@@ -45,7 +42,9 @@ export async function getCurrentPermissions(): Promise<RolePermissions> {
     /* no overrides available */
   }
 
-  return { ...base, ...overrides };
+  // Non-overridable meta-permissions are stripped back to the role defaults
+  // inside resolveRolePermissions, so a tampered local override can't escalate.
+  return resolveRolePermissions(role, overrides);
 }
 
 /** Throw PERMISSION_DENIED unless the current user holds the given permission. */

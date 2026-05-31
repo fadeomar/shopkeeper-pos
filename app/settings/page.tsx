@@ -22,11 +22,15 @@ import { syncAllToCloud, type SyncMeta } from "@/lib/firebase/sync-service";
 import { runSync } from "@/components/providers/sync-provider";
 import { getOpenConflicts } from "@/lib/services/sync-conflict-service";
 import {
-  enqueueSyncJob,
   getPendingSyncCount,
   getSyncQueueCounts,
   retryFailedSyncJobs,
 } from "@/lib/services/sync-queue-service";
+import {
+  saveBusinessSettings,
+  saveRolePermissions,
+} from "@/lib/services/settings-service";
+import { getServiceErrorMessage } from "@/lib/errors/get-error-message";
 import type { Locale } from "@/lib/i18n";
 import type { UserRole, RolePermissions } from "@/types/domain";
 import { DEFAULT_ROLE_PERMISSIONS } from "@/types/domain";
@@ -103,6 +107,7 @@ export default function SettingsPage() {
   const settings = useLiveQuery(() => settingsRepo.get(), []);
   const { setSettings } = useSettings();
   const { push } = useToast();
+  const { canManageSettings, canManageRolePermissions } = usePermissions();
 
   const form = useForm<SettingsFormValues>({
     defaultValues: {
@@ -150,6 +155,10 @@ export default function SettingsPage() {
   }, [settings, form]);
 
   async function onSubmit(values: SettingsFormValues) {
+    if (!canManageSettings) {
+      push(t("errors.PERMISSION_DENIED"), "error");
+      return;
+    }
     const normalizedCurrency = (values.currency ?? "").trim().toUpperCase();
     if (!/^[A-Z]{3}$/.test(normalizedCurrency)) {
       push(t("settings.invalidCurrency"), "error");
@@ -163,19 +172,19 @@ export default function SettingsPage() {
       push(t("settings.atLeastOnePaymentMethod"), "error");
       return;
     }
-    const saved = await settingsRepo.update({
-      ...values,
-      currency: normalizedCurrency,
-      syncStatus: "pending",
-      lastSyncError: undefined,
-    });
-    setSettings(saved);
-    await enqueueSyncJob({
-      entity: "settings",
-      entityId: saved.id,
-      operation: "upsert",
-    });
-    push(t("settings.saved"));
+    try {
+      const saved = await saveBusinessSettings({
+        ...values,
+        currency: normalizedCurrency,
+      });
+      setSettings(saved);
+      push(t("settings.saved"));
+    } catch (error) {
+      push(
+        getServiceErrorMessage(error, t, t("errors.PERMISSION_DENIED")),
+        "error",
+      );
+    }
   }
 
   const languages: { value: Locale; label: string }[] = [
@@ -247,182 +256,195 @@ export default function SettingsPage() {
       </SectionCard>
 
       {/* ── Main settings form ───────────────────────────────────────────── */}
-      <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-5">
-
-        {/* Business profile */}
-        <SectionCard
-          title={t("settings.businessProfile")}
-          description={t("settings.businessProfileDesc")}
+      {canManageSettings ? (
+        <form
+          onSubmit={form.handleSubmit(onSubmit)}
+          className="flex flex-col gap-5"
         >
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <FormField label={t("settings.storeName")}>
-              <Input {...form.register("storeName")} />
-            </FormField>
-            <FormField label={t("settings.cashierName")}>
-              <Input {...form.register("cashierName")} />
-            </FormField>
-            <FormField label={t("settings.businessAddress")}>
-              <Input {...form.register("businessAddress")} />
-            </FormField>
-            <FormField label={t("settings.businessPhone")}>
-              <Input {...form.register("businessPhone")} type="tel" />
-            </FormField>
-          </div>
-        </SectionCard>
+          {/* Business profile */}
+          <SectionCard
+            title={t("settings.businessProfile")}
+            description={t("settings.businessProfileDesc")}
+          >
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <FormField label={t("settings.storeName")}>
+                <Input {...form.register("storeName")} />
+              </FormField>
+              <FormField label={t("settings.cashierName")}>
+                <Input {...form.register("cashierName")} />
+              </FormField>
+              <FormField label={t("settings.businessAddress")}>
+                <Input {...form.register("businessAddress")} />
+              </FormField>
+              <FormField label={t("settings.businessPhone")}>
+                <Input {...form.register("businessPhone")} type="tel" />
+              </FormField>
+            </div>
+          </SectionCard>
 
-        {/* Point of Sale */}
+          {/* Point of Sale */}
+          <SectionCard
+            title={t("settings.posSettings")}
+            description={t("settings.posSettingsDesc")}
+          >
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
+              <FormField
+                label={t("settings.currency")}
+                hint={t("settings.currencyHint")}
+              >
+                <SearchableSelect
+                  value={currencyValue}
+                  onValueChange={(value) =>
+                    form.setValue("currency", (value ?? "ILS").toUpperCase(), {
+                      shouldDirty: true,
+                    })
+                  }
+                  options={currencyOptions}
+                  searchPlaceholder={t("settings.currency")}
+                />
+              </FormField>
+
+              <FormField label={t("settings.taxMode")}>
+                <SearchableSelect
+                  value={form.watch("taxMode")}
+                  onValueChange={(value) =>
+                    form.setValue(
+                      "taxMode",
+                      (value ?? "none") as "none" | "inclusive" | "exclusive",
+                      { shouldDirty: true },
+                    )
+                  }
+                  options={taxOptions}
+                />
+              </FormField>
+
+              <FormField
+                label={t("settings.defaultDiscountLimit")}
+                hint={t("settings.defaultDiscountLimitHint")}
+              >
+                <MoneyInputRHF
+                  name="defaultDiscountLimit"
+                  control={form.control}
+                  currency={form.watch("currency") || "ILS"}
+                  min={0}
+                />
+              </FormField>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <ToggleRow
+                label={t("settings.allowLossSale")}
+                checked={form.watch("allowLossSale")}
+                onChange={(v) => form.setValue("allowLossSale", v)}
+              />
+              <ToggleRow
+                label={t("settings.requireShift")}
+                checked={form.watch("requireShift")}
+                onChange={(v) => form.setValue("requireShift", v)}
+              />
+            </div>
+          </SectionCard>
+
+          {/* Payment methods */}
+          <SectionCard
+            title={t("settings.paymentMethods")}
+            description={t("settings.paymentMethodsDesc")}
+          >
+            <div className="flex flex-col gap-3">
+              <ToggleRow
+                label={t("settings.enableCash")}
+                checked={watchEnable.cash}
+                onChange={(v) => form.setValue("enableCash", v)}
+              />
+              <ToggleRow
+                label={t("settings.enableCard")}
+                checked={watchEnable.card}
+                onChange={(v) => form.setValue("enableCard", v)}
+              />
+              <ToggleRow
+                label={t("settings.enableCredit")}
+                checked={watchEnable.credit}
+                onChange={(v) => form.setValue("enableCredit", v)}
+              />
+            </div>
+          </SectionCard>
+
+          {/* Receipt */}
+          <SectionCard
+            title={t("settings.receiptSettings")}
+            description={t("settings.receiptSettingsDesc")}
+          >
+            <div className="flex flex-col gap-4">
+              <FormField
+                label={t("settings.receiptHeader")}
+                hint={t("settings.receiptHeaderHint")}
+              >
+                <Input {...form.register("receiptHeader")} />
+              </FormField>
+              <FormField
+                label={t("settings.receiptFooter")}
+                hint={t("settings.receiptFooterHint")}
+              >
+                <Input {...form.register("receiptFooter")} />
+              </FormField>
+            </div>
+          </SectionCard>
+
+          {/* Inventory alerts */}
+          <SectionCard
+            title={t("settings.inventoryAlerts")}
+            description={t("settings.inventoryAlertsDesc")}
+          >
+            <div className="mb-4">
+              <ToggleRow
+                label={t("settings.lowStockHighlight")}
+                checked={form.watch("lowStockHighlight")}
+                onChange={(v) => form.setValue("lowStockHighlight", v)}
+              />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <FormField
+                label={t("settings.lowStockThreshold")}
+                hint={t("settings.lowStockThresholdHint")}
+              >
+                <NumberFieldRHF
+                  name="lowStockThreshold"
+                  control={form.control}
+                  precision="integer"
+                  min={0}
+                />
+              </FormField>
+              <FormField
+                label={t("settings.expiryWarningDays")}
+                hint={t("settings.expiryWarningDaysHint")}
+              >
+                <NumberFieldRHF
+                  name="expiryWarningDays"
+                  control={form.control}
+                  precision="integer"
+                  min={0}
+                />
+              </FormField>
+            </div>
+          </SectionCard>
+
+          <div className="flex justify-end">
+            <Button type="submit">{t("settings.save")}</Button>
+          </div>
+        </form>
+      ) : (
         <SectionCard
           title={t("settings.posSettings")}
           description={t("settings.posSettingsDesc")}
         >
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
-            <FormField
-              label={t("settings.currency")}
-              hint={t("settings.currencyHint")}
-            >
-              <SearchableSelect
-                value={currencyValue}
-                onValueChange={(value) =>
-                  form.setValue("currency", (value ?? "ILS").toUpperCase(), {
-                    shouldDirty: true,
-                  })
-                }
-                options={currencyOptions}
-                searchPlaceholder={t("settings.currency")}
-              />
-            </FormField>
-
-            <FormField label={t("settings.taxMode")}>
-              <SearchableSelect
-                value={form.watch("taxMode")}
-                onValueChange={(value) =>
-                  form.setValue(
-                    "taxMode",
-                    (value ?? "none") as "none" | "inclusive" | "exclusive",
-                    { shouldDirty: true },
-                  )
-                }
-                options={taxOptions}
-              />
-            </FormField>
-
-            <FormField
-              label={t("settings.defaultDiscountLimit")}
-              hint={t("settings.defaultDiscountLimitHint")}
-            >
-              <MoneyInputRHF
-                name="defaultDiscountLimit"
-                control={form.control}
-                currency={form.watch("currency") || "ILS"}
-                min={0}
-              />
-            </FormField>
-          </div>
-
-          <div className="flex flex-col gap-3">
-            <ToggleRow
-              label={t("settings.allowLossSale")}
-              checked={form.watch("allowLossSale")}
-              onChange={(v) => form.setValue("allowLossSale", v)}
-            />
-            <ToggleRow
-              label={t("settings.requireShift")}
-              checked={form.watch("requireShift")}
-              onChange={(v) => form.setValue("requireShift", v)}
-            />
+          <div className="rounded-xl bg-slate-50 border border-slate-100 p-4 text-sm text-slate-500">
+            {t("admin.onlyAdminsManage")}
           </div>
         </SectionCard>
-
-        {/* Payment methods */}
-        <SectionCard
-          title={t("settings.paymentMethods")}
-          description={t("settings.paymentMethodsDesc")}
-        >
-          <div className="flex flex-col gap-3">
-            <ToggleRow
-              label={t("settings.enableCash")}
-              checked={watchEnable.cash}
-              onChange={(v) => form.setValue("enableCash", v)}
-            />
-            <ToggleRow
-              label={t("settings.enableCard")}
-              checked={watchEnable.card}
-              onChange={(v) => form.setValue("enableCard", v)}
-            />
-            <ToggleRow
-              label={t("settings.enableCredit")}
-              checked={watchEnable.credit}
-              onChange={(v) => form.setValue("enableCredit", v)}
-            />
-          </div>
-        </SectionCard>
-
-        {/* Receipt */}
-        <SectionCard
-          title={t("settings.receiptSettings")}
-          description={t("settings.receiptSettingsDesc")}
-        >
-          <div className="flex flex-col gap-4">
-            <FormField
-              label={t("settings.receiptHeader")}
-              hint={t("settings.receiptHeaderHint")}
-            >
-              <Input {...form.register("receiptHeader")} />
-            </FormField>
-            <FormField
-              label={t("settings.receiptFooter")}
-              hint={t("settings.receiptFooterHint")}
-            >
-              <Input {...form.register("receiptFooter")} />
-            </FormField>
-          </div>
-        </SectionCard>
-
-        {/* Inventory alerts */}
-        <SectionCard
-          title={t("settings.inventoryAlerts")}
-          description={t("settings.inventoryAlertsDesc")}
-        >
-          <div className="mb-4">
-            <ToggleRow
-              label={t("settings.lowStockHighlight")}
-              checked={form.watch("lowStockHighlight")}
-              onChange={(v) => form.setValue("lowStockHighlight", v)}
-            />
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <FormField
-              label={t("settings.lowStockThreshold")}
-              hint={t("settings.lowStockThresholdHint")}
-            >
-              <NumberFieldRHF
-                name="lowStockThreshold"
-                control={form.control}
-                precision="integer"
-                min={0}
-              />
-            </FormField>
-            <FormField
-              label={t("settings.expiryWarningDays")}
-              hint={t("settings.expiryWarningDaysHint")}
-            >
-              <NumberFieldRHF
-                name="expiryWarningDays"
-                control={form.control}
-                precision="integer"
-                min={0}
-              />
-            </FormField>
-          </div>
-        </SectionCard>
-
-        <div className="flex justify-end">
-          <Button type="submit">{t("settings.save")}</Button>
-        </div>
-      </form>
+      )}
 
       {/* ── Role permissions ─────────────────────────────────────────────── */}
-      <RolePermissionsCard />
+      {canManageRolePermissions && <RolePermissionsCard />}
 
       {/* ── Cloud Backup ─────────────────────────────────────────────────── */}
       <CloudBackupCard />
@@ -436,7 +458,9 @@ export default function SettingsPage() {
           {t("settings.about")}
         </h3>
         <div className="flex items-center justify-between">
-          <span className="text-sm text-slate-500">{t("settings.version")}</span>
+          <span className="text-sm text-slate-500">
+            {t("settings.version")}
+          </span>
           <span className="text-sm font-mono font-medium text-slate-700">
             v{process.env.NEXT_PUBLIC_APP_VERSION ?? "—"}
           </span>
@@ -467,6 +491,7 @@ function RolePermissionsCard() {
   const { push } = useToast();
   const [saving, setSaving] = useState(false);
   const [overrides, setOverrides] = useState<PermOverride>({});
+  const { canManageRolePermissions } = usePermissions();
 
   useEffect(() => {
     if (!settings) return;
@@ -479,6 +504,7 @@ function RolePermissionsCard() {
   }
 
   function toggle(role: UserRole, perm: keyof RolePermissions) {
+    if (!canManageRolePermissions) return;
     if (role === "owner") return; // owner always has full access
     const current = getEffective(role, perm);
     setOverrides((prev) => ({
@@ -491,24 +517,25 @@ function RolePermissionsCard() {
   }
 
   function resetToDefaults() {
+    if (!canManageRolePermissions) return;
     setOverrides({});
   }
 
   async function save() {
+    if (!canManageRolePermissions) {
+      push(t("errors.PERMISSION_DENIED"), "error");
+      return;
+    }
     setSaving(true);
     try {
-      const saved = await settingsRepo.update({
-        rolePermissions: overrides,
-        syncStatus: "pending",
-        lastSyncError: undefined,
-      });
+      const saved = await saveRolePermissions(overrides);
       setSettings(saved);
-      await enqueueSyncJob({
-        entity: "settings",
-        entityId: saved.id,
-        operation: "upsert",
-      });
       push(t("settings.permissionsSaved"));
+    } catch (error) {
+      push(
+        getServiceErrorMessage(error, t, t("errors.PERMISSION_DENIED")),
+        "error",
+      );
     } finally {
       setSaving(false);
     }
@@ -528,6 +555,8 @@ function RolePermissionsCard() {
     canViewProfit: t("settings.permCanViewProfit"),
     canEditCost: t("settings.permCanEditCost"),
     canExport: t("settings.permCanExport"),
+    canManageSettings: t("settings.permCanManageSettings"),
+    canManageRolePermissions: t("settings.permCanManageRolePermissions"),
   };
 
   return (
@@ -738,16 +767,29 @@ function DeviceHealthCard() {
   async function refreshHealth() {
     setLoading(true);
     try {
-      const [products, bills, billItems, stockMovements, customerPayments, queue] =
-        await Promise.all([
-          db.products.count(),
-          db.bills.count(),
-          db.billItems.count(),
-          db.stockMovements.count(),
-          db.customerPayments.count(),
-          getSyncQueueCounts(),
-        ]);
-      setStats({ products, bills, billItems, stockMovements, customerPayments, ...queue });
+      const [
+        products,
+        bills,
+        billItems,
+        stockMovements,
+        customerPayments,
+        queue,
+      ] = await Promise.all([
+        db.products.count(),
+        db.bills.count(),
+        db.billItems.count(),
+        db.stockMovements.count(),
+        db.customerPayments.count(),
+        getSyncQueueCounts(),
+      ]);
+      setStats({
+        products,
+        bills,
+        billItems,
+        stockMovements,
+        customerPayments,
+        ...queue,
+      });
     } finally {
       setLoading(false);
     }
@@ -815,7 +857,11 @@ function DeviceHealthCard() {
   }
 
   const waiting = stats
-    ? stats.pending + stats.syncing + stats.failed + stats.conflict + stats.blocked
+    ? stats.pending +
+      stats.syncing +
+      stats.failed +
+      stats.conflict +
+      stats.blocked
     : 0;
   const blocked = stats?.blocked ?? 0;
 
@@ -836,9 +882,15 @@ function DeviceHealthCard() {
       }
     >
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <SyncStat label={t("settings.products")} value={stats?.products ?? "—"} />
+        <SyncStat
+          label={t("settings.products")}
+          value={stats?.products ?? "—"}
+        />
         <SyncStat label={t("settings.bills")} value={stats?.bills ?? "—"} />
-        <SyncStat label={t("settings.movements")} value={stats?.stockMovements ?? "—"} />
+        <SyncStat
+          label={t("settings.movements")}
+          value={stats?.stockMovements ?? "—"}
+        />
         <SyncStat label={t("settings.pendingSync")} value={waiting} />
       </div>
 
@@ -870,7 +922,9 @@ function DeviceHealthCard() {
             onClick={handleExportBackup}
             disabled={exporting}
           >
-            {exporting ? t("settings.exportingBackup") : t("settings.exportLocalBackup")}
+            {exporting
+              ? t("settings.exportingBackup")
+              : t("settings.exportLocalBackup")}
           </Button>
         )}
         <Button
@@ -973,9 +1027,16 @@ function SyncStat({
   wide?: boolean;
 }) {
   return (
-    <div className={clsx("flex flex-col gap-0.5", wide && "col-span-2 sm:col-span-1")}>
+    <div
+      className={clsx(
+        "flex flex-col gap-0.5",
+        wide && "col-span-2 sm:col-span-1",
+      )}
+    >
       <span className="text-xs text-slate-400">{label}</span>
-      <span className="text-sm font-medium text-slate-700 tabular-nums">{value}</span>
+      <span className="text-sm font-medium text-slate-700 tabular-nums">
+        {value}
+      </span>
     </div>
   );
 }
