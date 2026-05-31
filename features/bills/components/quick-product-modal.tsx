@@ -16,6 +16,7 @@ import { MoneyInputRHF } from "@/components/ui/money-input";
 import { Modal } from "@/components/ui/modal";
 import { useLocale } from "@/components/providers/locale-context";
 import { useToast } from "@/components/ui/toast";
+import { usePermissions } from "@/lib/hooks/use-permissions";
 import type { Product } from "@/types/domain";
 
 interface Props {
@@ -75,6 +76,7 @@ export function QuickProductModal({
 }: Props) {
   const { t } = useLocale();
   const { push } = useToast();
+  const { canEditCost } = usePermissions();
   const [saving, setSaving] = useState(false);
 
   const form = useForm<ProductSchema>({
@@ -177,14 +179,28 @@ export function QuickProductModal({
             min={0}
           />
         </Field>
-        <Field label={t("products.buyPrice")} error={errors.buyPrice?.message}>
-          <MoneyInputRHF
-            name="buyPrice"
-            control={form.control}
-            currency={currency}
-            min={0}
-          />
-        </Field>
+        {/* Cost is permission-gated — same rule as the full product form. The
+            service forces buyPrice to 0 for roles without canEditCost, so we
+            hide the field and show a clear note instead of a silent 0. */}
+        {canEditCost ? (
+          <Field
+            label={t("products.buyPrice")}
+            error={errors.buyPrice?.message}
+          >
+            <MoneyInputRHF
+              name="buyPrice"
+              control={form.control}
+              currency={currency}
+              min={0}
+            />
+          </Field>
+        ) : (
+          <Field label={t("products.buyPrice")}>
+            <div className="flex min-h-11 items-center rounded-xl bg-slate-50 border border-slate-100 px-3 text-xs text-slate-500">
+              {t("products.buyPriceLocked")}
+            </div>
+          </Field>
+        )}
         <Field label={t("products.category")} error={errors.category?.message}>
           <Input {...form.register("category")} />
         </Field>

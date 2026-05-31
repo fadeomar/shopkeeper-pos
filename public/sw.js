@@ -1,6 +1,6 @@
-// Version - bump this string on every release.
-// Changing this value changes the cache names, which triggers the browser to
-// install a new service worker and clean up the old caches on activate.
+// Cache versioning lives in the production branch below (CACHE_VERSION), which
+// is stamped from package.json at build time. This top section only decides
+// whether to run the real worker or the dev self-destruct path.
 const DEV_HOST_RE =
   /^(localhost|127\.0\.0\.1|0\.0\.0\.0|10\.|192\.168\.|172\.(1[6-9]|2\d|3[0-1])\.)/;
 const IS_DEV_HOST =
@@ -34,7 +34,13 @@ if (IS_DEV_HOST && !ENABLE_DEV_SW) {
     );
   });
 } else {
-  const CACHE_VERSION = "0.1.13";
+  // CACHE_VERSION is the single knob that names the caches; changing it makes
+  // the browser install a fresh worker and purge the old caches on activate.
+  // It is kept in lock-step with package.json `version` by the prebuild step
+  // (scripts/stamp-sw-version.mjs), the same source as NEXT_PUBLIC_APP_VERSION.
+  // Bump package.json on each release and this updates automatically — do not
+  // hand-edit the literal below; the build overwrites it.
+  const CACHE_VERSION = "0.1.14"; // @sw-version (stamped from package.json at build)
 
   const CACHE_HTML = `sk-pages-${CACHE_VERSION}`;
   const CACHE_STATIC = `sk-static-${CACHE_VERSION}`;

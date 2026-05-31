@@ -4,7 +4,7 @@ import { createId } from '@/lib/utils/id';
 import { nowIso } from '@/lib/utils/date';
 import { buildSyncQueueItem } from '@/lib/services/sync-queue-service';
 import { logAudit } from '@/lib/services/audit-service';
-import { assertPermission } from '@/lib/services/permission-service';
+import { assertPermission, getCurrentPermissions } from '@/lib/services/permission-service';
 import type { Product, StockMovement, StockMovementType } from '@/types/domain';
 
 function requestSync(): void {
@@ -14,9 +14,18 @@ function requestSync(): void {
 }
 
 export async function createProductWithInitialMovement(product: Product) {
+  // Cost (buyPrice) is permission-gated. A user without canEditCost can still
+  // create a product so cashiers can add SKUs on the fly — but they cannot set
+  // a cost. Force buyPrice to 0 here as the service-layer backstop so a hidden
+  // UI field, the quick-add modal, or a stale/direct caller can never slip a
+  // non-zero cost through. Profit reports use historical bill-item snapshots,
+  // so a 0 cost simply means "cost not set yet" until a manager edits it.
+  const perms = await getCurrentPermissions();
+  const safeBuyPrice = perms.canEditCost ? product.buyPrice : 0;
   const createdAt = nowIso();
   const productToSave: Product = {
     ...product,
+    buyPrice: safeBuyPrice,
     syncStatus: 'pending',
     syncedAt: undefined,
     lastSyncError: undefined,

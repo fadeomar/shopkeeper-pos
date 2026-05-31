@@ -706,7 +706,14 @@ export function PosScreen() {
   ]);
 
   // ── FIXED double-toast: push() is called OUTSIDE setDraftItems updater ──
-  function appendProduct(product: Product) {
+  // `focusBarcode` controls whether the barcode input is refocused after the
+  // add. Barcode scan / manual barcode entry / quick-add want this (keeps the
+  // scan loop fast). Picking from the product dropdown does NOT — on mobile it
+  // would pop the keyboard open and interrupt checkout (QA blocker).
+  function appendProduct(
+    product: Product,
+    options?: { focusBarcode?: boolean },
+  ) {
     if (product.quantityInStock <= 0) {
       push(t("billing.outOfStock"), "error");
       return;
@@ -741,7 +748,9 @@ export function PosScreen() {
       push(t("billing.itemAdded", { name: product.name }));
     }
 
-    setTimeout(() => barcodeInputRef.current?.focus(), 0);
+    if (options?.focusBarcode !== false) {
+      setTimeout(() => barcodeInputRef.current?.focus(), 0);
+    }
   }
 
   function promptQuickAddProduct(barcode: string) {
@@ -1050,7 +1059,9 @@ export function PosScreen() {
             onValueChange={(value) => {
               if (!value) return;
               const product = products?.find((p) => p.id === value);
-              if (product) appendProduct(product);
+              // Dropdown selection must not refocus the barcode input — on
+              // mobile that re-opens the keyboard and interrupts checkout.
+              if (product) appendProduct(product, { focusBarcode: false });
             }}
             options={productOptions}
             placeholder={t("billing.selectProduct")}

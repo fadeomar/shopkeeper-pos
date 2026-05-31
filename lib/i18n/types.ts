@@ -37,6 +37,10 @@ export interface TranslationDict {
     invalidAmount: string;
     clear: string;
     owner: string;
+    quantity: string;
+    noResults: string;
+    decrease: string;
+    increase: string;
   };
   nav: {
     dashboard: string;
@@ -298,6 +302,7 @@ export interface TranslationDict {
     unit: string;
     quantityInStock: string;
     buyPrice: string;
+    buyPriceLocked: string;
     sellPrice: string;
     minimumStockAlert: string;
     supplierName: string;
@@ -583,6 +588,7 @@ export interface TranslationDict {
     outOfStock: string;
     notFound: string;
     notFoundBarcode: string;
+    productNotFound: string;
     addOneProduct: string;
     billCreated: string;
     billFailed: string;
@@ -662,6 +668,7 @@ export interface TranslationDict {
     change: string;
     totalProfit: string;
     notes: string;
+    items: string;
     backToBills: string;
     receipt: string;
     receiptDesc: string;
@@ -814,6 +821,8 @@ export interface TranslationDict {
     permCanViewProfit: string;
     permCanEditCost: string;
     permCanExport: string;
+    permCanManageSettings: string;
+    permCanManageRolePermissions: string;
     resetToDefaults: string;
     permissionsSaved: string;
   };
@@ -906,6 +915,11 @@ export interface TranslationDict {
   };
   sync: {
     status: string;
+    field: string;
+    localValue: string;
+    remoteValue: string;
+    cloudValue: string;
+    conflictGeneric: string;
     pending: string;
     syncing: string;
     synced: string;
@@ -1050,6 +1064,9 @@ export interface TranslationDict {
     expectedCashHelper: string;
     cashPaidOut: string;
     cashPaidOutHelper: string;
+    customerCashPayments: string;
+    manualCashNet: string;
+    cashExpenses: string;
     purchasesInShift: string;
     paymentsInShift: string;
     billsInShift: string;
@@ -1184,6 +1201,17 @@ export interface TranslationDict {
     saveChanges: string;
     saving: string;
     colName: string;
+    colBillNumber: string;
+    colDate: string;
+    colCustomer: string;
+    colPayment: string;
+    colNetTotal: string;
+    colStatus: string;
+    colNote: string;
+    colAmount: string;
+    colType: string;
+    colReference: string;
+    colQty: string;
     products: string;
     exportCSV: string;
     noCustomerPaymentsSynced: string;
