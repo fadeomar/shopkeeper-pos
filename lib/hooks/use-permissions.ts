@@ -1,7 +1,7 @@
 import { useAuth } from '@/components/providers/auth-context';
 import { useSettings } from '@/components/providers/settings-context';
 import type { UserRole, RolePermissions } from '@/types/domain';
-import { resolveRolePermissions } from '@/types/domain';
+import { resolveRolePermissions, NO_PERMISSIONS } from '@/types/domain';
 
 /**
  * Returns the effective permissions for the currently signed-in user.
@@ -14,7 +14,11 @@ export function usePermissions(): RolePermissions {
   const { user } = useAuth();
   const { settings } = useSettings();
 
-  const role = ((user?.role ?? 'cashier') as UserRole);
+  // Fail closed when the signed-in user has no resolvable role: 'cashier' is now
+  // the top shop-side role, so defaulting to it would expose full permissions.
+  const role = user?.role as UserRole | undefined;
+  if (!role) return NO_PERMISSIONS;
+
   const overrides = settings?.rolePermissions?.[role];
 
   return resolveRolePermissions(role, overrides);
