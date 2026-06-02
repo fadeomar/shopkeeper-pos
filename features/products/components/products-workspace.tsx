@@ -41,6 +41,7 @@ export function ProductsWorkspace() {
             onCancel={
               selectedProduct ? () => setSelectedProduct(undefined) : undefined
             }
+            onOpenExisting={setSelectedProduct}
           />
         </Card>
       </div>

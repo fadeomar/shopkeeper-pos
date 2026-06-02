@@ -2,7 +2,7 @@ import { auth } from "@/lib/firebase/config";
 import { db } from "@/lib/db/schema";
 import { SETTINGS_ID } from "@/lib/db/repositories";
 import { AppError, AppErrorCode } from "@/lib/errors/app-error";
-import { resolveRolePermissions, NO_PERMISSIONS } from "@/types/domain";
+import { isUserRole, resolveRolePermissions, NO_PERMISSIONS } from "@/types/domain";
 import type { RolePermissions, UserRole } from "@/types/domain";
 
 /**
@@ -30,7 +30,7 @@ export async function getCurrentPermissions(): Promise<RolePermissions> {
     const uid = auth.currentUser?.uid;
     if (uid) {
       const entry = await db.authCache.get(uid);
-      if (entry?.role) role = entry.role as UserRole;
+      if (isUserRole(entry?.role)) role = entry.role;
     }
   } catch {
     /* role stays null → deny all below */

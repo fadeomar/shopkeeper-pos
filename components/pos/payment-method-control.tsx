@@ -1,19 +1,11 @@
 'use client';
 
 /**
- * PaymentMethodControl — 4-button segmented tap control replacing the
- * SearchableSelect dropdown for payment method selection.
+ * PaymentMethodControl — segmented tap control for active payment methods.
  *
- * Designed for touch-first POS use: large tap targets, instant visual
- * feedback, no extra tap to open a dropdown. Renders 2 per row on mobile
- * and one row of N on sm+ screens, where N is the number of enabled methods.
- *
- * The `available` prop gates which methods render — it is driven by the
- * store's payment-method settings (enableCash/enableCard/enableCredit), so a
- * disabled method is never selectable. When omitted, all four render.
- *
- * ARIA: uses role="radiogroup" + role="radio" + aria-checked so the
- * selection is announced correctly by screen readers.
+ * Mixed payment was removed after user testing showed it is not needed. The
+ * historical `mixed` value is still supported in read-only reports/receipts, but
+ * this control only lets cashiers create cash, card, or credit transactions.
  */
 
 import clsx from 'clsx';
@@ -21,10 +13,10 @@ import { Banknote, CreditCard, Clock } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-context';
 import type { LucideIcon } from 'lucide-react';
 
-type PaymentMethod = 'cash' | 'card' | 'mixed' | 'credit';
+type ActivePaymentMethod = 'cash' | 'card' | 'credit';
 
 interface PaymentOption {
-  value: PaymentMethod;
+  value: ActivePaymentMethod;
   icon: LucideIcon;
   labelKey: string;
 }
@@ -34,32 +26,21 @@ const SM_COLS: Record<number, string> = {
   1: 'sm:grid-cols-1',
   2: 'sm:grid-cols-2',
   3: 'sm:grid-cols-3',
-  4: 'sm:grid-cols-4',
 };
 
-// Icon choices:
-//   Banknote → Cash: physical note, universal "cash" metaphor
-//   CreditCard → Card: self-evident
-//   Clock → Credit: deferred payment / "pay later"
-// NOTE: "mixed" is intentionally omitted — it is no longer offered as a payment
-// option (it confused cashiers). The PaymentMethod type still includes 'mixed'
-// so historical bills saved as mixed continue to display/aggregate correctly.
 const OPTIONS: readonly PaymentOption[] = [
-  { value: 'cash',   icon: Banknote,    labelKey: 'common.cash'   },
-  { value: 'card',   icon: CreditCard,  labelKey: 'common.card'   },
-  { value: 'credit', icon: Clock,       labelKey: 'common.credit' },
+  { value: 'cash', icon: Banknote, labelKey: 'common.cash' },
+  { value: 'card', icon: CreditCard, labelKey: 'common.card' },
+  { value: 'credit', icon: Clock, labelKey: 'common.credit' },
 ] as const;
 
 interface Props {
-  value: PaymentMethod;
-  onChange: (value: PaymentMethod) => void;
+  value: ActivePaymentMethod;
+  onChange: (value: ActivePaymentMethod) => void;
   /** aria-label for the radiogroup — pass t('billing.paymentMethod') */
   label: string;
-  /**
-   * Which methods to show, in render order. Defaults to all four.
-   * Driven by store payment-method settings so disabled methods never appear.
-   */
-  available?: readonly PaymentMethod[];
+  /** Which methods to show, in render order. */
+  available?: readonly ActivePaymentMethod[];
 }
 
 export function PaymentMethodControl({
@@ -70,11 +51,17 @@ export function PaymentMethodControl({
 }: Props) {
   const { t } = useLocale();
 
-  const options = available
-    ? OPTIONS.filter((o) => available.includes(o.value))
+  const visible = available
+    ? OPTIONS.filter((option) => available.includes(option.value))
     : OPTIONS;
-  // Fall back to all options if a bad/empty list was passed (never render none).
-  const visible = options.length > 0 ? options : OPTIONS;
+
+  if (visible.length === 0) {
+    return (
+      <p className="rounded-xl border border-danger/30 bg-danger/5 px-3 py-2 text-xs font-medium text-danger">
+        {t('settings.atLeastOnePaymentMethod')}
+      </p>
+    );
+  }
 
   return (
     <div
@@ -82,18 +69,18 @@ export function PaymentMethodControl({
       aria-label={label}
       className={clsx(
         'grid grid-cols-2 gap-1.5',
-        SM_COLS[visible.length] ?? 'sm:grid-cols-4',
+        SM_COLS[visible.length] ?? 'sm:grid-cols-3',
       )}
     >
-      {visible.map(({ value: v, icon: Icon, labelKey }) => {
-        const active = value === v;
+      {visible.map(({ value: method, icon: Icon, labelKey }) => {
+        const active = value === method;
         return (
           <button
-            key={v}
+            key={method}
             type="button"
             role="radio"
             aria-checked={active}
-            onClick={() => onChange(v)}
+            onClick={() => onChange(method)}
             className={clsx(
               'flex flex-col items-center gap-1.5 rounded-xl border px-2 py-2.5',
               'text-xs font-semibold transition-all',

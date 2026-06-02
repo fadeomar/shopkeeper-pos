@@ -24,7 +24,7 @@ import {
   calculateChange,
   calculateLineSubtotal,
 } from "@/lib/utils/calculations";
-import { MONEY_EPSILON, formatCurrency } from "@/lib/utils/money";
+import { formatCurrency } from "@/lib/utils/money";
 import { blurInputOnEnter } from "@/lib/utils/dismiss-on-enter";
 import { createFinalizedPurchase } from "@/lib/services/purchase-service";
 import { useAuth } from "@/components/providers/auth-context";
@@ -40,6 +40,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { BarcodeScannerModal } from "@/components/barcode/barcode-scanner-modal";
+import { PurchaseQuickProductModal } from "@/features/purchases/components/purchase-quick-product-modal";
 import { normalizeBarcode } from "@/lib/utils/barcode";
 import { useLocale } from "@/components/providers/locale-context";
 import { Card } from "@/components/ui/card";
@@ -47,6 +48,7 @@ import type {
   Purchase,
   PurchaseDraftItem,
   PurchaseItem,
+  Product,
   Settings,
   Supplier,
 } from "@/types/domain";
@@ -199,6 +201,10 @@ export function PurchaseEntryScreen() {
   );
   const suppliers = useLiveQuery(() => supplierRepo.list(), []);
   const settings = useLiveQuery(() => settingsRepo.get(), []);
+  const activeShift = useLiveQuery(
+    () => db.shifts.where("status").equals("open").first().then((shift) => shift ?? null),
+    [],
+  );
   const { push } = useToast();
   const currency = settings?.currency ?? "ILS";
   const draftKey = user?.uid
@@ -206,9 +212,17 @@ export function PurchaseEntryScreen() {
     : null;
 
   const [draftItems, setDraftItems] = useState<PurchaseDraftItem[]>([]);
+  const [draftRestored, setDraftRestored] = useState(false);
   const [productId, setProductId] = useState("");
   const [newLineCost, setNewLineCost] = useState<number>(0);
+  const [isNewLineCostManuallyEdited, setIsNewLineCostManuallyEdited] =
+    useState(false);
   const [newLineQty, setNewLineQty] = useState<number>(1);
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [quickAddBarcode, setQuickAddBarcode] = useState("");
+  const [quickAddDefaultQuantity, setQuickAddDefaultQuantity] = useState(1);
+  const [inventoryPrefillProductId, setInventoryPrefillProductId] = useState<string | null>(null);
+  const consumedInventoryPrefillId = useRef<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [isPaidAmountManuallyEdited, setIsPaidAmountManuallyEdited] =
@@ -234,6 +248,19 @@ export function PurchaseEntryScreen() {
       })),
     [products, currency],
   );
+  const selectedProductForLine = useMemo(
+    () => products?.find((product) => product.id === productId),
+    [products, productId],
+  );
+  const defaultRecordedBy = useMemo(
+    () =>
+      settings?.cashierName?.trim() ||
+      user?.name?.trim() ||
+      user?.email?.trim() ||
+      t("common.owner"),
+    [settings?.cashierName, user?.name, user?.email, t],
+  );
+  const lastSelectedProductId = useRef<string>("");
 
   const [supplierSheetOpen, setSupplierSheetOpen] = useState(false);
   const [supplierSearch, setSupplierSearch] = useState("");
@@ -244,6 +271,9 @@ export function PurchaseEntryScreen() {
       cashierName: settings?.cashierName ?? t("common.owner"),
       supplierName: "",
       supplierPhone: "",
+      supplierInvoiceNumber: "",
+      invoiceDate: "",
+      paymentDueDate: "",
       paymentMethod: "cash",
       discountAmount: 0,
       taxAmount: 0,
@@ -256,9 +286,16 @@ export function PurchaseEntryScreen() {
 
   // Restore draft from per-user localStorage.
   useEffect(() => {
-    if (!draftKey) return;
+    setDraftRestored(false);
+    if (!draftKey) {
+      setDraftRestored(true);
+      return;
+    }
     const raw = window.localStorage.getItem(draftKey);
-    if (!raw) return;
+    if (!raw) {
+      setDraftRestored(true);
+      return;
+    }
     try {
       const parsed = JSON.parse(raw) as {
         items: PurchaseDraftItem[];
@@ -289,17 +326,114 @@ export function PurchaseEntryScreen() {
       );
     } catch {
       window.localStorage.removeItem(draftKey);
+    } finally {
+      setDraftRestored(true);
     }
   }, [draftKey, form]);
 
   const watchedSupplierName = form.watch("supplierName");
   const watchedSupplierPhone = form.watch("supplierPhone");
+  const watchedSupplierInvoiceNumber = form.watch("supplierInvoiceNumber");
+  const watchedInvoiceDate = form.watch("invoiceDate");
+  const watchedPaymentDueDate = form.watch("paymentDueDate");
   const watchedPaymentMethod = form.watch("paymentMethod");
   const watchedDiscountAmount = Number(form.watch("discountAmount") || 0);
   const watchedTaxAmount = Number(form.watch("taxAmount") || 0);
   const watchedPaidAmount = Number(form.watch("paidAmount") || 0);
-  const watchedCashAmount = Number(form.watch("cashAmount") || 0);
-  const watchedCardAmount = Number(form.watch("cardAmount") || 0);
+  const watchedCashierName = form.watch("cashierName");
+
+  // Keep the saved purchase metadata meaningful even when Settings/auth data
+  // arrives after the form was first created. The field is read-only in the UI,
+  // so this intentionally follows the current cashier/default setting.
+  useEffect(() => {
+    if (!defaultRecordedBy) return;
+    if (watchedCashierName === defaultRecordedBy) return;
+    form.setValue("cashierName", defaultRecordedBy, {
+      shouldDirty: false,
+      shouldValidate: true,
+    });
+  }, [defaultRecordedBy, watchedCashierName, form]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const requestedProductId = params.get("productId");
+    if (requestedProductId && params.get("source") === "inventory") {
+      setInventoryPrefillProductId(requestedProductId);
+    }
+  }, []);
+
+  function clearConsumedPurchaseQuery() {
+    if (typeof window === "undefined") return;
+    if (!window.location.search) return;
+    window.history.replaceState(null, "", window.location.pathname);
+  }
+
+  function suggestRestockQuantity(product: Product): number {
+    return Math.max(
+      1,
+      Math.ceil(
+        (product.minimumStockAlert ?? 0) - (product.quantityInStock ?? 0),
+      ),
+    );
+  }
+
+  // Smart default for the line cost: selecting a product shows its buy price
+  // immediately, but typing a custom cost is preserved while the same product
+  // remains selected. Changing products starts with the new product's buy price.
+  useEffect(() => {
+    if (!selectedProductForLine) {
+      lastSelectedProductId.current = "";
+      setNewLineCost(0);
+      setIsNewLineCostManuallyEdited(false);
+      return;
+    }
+
+    const productChanged = lastSelectedProductId.current !== selectedProductForLine.id;
+    if (productChanged) {
+      lastSelectedProductId.current = selectedProductForLine.id;
+      setNewLineCost(selectedProductForLine.buyPrice);
+      setIsNewLineCostManuallyEdited(false);
+      return;
+    }
+
+    if (!isNewLineCostManuallyEdited) {
+      setNewLineCost(selectedProductForLine.buyPrice);
+    }
+  }, [selectedProductForLine, isNewLineCostManuallyEdited]);
+
+  useEffect(() => {
+    if (!draftRestored || !products || !inventoryPrefillProductId) return;
+    if (consumedInventoryPrefillId.current === inventoryPrefillProductId) return;
+    consumedInventoryPrefillId.current = inventoryPrefillProductId;
+
+    const product = products.find(
+      (candidate) =>
+        candidate.id === inventoryPrefillProductId &&
+        candidate.status === "active",
+    );
+
+    if (!product) {
+      push(t("purchases.prefillProductNotFound"), "error");
+      clearConsumedPurchaseQuery();
+      return;
+    }
+
+    if (draftItems.some((item) => item.productId === product.id)) {
+      push(
+        t("purchases.alreadyInPurchaseDraft", { name: product.name }),
+        "error",
+      );
+      clearConsumedPurchaseQuery();
+      return;
+    }
+
+    setProductId(product.id);
+    setNewLineQty(suggestRestockQuantity(product));
+    setNewLineCost(product.buyPrice);
+    setIsNewLineCostManuallyEdited(false);
+    push(t("purchases.prefilledFromInventory", { name: product.name }));
+    clearConsumedPurchaseQuery();
+  }, [draftItems, draftRestored, inventoryPrefillProductId, products, push, t]);
 
   // Persist draft to localStorage.
   useEffect(() => {
@@ -313,14 +447,26 @@ export function PurchaseEntryScreen() {
     draftItems,
     watchedSupplierName,
     watchedSupplierPhone,
+    watchedSupplierInvoiceNumber,
+    watchedInvoiceDate,
+    watchedPaymentDueDate,
     watchedPaymentMethod,
     watchedDiscountAmount,
     watchedTaxAmount,
     watchedPaidAmount,
-    watchedCashAmount,
-    watchedCardAmount,
+    watchedCashierName,
     form,
   ]);
+
+  const selectedLineCostDiffers = Boolean(
+    selectedProductForLine &&
+      Math.abs(newLineCost - selectedProductForLine.buyPrice) > 0.001,
+  );
+  const selectedLineLowMargin = Boolean(
+    selectedProductForLine &&
+      selectedProductForLine.sellPrice > 0 &&
+      newLineCost >= selectedProductForLine.sellPrice,
+  );
 
   const purchaseSummary = useMemo(
     () =>
@@ -337,7 +483,6 @@ export function PurchaseEntryScreen() {
   );
 
   const isCreditPurchase = watchedPaymentMethod === "credit";
-  const isMixedPurchase = watchedPaymentMethod === "mixed";
   const defaultPaidAmount = isCreditPurchase
     ? 0
     : Number(purchaseSummary.totalAmount.toFixed(2));
@@ -352,28 +497,21 @@ export function PurchaseEntryScreen() {
     0,
     calculateChange(purchaseSummary.totalAmount, actualPaidAmount),
   );
-  const mixedSumDelta = useMemo(
-    () =>
-      isMixedPurchase
-        ? Math.abs(
-            watchedCashAmount + watchedCardAmount - purchaseSummary.totalAmount,
-          )
-        : 0,
-    [
-      isMixedPurchase,
-      watchedCashAmount,
-      watchedCardAmount,
-      purchaseSummary.totalAmount,
-    ],
-  );
-  const isMixedSplitValid = !isMixedPurchase || mixedSumDelta < MONEY_EPSILON;
   const hasCreditSupplier = Boolean(
     watchedSupplierName?.trim() || watchedSupplierPhone?.trim(),
   );
 
-  // ── Settings-driven enforcement (payment methods + tax mode) ──────────────
-  // Purchases share the store's payment-method toggles. requireShift and the
-  // discount limit are sell-side concerns and intentionally not applied here.
+  useEffect(() => {
+    if (!isCreditPurchase && watchedPaymentDueDate) {
+      form.setValue("paymentDueDate", "", { shouldDirty: true });
+    }
+  }, [form, isCreditPurchase, watchedPaymentDueDate]);
+
+  // ── Settings-driven enforcement (payment methods + tax/shift mode) ─────────
+  // Purchases share the store's payment-method toggles. Mixed payment is
+  // retired and intentionally not offered as a new-purchase option. When
+  // requireShift is enabled, any cash-affecting purchase needs an open shift so
+  // drawer math stays complete.
   const enableCash = settings?.enableCash !== false;
   const enableCard = settings?.enableCard !== false;
   const enableCredit = settings?.enableCredit !== false;
@@ -412,13 +550,17 @@ export function PurchaseEntryScreen() {
   }, [taxEnabled, watchedTaxAmount, form]);
 
   const hasValidTotal = purchaseSummary.totalAmount >= 0;
-  const hasEnoughPayment =
-    isCreditPurchase || isMixedPurchase || actualChangeAmount >= 0;
+  const hasEnoughPayment = isCreditPurchase || actualChangeAmount >= 0;
+  const requireShift = settings?.requireShift === true;
+  const cashAffectsDrawer =
+    watchedPaymentMethod === "cash" ||
+    (watchedPaymentMethod === "credit" && actualPaidAmount > 0);
+  const shiftBlocked = requireShift && cashAffectsDrawer && activeShift === null;
   const canFinalize =
     draftItems.length > 0 &&
     hasValidTotal &&
     hasEnoughPayment &&
-    isMixedSplitValid &&
+    !shiftBlocked &&
     (!isCreditPurchase || hasCreditSupplier);
 
   // Auto-fill paid amount on total change (unless cashier manually overrode).
@@ -430,16 +572,6 @@ export function PurchaseEntryScreen() {
     });
   }, [defaultPaidAmount, isPaidAmountManuallyEdited, form]);
 
-  // Initialize mixed split to cash=total/card=0 when switching to mixed.
-  useEffect(() => {
-    if (!isMixedPurchase) return;
-    const total = Number(purchaseSummary.totalAmount.toFixed(2));
-    if (Math.abs(watchedCashAmount + watchedCardAmount - total) < MONEY_EPSILON)
-      return;
-    form.setValue("cashAmount", total, { shouldDirty: false });
-    form.setValue("cardAmount", 0, { shouldDirty: false });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMixedPurchase, purchaseSummary.totalAmount, form]);
 
   // Auto-dismiss success panel like POS.
   useEffect(() => {
@@ -453,11 +585,9 @@ export function PurchaseEntryScreen() {
     form.setValue("supplierPhone", supplier.phone ?? "", { shouldDirty: true });
   }
 
-  function addLine() {
-    const product = products?.find((p) => p.id === productId);
-    if (!product) return;
-    const qty = Math.max(1, Math.trunc(newLineQty || 0));
-    const cost = Math.max(0, newLineCost || product.buyPrice);
+  function addProductToDraft(product: Product, quantity: number, unitCost: number) {
+    const qty = Math.max(1, Math.trunc(quantity || 0));
+    const cost = Math.max(0, unitCost || product.buyPrice);
     setDraftItems((cur) => {
       const existing = cur.find((i) => i.productId === product.id);
       if (existing) {
@@ -481,41 +611,30 @@ export function PurchaseEntryScreen() {
         },
       ];
     });
+    if (lastFinalized) setLastFinalized(null);
+  }
+
+  function addLine() {
+    const product = products?.find((p) => p.id === productId);
+    if (!product) return;
+    addProductToDraft(product, newLineQty, newLineCost);
     setProductId("");
     setNewLineCost(0);
+    setIsNewLineCostManuallyEdited(false);
     setNewLineQty(1);
-    if (lastFinalized) setLastFinalized(null);
   }
 
   function handleScanForPurchase(barcode: string) {
     const bc = normalizeBarcode(barcode);
     const product = products?.find((p) => normalizeBarcode(p.barcode) === bc);
     if (!product) {
-      push(t("billing.productNotFound", { barcode: bc }), "error");
+      setQuickAddBarcode(bc);
+      setQuickAddDefaultQuantity(1);
+      setQuickAddOpen(true);
+      push(t("purchases.noProductFoundForBarcode", { barcode: bc }), "error");
       return;
     }
-    setDraftItems((cur) => {
-      const existing = cur.find((i) => i.productId === product.id);
-      if (existing) {
-        return cur.map((i) =>
-          i.productId === product.id ? { ...i, quantity: i.quantity + 1 } : i,
-        );
-      }
-      return [
-        ...cur,
-        {
-          productId: product.id,
-          barcode: product.barcode,
-          name: product.name,
-          category: product.category,
-          currentStock: product.quantityInStock,
-          quantity: 1,
-          unitCost: product.buyPrice,
-          unitSellPriceBefore: product.sellPrice,
-        },
-      ];
-    });
-    if (lastFinalized) setLastFinalized(null);
+    addProductToDraft(product, 1, product.buyPrice);
   }
 
   function updateLine(
@@ -547,9 +666,12 @@ export function PurchaseEntryScreen() {
     setDraftItems([]);
     setIsPaidAmountManuallyEdited(false);
     form.reset({
-      cashierName: settings?.cashierName ?? t("common.owner"),
+      cashierName: defaultRecordedBy,
       supplierName: "",
       supplierPhone: "",
+      supplierInvoiceNumber: "",
+      invoiceDate: "",
+      paymentDueDate: "",
       paymentMethod: "cash",
       discountAmount: 0,
       taxAmount: 0,
@@ -558,6 +680,12 @@ export function PurchaseEntryScreen() {
       cardAmount: 0,
       notes: "",
     });
+    setProductId("");
+    setNewLineCost(0);
+    setNewLineQty(1);
+    setIsNewLineCostManuallyEdited(false);
+    setInventoryPrefillProductId(null);
+    consumedInventoryPrefillId.current = null;
     if (draftKey) window.localStorage.removeItem(draftKey);
   }
 
@@ -571,9 +699,8 @@ export function PurchaseEntryScreen() {
         items: draftItems,
         form: {
           ...values,
+          cashierName: defaultRecordedBy,
           paidAmount: actualPaidAmount,
-          cashAmount: watchedCashAmount,
-          cardAmount: watchedCardAmount,
         },
       });
       clearDraft();
@@ -721,7 +848,10 @@ export function PurchaseEntryScreen() {
             />
             <MoneyInput
               value={newLineCost}
-              onValueChange={setNewLineCost}
+              onValueChange={(value) => {
+                setIsNewLineCostManuallyEdited(true);
+                setNewLineCost(value);
+              }}
               currency={currency}
               min={0}
               onKeyDown={dismissKeyboardOnEnter}
@@ -747,14 +877,34 @@ export function PurchaseEntryScreen() {
             </Button>
           </div>
 
+          {(selectedLineCostDiffers || selectedLineLowMargin) && selectedProductForLine && (
+            <div className="rounded-xl border border-warning/30 bg-warning-soft px-4 py-3 text-sm text-warning">
+              {selectedLineCostDiffers && (
+                <p className="font-medium">{t("purchases.buyPriceWillUpdate")}</p>
+              )}
+              {selectedLineLowMargin && (
+                <p className="mt-1 text-xs font-semibold">
+                  {t("purchases.reviewSellPrice")}
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
             <p>{t("purchases.productMissingNote")}</p>
-            <Link
-              href="/products"
-              className="mt-2 inline-flex text-sm font-semibold text-info hover:text-info/80"
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="mt-2"
+              onClick={() => {
+                setQuickAddBarcode("");
+                setQuickAddDefaultQuantity(newLineQty || 1);
+                setQuickAddOpen(true);
+              }}
             >
-              {t("purchases.addProductInProducts")}
-            </Link>
+              {t("purchases.addMissingProduct")}
+            </Button>
           </div>
 
           {/* Items list */}
@@ -945,6 +1095,28 @@ export function PurchaseEntryScreen() {
                   )}
                 </div>
 
+                <details className="group rounded-xl border border-slate-200 bg-white px-3 py-2">
+                  <summary className="cursor-pointer list-none text-sm font-semibold text-slate-700">
+                    {t("purchases.invoiceDetails")}
+                    <span className="ms-2 text-xs font-normal text-slate-400">
+                      {t("purchases.invoiceDetailsHelper")}
+                    </span>
+                  </summary>
+                  <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <FormField label={t("purchases.supplierInvoiceNumber")}>
+                      <Input {...form.register("supplierInvoiceNumber")} />
+                    </FormField>
+                    <FormField label={t("purchases.invoiceDate")}>
+                      <Input type="date" {...form.register("invoiceDate")} />
+                    </FormField>
+                    {isCreditPurchase && (
+                      <FormField label={t("purchases.paymentDueDate")}>
+                        <Input type="date" {...form.register("paymentDueDate")} />
+                      </FormField>
+                    )}
+                  </div>
+                </details>
+
                 <FormField label={t("purchases.paymentMethod")}>
                   <PaymentMethodControl
                     value={watchedPaymentMethod as PurchaseFormSchema["paymentMethod"]}
@@ -955,6 +1127,18 @@ export function PurchaseEntryScreen() {
                     available={availablePaymentMethods}
                   />
                 </FormField>
+
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    {t("purchases.recordedBy")}
+                  </p>
+                  <p className="mt-0.5 truncate text-sm font-semibold text-slate-800">
+                    {defaultRecordedBy}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {t("purchases.recordedByHelper")}
+                  </p>
+                </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <FormField label={t("purchases.discount")}>
@@ -979,58 +1163,7 @@ export function PurchaseEntryScreen() {
                   )}
                 </div>
 
-                {isMixedPurchase ? (
-                  <FormField label={t("purchases.mixedSplit")}>
-                    <div className="grid grid-cols-2 gap-2">
-                      <label className="flex flex-col gap-1">
-                        <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">
-                          {t("common.cash")}
-                        </span>
-                        <MoneyInput
-                          value={watchedCashAmount}
-                          currency={currency}
-                          min={0}
-                          onKeyDown={dismissKeyboardOnEnter}
-                          onValueChange={(v) => {
-                            const safe = Math.max(0, v);
-                            form.setValue("cashAmount", safe, {
-                              shouldDirty: true,
-                              shouldValidate: true,
-                            });
-                            form.setValue(
-                              "cardAmount",
-                              Math.max(0, purchaseSummary.totalAmount - safe),
-                              { shouldDirty: true, shouldValidate: false },
-                            );
-                          }}
-                        />
-                      </label>
-                      <label className="flex flex-col gap-1">
-                        <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">
-                          {t("common.card")}
-                        </span>
-                        <MoneyInput
-                          value={watchedCardAmount}
-                          currency={currency}
-                          min={0}
-                          onKeyDown={dismissKeyboardOnEnter}
-                          onValueChange={(v) => {
-                            const safe = Math.max(0, v);
-                            form.setValue("cardAmount", safe, {
-                              shouldDirty: true,
-                              shouldValidate: true,
-                            });
-                            form.setValue(
-                              "cashAmount",
-                              Math.max(0, purchaseSummary.totalAmount - safe),
-                              { shouldDirty: true, shouldValidate: false },
-                            );
-                          }}
-                        />
-                      </label>
-                    </div>
-                  </FormField>
-                ) : watchedPaymentMethod === "card" ? null : (
+                {watchedPaymentMethod === "card" ? null : (
                   <FormField label={t("purchases.actualPaid")}>
                     <div className="flex gap-2">
                       <MoneyInput
@@ -1098,6 +1231,12 @@ export function PurchaseEntryScreen() {
                   )}
                 </div>
 
+                {shiftBlocked && draftItems.length > 0 && (
+                  <p className="text-xs text-danger font-medium">
+                    {t("purchases.shiftRequiredError")}
+                  </p>
+                )}
+
                 {!hasValidTotal && draftItems.length > 0 && (
                   <p className="text-xs text-danger font-medium">
                     {t("purchases.invalidTotal")}
@@ -1108,13 +1247,6 @@ export function PurchaseEntryScreen() {
                   draftItems.length > 0 && (
                     <p className="text-xs text-danger font-medium">
                       {t("purchases.creditSupplierRequired")}
-                    </p>
-                  )}
-                {isMixedPurchase &&
-                  !isMixedSplitValid &&
-                  draftItems.length > 0 && (
-                    <p className="text-xs text-danger font-medium">
-                      {t("purchases.mixedSumMismatch")}
                     </p>
                   )}
                 {hasValidTotal &&
@@ -1153,6 +1285,33 @@ export function PurchaseEntryScreen() {
         onClose={() => setScannerOpen(false)}
         onDetected={handleScanForPurchase}
         continuous
+      />
+
+      <PurchaseQuickProductModal
+        open={quickAddOpen}
+        barcode={quickAddBarcode}
+        currency={currency}
+        defaultQuantity={quickAddDefaultQuantity}
+        supplierName={watchedSupplierName}
+        onClose={() => setQuickAddOpen(false)}
+        onCreated={(product, quantity) => {
+          addProductToDraft(product, quantity, product.buyPrice);
+          setQuickAddOpen(false);
+          setQuickAddBarcode("");
+          setProductId("");
+          setNewLineQty(1);
+          setNewLineCost(0);
+          setIsNewLineCostManuallyEdited(false);
+          push(t("purchases.quickAddCreated", { name: product.name }));
+        }}
+        onUseExisting={(product) => {
+          setProductId(product.id);
+          setNewLineQty(1);
+          setNewLineCost(product.buyPrice);
+          setIsNewLineCostManuallyEdited(false);
+          setQuickAddOpen(false);
+          setQuickAddBarcode("");
+        }}
       />
 
       <Modal

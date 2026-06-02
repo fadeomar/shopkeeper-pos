@@ -67,6 +67,7 @@ const PRIMARY_TABS: TabRoute[] = [
 const MORE_ROUTES: TabRoute[] = [
   { href: "/", shortKey: "navShort.dashboard", icon: LayoutDashboard },
   { href: "/purchases/new", shortKey: "navShort.newPurchase", icon: Truck },
+  { href: "/purchases", shortKey: "navShort.purchaseHistory", icon: ReceiptText },
   { href: "/reports", shortKey: "navShort.reports", icon: BarChart3 },
   { href: "/customers", shortKey: "navShort.customers", icon: Users },
   { href: "/suppliers", shortKey: "navShort.suppliers", icon: Store },
@@ -165,7 +166,10 @@ export function MobileBottomNav() {
     "?";
 
   function isActive(href: string) {
-    return pathname === href || (href !== "/" && pathname.startsWith(href));
+    if (href === "/") return pathname === "/";
+    // /purchases and /purchases/new are separate top-level actions.
+    if (href === "/purchases") return pathname === "/purchases";
+    return pathname === href || pathname.startsWith(`${href}/`);
   }
 
   // If the current page is in the "More" set, highlight the More tab.
@@ -264,7 +268,8 @@ export function MobileBottomNav() {
             aria-label={t("nav.moreMenuLabel")}
             onClick={(e) => e.stopPropagation()}
             className={clsx(
-              "relative bg-slate-900 rounded-t-3xl border-t border-white/10",
+              "relative max-h-[calc(100dvh-24px)] overflow-y-auto overscroll-contain",
+              "bg-slate-900 rounded-t-3xl border-t border-white/10",
               "pb-safe animate-sheet-up",
             )}
           >
@@ -318,10 +323,13 @@ export function MobileBottomNav() {
                     />
                     <span className="leading-tight">{t(shortKey)}</span>
                     {showShiftDot && (
-                      <span
-                        className="absolute top-2 end-2 h-2 w-2 rounded-full bg-success"
-                        aria-label={t("nav.shiftOpen")}
-                      />
+                      <span className="absolute top-2 end-2 inline-flex items-center">
+                        <span
+                          className="h-2 w-2 rounded-full bg-success"
+                          aria-hidden
+                        />
+                        <span className="sr-only">{t("nav.shiftOpen")}</span>
+                      </span>
                     )}
                   </Link>
                 );

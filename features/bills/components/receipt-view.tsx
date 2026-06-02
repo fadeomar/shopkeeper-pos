@@ -24,7 +24,7 @@ export function ReceiptView({
   const { t } = useLocale();
   const { push } = useToast();
   const currency = settings?.currency ?? "ILS";
-  const storeName = settings?.storeName || "Shopkeeper POS";
+  const storeName = settings?.storeName || "Asas POS";
   const paymentLabel = t(
     `common.${bill.paymentMethod}` as Parameters<typeof t>[0],
   );

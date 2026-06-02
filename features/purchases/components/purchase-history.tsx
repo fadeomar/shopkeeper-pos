@@ -9,7 +9,7 @@
  * to as "Purchase history". Before this existed that link 404'd.
  */
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import clsx from "clsx";
 import { useLiveQuery } from "dexie-react-hooks";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -20,9 +20,77 @@ import { formatCurrency } from "@/lib/utils/money";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { DataTable, useDataTableLabels } from "@/components/ui/data-table";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { RecordSyncBadge } from "@/components/sync/record-sync-badge";
 import { useLocale } from "@/components/providers/locale-context";
 import type { Purchase } from "@/types/domain";
+
+type PurchaseDateFilter =
+  | "all"
+  | "today"
+  | "yesterday"
+  | "week"
+  | "month"
+  | "custom";
+type PurchasePaymentStatusFilter = "all" | "paid" | "partial" | "unpaid";
+
+function startOfDay(date: Date): Date {
+  const next = new Date(date);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+
+function addDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function getDateRange(
+  dateFilter: PurchaseDateFilter,
+  customFrom: string,
+  customTo: string,
+): { from?: Date; to?: Date } {
+  const today = startOfDay(new Date());
+  if (dateFilter === "today") return { from: today, to: addDays(today, 1) };
+  if (dateFilter === "yesterday") return { from: addDays(today, -1), to: today };
+  if (dateFilter === "week") return { from: addDays(today, -6), to: addDays(today, 1) };
+  if (dateFilter === "month") {
+    return {
+      from: new Date(today.getFullYear(), today.getMonth(), 1),
+      to: addDays(today, 1),
+    };
+  }
+  if (dateFilter === "custom") {
+    return {
+      from: customFrom ? startOfDay(new Date(customFrom)) : undefined,
+      to: customTo ? addDays(startOfDay(new Date(customTo)), 1) : undefined,
+    };
+  }
+  return {};
+}
+
+function getPurchaseAmountDue(purchase: Purchase): number {
+  const netTotal = Math.max(
+    0,
+    purchase.totalAmount - (purchase.returnedAmount ?? 0),
+  );
+  return Math.max(0, netTotal - purchase.paidAmount);
+}
+
+function matchesPaymentStatus(
+  purchase: Purchase,
+  filter: PurchasePaymentStatusFilter,
+): boolean {
+  if (filter === "all") return true;
+  const due = getPurchaseAmountDue(purchase);
+  if (filter === "paid") return due <= 0;
+  if (filter === "partial") return purchase.paidAmount > 0 && due > 0;
+  return purchase.paidAmount <= 0 && due > 0;
+}
 
 export function PurchaseHistory() {
   const { t } = useLocale();
@@ -33,6 +101,56 @@ export function PurchaseHistory() {
   );
   const settings = useLiveQuery(() => settingsRepo.get(), []);
   const currency = settings?.currency ?? "ILS";
+  const [query, setQuery] = useState("");
+  const [dateFilter, setDateFilter] = useState<PurchaseDateFilter>("today");
+  const [supplierFilter, setSupplierFilter] = useState("all");
+  const [paymentStatusFilter, setPaymentStatusFilter] =
+    useState<PurchasePaymentStatusFilter>("all");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+
+  const supplierOptions = useMemo(() => {
+    const names = Array.from(
+      new Set(
+        (purchases ?? [])
+          .map((purchase) => purchase.supplierName?.trim())
+          .filter((value): value is string => Boolean(value)),
+      ),
+    ).sort((a, b) => a.localeCompare(b));
+    return [
+      { value: "all", label: t("purchases.allSuppliers") },
+      { value: "__unknown__", label: t("purchases.noSupplier") },
+      ...names.map((name) => ({ value: name, label: name })),
+    ];
+  }, [purchases, t]);
+
+  const filteredPurchases = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    const { from, to } = getDateRange(dateFilter, customFrom, customTo);
+    return (purchases ?? []).filter((purchase) => {
+      const created = new Date(purchase.createdAt);
+      if (from && created < from) return false;
+      if (to && created >= to) return false;
+
+      const supplier = purchase.supplierName?.trim() || "__unknown__";
+      if (supplierFilter !== "all" && supplier !== supplierFilter) return false;
+      if (!matchesPaymentStatus(purchase, paymentStatusFilter)) return false;
+
+      if (!needle) return true;
+      return [
+        purchase.purchaseNumber,
+        purchase.supplierInvoiceNumber,
+        purchase.invoiceDate,
+        purchase.supplierName,
+        purchase.supplierPhone,
+        purchase.cashierName,
+        purchase.paymentMethod,
+        purchase.status,
+      ]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(needle));
+    });
+  }, [purchases, query, dateFilter, supplierFilter, paymentStatusFilter, customFrom, customTo]);
 
   const columns = useMemo<ColumnDef<Purchase>[]>(
     () => [
@@ -46,11 +164,20 @@ export function PurchaseHistory() {
         ),
       },
       {
-        header: t("bills.dateTime"),
-        accessorKey: "createdAt",
+        header: t("purchases.invoiceNumber"),
+        accessorKey: "supplierInvoiceNumber",
+        cell: ({ row }) => (
+          <span className="text-slate-600">
+            {row.original.supplierInvoiceNumber || "—"}
+          </span>
+        ),
+      },
+      {
+        header: t("purchases.invoiceDateShort"),
+        accessorKey: "invoiceDate",
         cell: ({ row }) => (
           <span className="whitespace-nowrap text-slate-600">
-            {formatDateTime(row.original.createdAt)}
+            {row.original.invoiceDate || formatDateTime(row.original.createdAt)}
           </span>
         ),
       },
@@ -94,7 +221,7 @@ export function PurchaseHistory() {
         cell: ({ row }) => {
           const due = Math.max(
             0,
-            row.original.totalAmount - row.original.paidAmount,
+            getPurchaseAmountDue(row.original),
           );
           return (
             <span
@@ -107,6 +234,28 @@ export function PurchaseHistory() {
             </span>
           );
         },
+      },
+      {
+        header: t("purchases.paymentStatus"),
+        id: "paymentStatus",
+        cell: ({ row }) => {
+          const due = getPurchaseAmountDue(row.original);
+          const key = due <= 0
+            ? "paidStatus"
+            : row.original.paidAmount > 0
+              ? "partiallyPaidStatus"
+              : "unpaidStatus";
+          return <Badge>{t(`purchases.${key}` as Parameters<typeof t>[0])}</Badge>;
+        },
+      },
+      {
+        header: t("purchases.status"),
+        accessorKey: "status",
+        cell: ({ row }) => (
+          <Badge>
+            {t(`common.${row.original.status}` as Parameters<typeof t>[0])}
+          </Badge>
+        ),
       },
       {
         header: t("sync.status"),
@@ -131,14 +280,97 @@ export function PurchaseHistory() {
   }
 
   return (
-    <DataTable
-      columns={columns}
-      data={purchases}
-      enableGlobalSearch
-      emptyTitle={t("purchases.noPurchases")}
-      pageSize={10}
-      labels={labels}
-      getRowId={(row) => row.id}
-    />
+    <div className="space-y-4">
+      <Card>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          <Input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={t("purchases.searchPlaceholder")}
+            aria-label={t("purchases.searchPlaceholder")}
+          />
+          <SearchableSelect
+            value={dateFilter}
+            onValueChange={(value) =>
+              setDateFilter((value ?? "all") as PurchaseDateFilter)
+            }
+            placeholder={t("purchases.dateFilter")}
+            searchPlaceholder={t("common.search")}
+            options={[
+              { value: "all", label: t("bills.allDates") },
+              { value: "today", label: t("bills.today") },
+              { value: "yesterday", label: t("bills.yesterday") },
+              { value: "week", label: t("bills.thisWeek") },
+              { value: "month", label: t("bills.thisMonth") },
+              { value: "custom", label: t("bills.customRange") },
+            ]}
+          />
+          <SearchableSelect
+            value={supplierFilter}
+            onValueChange={(value) => setSupplierFilter(value ?? "all")}
+            placeholder={t("purchases.supplierFilter")}
+            searchPlaceholder={t("common.search")}
+            options={supplierOptions}
+          />
+          <SearchableSelect
+            value={paymentStatusFilter}
+            onValueChange={(value) =>
+              setPaymentStatusFilter(
+                (value ?? "all") as PurchasePaymentStatusFilter,
+              )
+            }
+            placeholder={t("purchases.paymentStatusFilter")}
+            searchPlaceholder={t("common.search")}
+            options={[
+              { value: "all", label: t("purchases.allPaymentStatuses") },
+              { value: "paid", label: t("purchases.paidStatus") },
+              { value: "partial", label: t("purchases.partiallyPaidStatus") },
+              { value: "unpaid", label: t("purchases.unpaidStatus") },
+            ]}
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => {
+              setQuery("");
+              setDateFilter("today");
+              setSupplierFilter("all");
+              setPaymentStatusFilter("all");
+              setCustomFrom("");
+              setCustomTo("");
+            }}
+            className="xl:col-start-6"
+          >
+            {t("common.reset")}
+          </Button>
+        </div>
+        {dateFilter === "custom" && (
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Input
+              type="date"
+              value={customFrom}
+              onChange={(event) => setCustomFrom(event.target.value)}
+              aria-label={t("bills.fromDate")}
+            />
+            <Input
+              type="date"
+              value={customTo}
+              onChange={(event) => setCustomTo(event.target.value)}
+              aria-label={t("bills.toDate")}
+            />
+          </div>
+        )}
+      </Card>
+
+      <DataTable
+        columns={columns}
+        data={filteredPurchases}
+        enableGlobalSearch={false}
+        emptyTitle={t("purchases.noFilteredPurchases")}
+        pageSize={10}
+        labels={labels}
+        getRowId={(row) => row.id}
+      />
+    </div>
   );
 }

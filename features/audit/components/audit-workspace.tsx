@@ -17,11 +17,11 @@ import { useLocale } from "@/components/providers/locale-context";
 import { formatDateTime } from "@/lib/utils/date";
 
 const CATEGORIES: AuditCategory[] = [
-  'product','inventory','bill','purchase','customer','supplier','settings','shift','user','sync',
+  'product','inventory','bill','purchase','customer','supplier','settings','shift','cash','expense','user','sync',
 ];
 
 const ACTIONS: AuditAction[] = [
-  'create','update','delete','void','return','payment','stock_adjust','open','close','approve','reject','deactivate','reactivate','reset_link','resolve_conflict','price_change',
+  'create','update','delete','void','return','payment','stock_adjust','cash_in','cash_out','expense_create','open','close','approve','reject','deactivate','reactivate','reset_link','resolve_conflict','price_change',
 ];
 
 function categoryKey(c: AuditCategory): string {
@@ -43,6 +43,8 @@ const CATEGORY_BADGE_TONE: Record<AuditCategory, string> = {
   supplier: 'bg-fuchsia-50 text-fuchsia-700 ring-fuchsia-200',
   settings: 'bg-slate-50 text-slate-700 ring-slate-200',
   shift: 'bg-indigo-50 text-indigo-700 ring-indigo-200',
+  cash: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+  expense: 'bg-orange-50 text-orange-700 ring-orange-200',
   user: 'bg-rose-50 text-rose-700 ring-rose-200',
   sync: 'bg-warning-soft text-warning ring-warning/20',
 };

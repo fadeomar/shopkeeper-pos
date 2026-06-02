@@ -40,7 +40,7 @@ export function buildReceiptText({
   };
 }) {
   const currency = settings?.currency ?? "ILS";
-  const storeName = settings?.storeName || "Shopkeeper POS";
+  const storeName = settings?.storeName || "Asas POS";
   const withSplit = normalizeBillSplit(bill) as Bill;
   // Show the split breakdown only when the bill exercises more than one
   // method — pure cash / pure card / pure credit bills don't need an extra

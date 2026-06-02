@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db/schema";
 import { settingsRepo } from "@/lib/db/repositories";
-import { formatCurrency } from "@/lib/utils/money";
+import { formatCurrency, roundMoney } from "@/lib/utils/money";
 import { Card } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useLocale } from "@/components/providers/locale-context";
 import { PageShell } from "@/components/ui/page-shell";
 import { PageHeader } from "@/components/ui/page-header";
+import { usePermissions } from "@/lib/hooks/use-permissions";
 import {
   buildDailyTrend,
   filterBillsForReport,
@@ -22,6 +23,7 @@ import {
   getReportRange,
   summarizeProductSales,
   summarizeReportBills,
+  summarizeReportExpenses,
   summarizeReportPurchases,
   type ProductSalesRow,
   type ReportRange,
@@ -32,10 +34,12 @@ function ProductRows({
   rows,
   currency,
   emptyText,
+  showProfit,
 }: {
   rows: ProductSalesRow[];
   currency: string;
   emptyText: string;
+  showProfit: boolean;
 }) {
   const { t } = useLocale();
   if (rows.length === 0) {
@@ -62,8 +66,8 @@ function ProductRows({
               {formatCurrency(row.revenue, currency)}
             </p>
             <p className="text-xs text-slate-500">
-              {t("reports.qty")}: {row.quantity} ·{" "}
-              {formatCurrency(row.profit, currency)}
+              {t("reports.qty")}: {row.quantity}
+              {showProfit ? ` · ${formatCurrency(row.profit, currency)}` : ""}
             </p>
           </div>
         </div>
@@ -105,6 +109,7 @@ function TrendBars({ rows, currency }: { rows: TrendRow[]; currency: string }) {
 
 export function ReportsWorkspace() {
   const { t } = useLocale();
+  const { canViewProfit } = usePermissions();
   const bills = useLiveQuery(
     () => db.bills.orderBy("createdAt").reverse().toArray(),
     [],
@@ -113,6 +118,11 @@ export function ReportsWorkspace() {
   const products = useLiveQuery(() => db.products.toArray(), []);
   const purchases = useLiveQuery(
     () => db.purchases.orderBy("createdAt").reverse().toArray(),
+    [],
+  );
+  const expenses = useLiveQuery(
+    () => db.expenses.orderBy("createdAt").reverse().toArray(),
+    [],
     [],
   );
   const supplierPayments = useLiveQuery(
@@ -148,10 +158,25 @@ export function ReportsWorkspace() {
       }),
     [supplierPayments, range, customFrom, customTo],
   );
+  const filteredExpenses = useMemo(
+    () => filterByDateRange(expenses ?? [], { range, customFrom, customTo }),
+    [expenses, range, customFrom, customTo],
+  );
   const summary = useMemo(
     () => summarizeReportBills(filteredBills),
     [filteredBills],
   );
+  const expenseSummary = useMemo(
+    () => summarizeReportExpenses(filteredExpenses),
+    [filteredExpenses],
+  );
+  const netProfitAfterExpenses = useMemo(
+    () => roundMoney(summary.profit - expenseSummary.total),
+    [summary.profit, expenseSummary.total],
+  );
+  const grossMargin = summary.sales > 0
+    ? roundMoney((summary.profit / summary.sales) * 100)
+    : 0;
   const customerPaymentsCashIn = useMemo(() => {
     const { from, to } = getReportRange({ range, customFrom, customTo });
     return (customerPayments ?? [])
@@ -290,12 +315,14 @@ export function ReportsWorkspace() {
           value={formatCurrency(summary.sales, currency)}
           href="/bills"
         />
-        <StatCard
-          filled
-          tone="positive"
-          label={t("reports.totalProfit")}
-          value={formatCurrency(summary.profit, currency)}
-        />
+        {canViewProfit && (
+          <StatCard
+            filled
+            tone="positive"
+            label={t("reports.totalProfit")}
+            value={formatCurrency(summary.profit, currency)}
+          />
+        )}
         <StatCard
           filled
           tone="neutral"
@@ -319,6 +346,44 @@ export function ReportsWorkspace() {
           value={formatCurrency(customerPaymentsCashIn, currency)}
           href="/customers"
         />
+      </section>
+
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {canViewProfit && (
+          <StatCard
+            filled
+            tone="positive"
+            label={t("reports.grossProfitBeforeExpenses")}
+            value={formatCurrency(summary.profit, currency)}
+            helper={t("reports.grossProfitBeforeExpensesHelper")}
+          />
+        )}
+        <StatCard
+          filled
+          tone="danger"
+          label={t("reports.expensesTotal")}
+          value={formatCurrency(expenseSummary.total, currency)}
+          helper={`${expenseSummary.expenseCount} ${t("reports.entries")}`}
+          href="/expenses"
+        />
+        {canViewProfit && (
+          <StatCard
+            filled
+            tone={netProfitAfterExpenses >= 0 ? "positive" : "danger"}
+            label={t("reports.netProfitAfterExpenses")}
+            value={formatCurrency(netProfitAfterExpenses, currency)}
+            helper={t("reports.netProfitAfterExpensesHelper")}
+          />
+        )}
+        {canViewProfit && (
+          <StatCard
+            filled
+            tone="info"
+            label={t("reports.grossMargin")}
+            value={`${grossMargin.toFixed(1)}%`}
+            helper={t("reports.grossMarginHelper")}
+          />
+        )}
       </section>
 
       {/* Money-out */}
@@ -423,21 +488,25 @@ export function ReportsWorkspace() {
             rows={topProducts}
             currency={currency}
             emptyText={t("reports.noProductSales")}
+            showProfit={canViewProfit}
           />
         </Card>
-        <Card>
-          <h3 className="text-base font-semibold text-slate-900">
-            {t("reports.highestProfitProducts")}
-          </h3>
-          <p className="mt-1 text-sm text-slate-500">
-            {t("reports.highestProfitProductsDesc")}
-          </p>
-          <ProductRows
-            rows={highestProfitProducts}
-            currency={currency}
-            emptyText={t("reports.noProductSales")}
-          />
-        </Card>
+        {canViewProfit && (
+          <Card>
+            <h3 className="text-base font-semibold text-slate-900">
+              {t("reports.highestProfitProducts")}
+            </h3>
+            <p className="mt-1 text-sm text-slate-500">
+              {t("reports.highestProfitProductsDesc")}
+            </p>
+            <ProductRows
+              rows={highestProfitProducts}
+              currency={currency}
+              emptyText={t("reports.noProductSales")}
+              showProfit={canViewProfit}
+            />
+          </Card>
+        )}
         <Card>
           <h3 className="text-base font-semibold text-slate-900">
             {t("reports.lowStockSoldProducts")}
@@ -449,6 +518,7 @@ export function ReportsWorkspace() {
             rows={lowStockSoldProducts}
             currency={currency}
             emptyText={t("reports.noLowStockSold")}
+            showProfit={canViewProfit}
           />
         </Card>
       </section>

@@ -18,7 +18,7 @@ import {
   calculateChange,
   calculateLineSubtotal,
 } from "@/lib/utils/calculations";
-import { MONEY_EPSILON, formatCurrency } from "@/lib/utils/money";
+import { formatCurrency } from "@/lib/utils/money";
 import { createFinalizedBill } from "@/lib/services/billing-service";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,6 +45,7 @@ import { Card } from "@/components/ui/card";
 import { FitText } from "@/components/ui/fit-text";
 import { blurInputOnEnter } from "@/lib/utils/dismiss-on-enter";
 import { PaymentMethodControl } from "@/components/pos/payment-method-control";
+import { QuantityStepper } from "@/components/pos/quantity-stepper";
 import { QuickProductModal } from "./quick-product-modal";
 import { ReceiptView } from "./receipt-view";
 import { normalizeBarcode } from "@/lib/utils/barcode";
@@ -482,8 +483,6 @@ export function PosScreen() {
   const watchedDiscountAmount = Number(form.watch("discountAmount") || 0);
   const watchedTaxAmount = Number(form.watch("taxAmount") || 0);
   const watchedPaidAmount = Number(form.watch("paidAmount") || 0);
-  const watchedCashAmount = Number(form.watch("cashAmount") || 0);
-  const watchedCardAmount = Number(form.watch("cardAmount") || 0);
   const watchedNotes = form.watch("notes");
 
   useEffect(() => {
@@ -498,8 +497,6 @@ export function PosScreen() {
         discountAmount: watchedDiscountAmount,
         taxAmount: watchedTaxAmount,
         paidAmount: watchedPaidAmount,
-        cashAmount: watchedCashAmount,
-        cardAmount: watchedCardAmount,
         notes: watchedNotes ?? "",
       },
     });
@@ -514,8 +511,6 @@ export function PosScreen() {
     watchedDiscountAmount,
     watchedTaxAmount,
     watchedPaidAmount,
-    watchedCashAmount,
-    watchedCardAmount,
     watchedNotes,
   ]);
 
@@ -534,7 +529,6 @@ export function PosScreen() {
   );
 
   const isCreditSale = watchedPaymentMethod === "credit";
-  const isMixedSale = watchedPaymentMethod === "mixed";
   const defaultPaidAmount = isCreditSale
     ? 0
     : Number(billSummary.totalAmount.toFixed(2));
@@ -549,28 +543,13 @@ export function PosScreen() {
     0,
     calculateChange(billSummary.totalAmount, actualPaidAmount),
   );
-  const mixedSumDelta = useMemo(
-    () =>
-      isMixedSale
-        ? Math.abs(
-            watchedCashAmount + watchedCardAmount - billSummary.totalAmount,
-          )
-        : 0,
-    [
-      isMixedSale,
-      watchedCashAmount,
-      watchedCardAmount,
-      billSummary.totalAmount,
-    ],
-  );
-  const isMixedSplitValid = !isMixedSale || mixedSumDelta < MONEY_EPSILON;
   const hasCreditCustomer = Boolean(
     watchedCustomerName?.trim() || watchedCustomerPhone?.trim(),
   );
 
   // ── Settings-driven enforcement ───────────────────────────────────────────
-  // Payment-method toggles (undefined = enabled). "mixed" needs both cash and
-  // card, so it only appears when both are on.
+  // Payment-method toggles (undefined = enabled). Mixed payment is retired and
+  // intentionally not offered as a new-sale option.
   const enableCash = settings?.enableCash !== false;
   const enableCard = settings?.enableCard !== false;
   const enableCredit = settings?.enableCredit !== false;
@@ -629,13 +608,11 @@ export function PosScreen() {
     form.setValue("customerPhone", customer.phone ?? "", { shouldDirty: true });
   }
   const hasValidTotal = billSummary.totalAmount >= 0;
-  const hasEnoughPayment =
-    isCreditSale || isMixedSale || actualChangeAmount >= 0;
+  const hasEnoughPayment = isCreditSale || actualChangeAmount >= 0;
   const canFinalize =
     draftItems.length > 0 &&
     hasValidTotal &&
     hasEnoughPayment &&
-    isMixedSplitValid &&
     !shiftBlocked &&
     !discountExceedsLimit &&
     (!isCreditSale || hasCreditCustomer);
@@ -648,27 +625,6 @@ export function PosScreen() {
     });
   }, [defaultPaidAmount, isPaidAmountManuallyEdited, form]);
 
-  // When the user switches to 'mixed' the previous cash/card values (likely 0
-  // from cash/card/credit modes) leave the sum at zero — pre-fill with the
-  // current total going to cash so the split is valid on entry. The cashier
-  // can then move some amount to the card field.
-  useEffect(() => {
-    if (!isMixedSale) return;
-    const total = Number(billSummary.totalAmount.toFixed(2));
-    if (Math.abs(watchedCashAmount + watchedCardAmount - total) < MONEY_EPSILON)
-      return;
-    form.setValue("cashAmount", total, {
-      shouldDirty: false,
-      shouldValidate: false,
-    });
-    form.setValue("cardAmount", 0, {
-      shouldDirty: false,
-      shouldValidate: false,
-    });
-    // Intentionally only depend on isMixedSale + total — moving the split
-    // around afterwards is the cashier's job, not auto-correction.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMixedSale, billSummary.totalAmount, form]);
 
   // Auto-dismiss the success panel after a short window so the right column
   // returns to the bill summary form. Cancelled if the cashier starts a new
@@ -840,8 +796,6 @@ export function PosScreen() {
         form: {
           ...values,
           paidAmount: actualPaidAmount,
-          cashAmount: watchedCashAmount,
-          cardAmount: watchedCardAmount,
         },
       });
       clearDraft();
@@ -886,16 +840,12 @@ export function PosScreen() {
       cell: ({ row }) => {
         const item = row.original;
         return (
-          <NumberField
+          <QuantityStepper
             value={item.quantity}
-            onValueChange={(v) => updateQuantity(item.productId, v)}
-            precision="integer"
+            onChange={(v) => updateQuantity(item.productId, v)}
             min={1}
             max={item.availableStock}
-            align="center"
-            onKeyDown={dismissKeyboardOnEnter}
-            className="w-24"
-            fullWidth={false}
+            className="w-[160px]"
           />
         );
       },
@@ -1169,6 +1119,7 @@ export function PosScreen() {
                   emptyTitle={t("billing.addOneProduct")}
                   pageSize={10}
                   labels={tableLabels}
+                  getRowId={(row) => row.productId}
                 />
               </div>
             </>
@@ -1295,60 +1246,7 @@ export function PosScreen() {
                   )}
                 </div>
 
-                {isMixedSale ? (
-                  <FormField label={t("billing.mixedSplit")}>
-                    <div className="grid grid-cols-2 gap-2">
-                      <label className="flex flex-col gap-1">
-                        <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">
-                          {t("common.cash")}
-                        </span>
-                        <MoneyInput
-                          value={watchedCashAmount}
-                          currency={currency}
-                          min={0}
-                          onKeyDown={dismissKeyboardOnEnter}
-                          onValueChange={(v) => {
-                            const safe = Math.max(0, v);
-                            form.setValue("cashAmount", safe, {
-                              shouldDirty: true,
-                              shouldValidate: true,
-                            });
-                            // Auto-balance card so the sum lands on total.
-                            form.setValue(
-                              "cardAmount",
-                              Math.max(0, billSummary.totalAmount - safe),
-                              { shouldDirty: true, shouldValidate: false },
-                            );
-                          }}
-                        />
-                      </label>
-                      <label className="flex flex-col gap-1">
-                        <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">
-                          {t("common.card")}
-                        </span>
-                        <MoneyInput
-                          value={watchedCardAmount}
-                          currency={currency}
-                          min={0}
-                          onKeyDown={dismissKeyboardOnEnter}
-                          onValueChange={(v) => {
-                            const safe = Math.max(0, v);
-                            form.setValue("cardAmount", safe, {
-                              shouldDirty: true,
-                              shouldValidate: true,
-                            });
-                            // Auto-balance cash so the sum lands on total.
-                            form.setValue(
-                              "cashAmount",
-                              Math.max(0, billSummary.totalAmount - safe),
-                              { shouldDirty: true, shouldValidate: false },
-                            );
-                          }}
-                        />
-                      </label>
-                    </div>
-                  </FormField>
-                ) : watchedPaymentMethod === "card" ? null : (
+                {watchedPaymentMethod === "card" ? null : (
                   <FormField label={t("billing.actualPaid")}>
                     <div className="flex flex-col gap-2">
                       <div className="flex gap-2">
@@ -1478,11 +1376,6 @@ export function PosScreen() {
                     </p>
                   )}
 
-                {isMixedSale && !isMixedSplitValid && draftItems.length > 0 && (
-                  <p className="text-xs text-danger font-medium">
-                    {t("billing.mixedSumMismatch")}
-                  </p>
-                )}
 
                 {hasValidTotal &&
                   !hasEnoughPayment &&

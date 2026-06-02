@@ -11,7 +11,8 @@ import type { PaymentMethod, Settings } from "@/types/domain";
 
 /**
  * Reject a payment method the store has disabled. `undefined` means enabled
- * (historical default). "mixed" requires both cash and card to be on.
+ * (historical default). Mixed payment is retired and cannot be used to create
+ * new bills/purchases, even though old records may still display it.
  */
 export function assertPaymentMethodEnabled(
   settings: Settings,
@@ -23,8 +24,7 @@ export function assertPaymentMethodEnabled(
   const ok =
     (method === "cash" && cashOn) ||
     (method === "card" && cardOn) ||
-    (method === "credit" && creditOn) ||
-    (method === "mixed" && cashOn && cardOn);
+    (method === "credit" && creditOn);
   if (!ok) {
     throw new AppError(AppErrorCode.PAYMENT_METHOD_DISABLED);
   }

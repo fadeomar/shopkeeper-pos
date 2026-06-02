@@ -59,15 +59,22 @@ function getRequestedQuantities(items: BillDraftItem[]): Map<string, number> {
   return requested;
 }
 
+async function assertShiftStillEditable(shiftId?: string): Promise<void> {
+  if (!shiftId) return;
+  const shift = await db.shifts.get(shiftId);
+  if (shift?.status === 'closed') {
+    throw new AppError(AppErrorCode.CLOSED_SHIFT_RECORD_LOCKED);
+  }
+}
+
 /**
  * Derive the cash/card/credit allocation plus the legacy paid/change figures
  * from a finalized form + total. Invariant for the returned values:
  *   cashAmount + cardAmount + creditAmount === totalAmount
  *
- * Mixed bills require the cashier to provide an explicit split that sums to
- * the total. Cash overpayment with change is supported only for the pure
- * 'cash' method — that's how typical POS interactions work; mixed-with-change
- * is too rare to be worth a separate code path.
+ * Mixed payment is retired. Old mixed bills remain readable through
+ * normalizeBillSplit(), but new bills cannot be created with paymentMethod
+ * 'mixed'. Cash overpayment with change is supported only for pure cash.
  */
 function derivePaymentSplit(
   paymentMethod: BillFormValues["paymentMethod"],
@@ -105,20 +112,8 @@ function derivePaymentSplit(
         changeAmount: 0,
       };
     }
-    case "mixed": {
-      const cashAmount = roundMoney(Math.max(0, Number(form.cashAmount) || 0));
-      const cardAmount = roundMoney(Math.max(0, Number(form.cardAmount) || 0));
-      if (Math.abs(cashAmount + cardAmount - total) > MONEY_EPSILON) {
-        throw new AppError(AppErrorCode.BILL_MIXED_SPLIT_MISMATCH);
-      }
-      return {
-        cashAmount,
-        cardAmount,
-        creditAmount: 0,
-        paidAmount: roundMoney(cashAmount + cardAmount),
-        changeAmount: 0,
-      };
-    }
+    case "mixed":
+      throw new AppError(AppErrorCode.PAYMENT_METHOD_DISABLED);
   }
 }
 
@@ -170,11 +165,7 @@ export async function createFinalizedBill(input: {
     throw new AppError(AppErrorCode.BILL_PAID_TOO_LOW);
   }
   if (input.form.paymentMethod === 'mixed') {
-    const cashPreview = Math.max(0, Number(input.form.cashAmount) || 0);
-    const cardPreview = Math.max(0, Number(input.form.cardAmount) || 0);
-    if (Math.abs(cashPreview + cardPreview - totalAmountPreview) > MONEY_EPSILON) {
-      throw new AppError(AppErrorCode.BILL_MIXED_SPLIT_MISMATCH);
-    }
+    throw new AppError(AppErrorCode.PAYMENT_METHOD_DISABLED);
   }
 
   const result = await db.transaction(
@@ -441,6 +432,14 @@ export async function createFinalizedBill(input: {
   );
 
   requestSync();
+  void logAudit({
+    category: 'bill',
+    action: 'create',
+    entityId: result.bill.id,
+    entityLabel: result.bill.billNumber,
+    summary: `${result.bill.itemCount} items / ${result.bill.totalAmount}`,
+    shiftId: result.bill.shiftId,
+  });
   return result;
 }
 
@@ -473,13 +472,14 @@ export async function voidBill(input: {
 
   await db.transaction(
     "rw",
-    [db.bills, db.billItems, db.products, db.stockMovements, db.syncQueue],
+    [db.bills, db.billItems, db.products, db.stockMovements, db.shifts, db.syncQueue],
     async () => {
       const bill = await db.bills.get(input.billId);
       if (!bill) throw new AppError(AppErrorCode.BILL_NOT_FOUND);
       if (bill.status === "voided") throw new AppError(AppErrorCode.BILL_ALREADY_VOIDED);
       if (bill.status !== "finalized")
         throw new AppError(AppErrorCode.BILL_NOT_FINALIZED);
+      await assertShiftStillEditable(bill.shiftId);
       auditBillNumber = bill.billNumber;
       auditShiftId = bill.shiftId;
 
@@ -596,7 +596,7 @@ export async function returnBillItem(input: {
 
   await db.transaction(
     "rw",
-    [db.bills, db.billItems, db.products, db.stockMovements, db.syncQueue],
+    [db.bills, db.billItems, db.products, db.stockMovements, db.shifts, db.syncQueue],
     async () => {
       const [bill, item] = await Promise.all([
         db.bills.get(input.billId),
@@ -608,6 +608,7 @@ export async function returnBillItem(input: {
         throw new AppError(AppErrorCode.BILL_ITEM_NOT_FOUND);
       if (bill.status === "voided")
         throw new AppError(AppErrorCode.BILL_VOIDED_NO_RETURN);
+      await assertShiftStillEditable(bill.shiftId);
 
       const remainingQuantity = getRemainingItemQuantity(item);
       if (quantity > remainingQuantity)

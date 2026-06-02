@@ -3,6 +3,7 @@ import { nowIso } from '@/lib/utils/date';
 import { createId } from '@/lib/utils/id';
 import { roundMoney } from '@/lib/utils/money';
 import { AppError, AppErrorCode } from '@/lib/errors/app-error';
+import { SETTINGS_ID } from '@/lib/db/repositories';
 import { buildSyncQueueItem } from '@/lib/services/sync-queue-service';
 import { logAudit } from '@/lib/services/audit-service';
 import type { Expense, ExpenseCategory, ExpensePaymentMethod } from '@/types/domain';
@@ -24,7 +25,13 @@ export async function recordExpense(input: RecordExpenseInput): Promise<Expense>
   }
 
   const now = nowIso();
-  const activeShift = await db.shifts.where('status').equals('open').first();
+  const [settings, activeShift] = await Promise.all([
+    db.settings.get(SETTINGS_ID),
+    db.shifts.where('status').equals('open').first(),
+  ]);
+  if (settings?.requireShift && input.paymentMethod === 'cash' && !activeShift) {
+    throw new AppError(AppErrorCode.SHIFT_REQUIRED_FOR_CASH_ACTION);
+  }
 
   const expense: Expense = {
     id: createId('exp'),
@@ -56,8 +63,8 @@ export async function recordExpense(input: RecordExpenseInput): Promise<Expense>
   }
 
   void logAudit({
-    category: 'shift',
-    action: 'payment',
+    category: 'expense',
+    action: 'expense_create',
     entityId: expense.id,
     entityLabel: `${expense.category}${expense.payee ? ` — ${expense.payee}` : ''}`,
     summary: `${expense.amount} (${expense.paymentMethod})`,

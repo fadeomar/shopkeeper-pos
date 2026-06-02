@@ -133,9 +133,13 @@ export function ZReport() {
     const filteredExpenses = inRange(expenses);
     const filteredCashMovements = inRange(cashMovements);
     const shiftsInRange = shifts.filter((s) => {
-      const d = new Date(s.openedAt);
-      if (from && d < from) return false;
-      if (to && d >= to) return false;
+      const opened = new Date(s.openedAt);
+      const closed = s.closedAt ? new Date(s.closedAt) : new Date();
+      // A shift can open before midnight and still contain today's sales,
+      // purchases, payments and expenses. Count any shift that overlaps the
+      // selected report window instead of only shifts opened inside it.
+      if (from && closed <= from) return false;
+      if (to && opened >= to) return false;
       return true;
     });
 
@@ -147,9 +151,9 @@ export function ZReport() {
     const expenseSummary = summarizeReportExpenses(filteredExpenses);
     const cashSummary = summarizeReportCashMovements(filteredCashMovements);
 
-    // Drawer reconciliation: aggregate across all shifts that opened in
-    // range. Sales cash uses bills' cashAmount net of returns. Purchases
-    // cash uses purchases' cashAmount net of returns.
+    // Drawer reconciliation: aggregate across shifts that overlap the range.
+    // Sales cash uses bills' cashAmount net of returns. Purchases cash uses
+    // purchases' cashAmount net of returns.
     const openingCashAcrossShifts = roundMoney(
       shiftsInRange.reduce((sum, s) => sum + (Number(s.openingCash) || 0), 0),
     );
