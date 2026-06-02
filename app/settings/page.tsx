@@ -465,6 +465,9 @@ export default function SettingsPage() {
             v{process.env.NEXT_PUBLIC_APP_VERSION ?? "—"}
           </span>
         </div>
+        <p className="mt-3 rounded-xl border border-info/20 bg-info-soft px-3 py-2 text-xs font-medium text-info">
+          {t("settings.pwaShortcutHelp")}
+        </p>
       </Card>
     </PageShell>
   );

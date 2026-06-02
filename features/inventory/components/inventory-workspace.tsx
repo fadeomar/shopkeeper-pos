@@ -37,6 +37,16 @@ function daysUntil(date: string): number {
   return Math.ceil((target.getTime() - today.getTime()) / 86_400_000);
 }
 
+
+function movementLabelKey(type: StockMovement["movementType"], quantityChange: number): string {
+  if (type === "sale") return quantityChange < 0 ? "inventory.movementSaleStockOut" : "inventory.movementSale";
+  if (type === "purchase") return quantityChange >= 0 ? "inventory.movementPurchaseStockIn" : "inventory.movementPurchase";
+  if (type === "return") return quantityChange >= 0 ? "inventory.movementReturnStockIn" : "inventory.movementReturnStockOut";
+  if (type === "adjustment") return quantityChange >= 0 ? "inventory.movementAdjustmentStockIn" : "inventory.movementAdjustmentStockOut";
+  if (type === "damaged") return "inventory.movementDamagedStockOut";
+  return "inventory.movementInitialStockIn";
+}
+
 function formatDateTime(value: string): string {
   return new Intl.DateTimeFormat(undefined, {
     dateStyle: "medium",
@@ -178,8 +188,8 @@ export function InventoryWorkspace() {
       header: t("inventory.type"),
       accessorKey: "movementType",
       cell: ({ row }) => (
-        <span className="capitalize text-slate-600">
-          {row.original.movementType}
+        <span className="text-slate-600">
+          {t(movementLabelKey(row.original.movementType, row.original.quantityChange))}
         </span>
       ),
     },

@@ -25,6 +25,24 @@ export interface ProductSalesRow {
   minimumStockAlert?: number;
 }
 
+
+export interface CategorySalesRow {
+  key: string;
+  category: string;
+  quantity: number;
+  revenue: number;
+  profit: number;
+}
+
+export interface PartyReportRow {
+  key: string;
+  name: string;
+  phone?: string;
+  count: number;
+  total: number;
+  due: number;
+}
+
 export interface TrendRow {
   label: string;
   sales: number;
@@ -82,6 +100,20 @@ export function filterByDateRange<T extends { createdAt: string }>(
   const { from, to } = getReportRange(filters);
   return rows.filter((row) => {
     const created = new Date(row.createdAt);
+    if (from && created < from) return false;
+    if (to && created >= to) return false;
+    return true;
+  });
+}
+
+export function filterExpensesForReport(
+  rows: Expense[],
+  filters: ReportFilters,
+): Expense[] {
+  const { from, to } = getReportRange(filters);
+  return rows.filter((row) => {
+    const dateValue = row.expenseDate || row.createdAt;
+    const created = new Date(dateValue);
     if (from && created < from) return false;
     if (to && created >= to) return false;
     return true;
@@ -338,4 +370,70 @@ export function summarizeReportCashMovements(movements: CashMovement[]) {
     net: roundMoney(cashIn + cashOut),
     count: movements.length,
   };
+}
+
+
+export function summarizeCategorySales(rows: ProductSalesRow[]): CategorySalesRow[] {
+  const categories = new Map<string, CategorySalesRow>();
+  for (const row of rows) {
+    const category = row.category?.trim() || '—';
+    const existing = categories.get(category) ?? {
+      key: category,
+      category,
+      quantity: 0,
+      revenue: 0,
+      profit: 0,
+    };
+    existing.quantity += row.quantity;
+    existing.revenue = roundMoney(existing.revenue + row.revenue);
+    existing.profit = roundMoney(existing.profit + row.profit);
+    categories.set(category, existing);
+  }
+  return Array.from(categories.values()).sort((a, b) => b.revenue - a.revenue);
+}
+
+export function summarizeCustomerSales(bills: Bill[]): PartyReportRow[] {
+  const rows = new Map<string, PartyReportRow>();
+  for (const bill of bills) {
+    if (bill.status === 'voided') continue;
+    const name = bill.customerName?.trim() || 'Walk-in';
+    const key = bill.customerId || bill.customerPhone || name;
+    const existing = rows.get(key) ?? {
+      key,
+      name,
+      phone: bill.customerPhone,
+      count: 0,
+      total: 0,
+      due: 0,
+    };
+    const total = getBillNetTotal(bill);
+    existing.count += 1;
+    existing.total = roundMoney(existing.total + total);
+    existing.due = roundMoney(existing.due + Math.max(0, (bill.creditAmount ?? 0) - (bill.returnedAmount ?? 0)));
+    rows.set(key, existing);
+  }
+  return Array.from(rows.values()).sort((a, b) => b.total - a.total);
+}
+
+export function summarizeSupplierPurchases(purchases: Purchase[]): PartyReportRow[] {
+  const rows = new Map<string, PartyReportRow>();
+  for (const purchase of purchases) {
+    if (purchase.status === 'voided') continue;
+    const name = purchase.supplierName?.trim() || 'Walk-in supplier';
+    const key = purchase.supplierId || purchase.supplierPhone || name;
+    const existing = rows.get(key) ?? {
+      key,
+      name,
+      phone: purchase.supplierPhone,
+      count: 0,
+      total: 0,
+      due: 0,
+    };
+    const netCost = Math.max(0, purchase.totalAmount - (purchase.returnedAmount ?? 0));
+    existing.count += 1;
+    existing.total = roundMoney(existing.total + netCost);
+    existing.due = roundMoney(existing.due + Math.max(0, purchase.creditAmount ?? 0));
+    rows.set(key, existing);
+  }
+  return Array.from(rows.values()).sort((a, b) => b.total - a.total);
 }

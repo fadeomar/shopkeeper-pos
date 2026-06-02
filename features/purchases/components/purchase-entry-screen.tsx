@@ -462,10 +462,16 @@ export function PurchaseEntryScreen() {
     selectedProductForLine &&
       Math.abs(newLineCost - selectedProductForLine.buyPrice) > 0.001,
   );
+  const selectedLineEstimatedMargin = selectedProductForLine
+    ? selectedProductForLine.sellPrice - newLineCost
+    : 0;
+  const selectedLineMarginPercent = selectedProductForLine?.sellPrice
+    ? (selectedLineEstimatedMargin / selectedProductForLine.sellPrice) * 100
+    : 0;
   const selectedLineLowMargin = Boolean(
     selectedProductForLine &&
       selectedProductForLine.sellPrice > 0 &&
-      newLineCost >= selectedProductForLine.sellPrice,
+      selectedLineMarginPercent <= 10,
   );
 
   const purchaseSummary = useMemo(
@@ -879,11 +885,20 @@ export function PurchaseEntryScreen() {
 
           {(selectedLineCostDiffers || selectedLineLowMargin) && selectedProductForLine && (
             <div className="rounded-xl border border-warning/30 bg-warning-soft px-4 py-3 text-sm text-warning">
+              <p className="font-semibold text-slate-900">
+                {t("purchases.purchaseCostChanged")}
+              </p>
+              <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-700 sm:grid-cols-4">
+                <span>{t("purchases.currentCost")}: <strong dir="ltr">{formatCurrency(selectedProductForLine.buyPrice, currency)}</strong></span>
+                <span>{t("purchases.newCost")}: <strong dir="ltr">{formatCurrency(newLineCost, currency)}</strong></span>
+                <span>{t("purchases.sellPrice")}: <strong dir="ltr">{formatCurrency(selectedProductForLine.sellPrice, currency)}</strong></span>
+                <span>{t("purchases.estimatedMargin")}: <strong dir="ltr">{formatCurrency(selectedLineEstimatedMargin, currency)} ({selectedLineMarginPercent.toFixed(1)}%)</strong></span>
+              </div>
               {selectedLineCostDiffers && (
-                <p className="font-medium">{t("purchases.buyPriceWillUpdate")}</p>
+                <p className="mt-2 text-xs font-medium">{t("purchases.buyPriceWillUpdateDetailed")}</p>
               )}
               {selectedLineLowMargin && (
-                <p className="mt-1 text-xs font-semibold">
+                <p className="mt-1 text-xs font-semibold text-danger">
                   {t("purchases.reviewSellPrice")}
                 </p>
               )}

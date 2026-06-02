@@ -22,6 +22,9 @@ import { DataTable } from "@/components/ui/data-table";
 // import { EmptyState } from '@/components/ui/empty-state';
 import { Modal } from "@/components/ui/modal";
 import { formatCurrency, MONEY_EPSILON } from "@/lib/utils/money";
+import { formatDateTime } from "@/lib/utils/date";
+import { downloadCSV } from "@/lib/utils/export-csv";
+import { netSplitField, normalizeBillSplit } from "@/lib/utils/bill-split";
 import { RecordSyncBadge } from "@/components/sync/record-sync-badge";
 import { settingsRepo } from "@/lib/db/repositories";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -34,6 +37,9 @@ export function SupplierLedgerWorkspace() {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<SupplierLedgerDetails | null>(null);
   const [paymentOpen, setPaymentOpen] = useState(false);
+  const [statementOpen, setStatementOpen] = useState(false);
+  const [statementFrom, setStatementFrom] = useState("");
+  const [statementTo, setStatementTo] = useState("");
   const [amount, setAmount] = useState<number>(0);
   const [note, setNote] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<
@@ -51,6 +57,107 @@ export function SupplierLedgerWorkspace() {
       ? safePaymentAmount - Math.max(0, balanceOwedAtModal)
       : 0;
   const isOverpayment = overpaymentExtra > MONEY_EPSILON;
+
+  type SupplierStatementRow = {
+    id: string;
+    date: string;
+    type: string;
+    reference: string;
+    debit: number;
+    credit: number;
+    balance: number;
+    note?: string;
+  };
+
+  const statementRows = useMemo<SupplierStatementRow[]>(() => {
+    if (!selected) return [];
+    const allRows = [
+      ...selected.purchases.map((purchase) => {
+        const withSplit = normalizeBillSplit(purchase);
+        const debit = Math.max(0, purchase.totalAmount - (purchase.returnedAmount ?? 0));
+        const paidAtPurchase =
+          netSplitField(withSplit, withSplit.cashAmount) +
+          netSplitField(withSplit, withSplit.cardAmount);
+        return {
+          id: `purchase-${purchase.id}`,
+          date: purchase.invoiceDate ? `${purchase.invoiceDate}T00:00:00.000` : purchase.createdAt,
+          type: t("suppliers.statementPurchase"),
+          reference: purchase.supplierInvoiceNumber || purchase.purchaseNumber,
+          debit,
+          credit: Math.max(0, paidAtPurchase),
+          note: purchase.notes,
+        };
+      }),
+      ...selected.paymentRows.map((payment) => ({
+        id: `payment-${payment.id}`,
+        date: payment.createdAt,
+        type: t("suppliers.statementPayment"),
+        reference: payment.id,
+        debit: 0,
+        credit: Math.max(0, payment.amount),
+        note: payment.note,
+      })),
+    ].sort((a, b) => a.date.localeCompare(b.date));
+
+    const fromIso = statementFrom ? `${statementFrom}T00:00:00.000` : "";
+    const toIso = statementTo ? `${statementTo}T23:59:59.999` : "";
+    const opening = allRows
+      .filter((row) => fromIso && row.date < fromIso)
+      .reduce((sum, row) => sum + row.debit - row.credit, 0);
+    let running = opening;
+    return allRows
+      .filter((row) => (!fromIso || row.date >= fromIso) && (!toIso || row.date <= toIso))
+      .map((row) => {
+        running += row.debit - row.credit;
+        return { ...row, balance: running };
+      });
+  }, [selected, statementFrom, statementTo, t]);
+
+  const statementSummary = useMemo(() => {
+    if (!selected) return { opening: 0, debit: 0, credit: 0, ending: 0 };
+    const fromIso = statementFrom ? `${statementFrom}T00:00:00.000` : "";
+    const allRows = [
+      ...selected.purchases.map((purchase) => {
+        const withSplit = normalizeBillSplit(purchase);
+        return {
+          date: purchase.invoiceDate ? `${purchase.invoiceDate}T00:00:00.000` : purchase.createdAt,
+          debit: Math.max(0, purchase.totalAmount - (purchase.returnedAmount ?? 0)),
+          credit:
+            netSplitField(withSplit, withSplit.cashAmount) +
+            netSplitField(withSplit, withSplit.cardAmount),
+        };
+      }),
+      ...selected.paymentRows.map((payment) => ({
+        date: payment.createdAt,
+        debit: 0,
+        credit: payment.amount,
+      })),
+    ];
+    const opening = allRows
+      .filter((row) => fromIso && row.date < fromIso)
+      .reduce((sum, row) => sum + row.debit - row.credit, 0);
+    const debit = statementRows.reduce((sum, row) => sum + row.debit, 0);
+    const credit = statementRows.reduce((sum, row) => sum + row.credit, 0);
+    return { opening, debit, credit, ending: opening + debit - credit };
+  }, [selected, statementFrom, statementRows]);
+
+  function exportSupplierStatementCsv() {
+    if (!selected) return;
+    const stamp = new Date().toISOString().slice(0, 10);
+    downloadCSV(
+      statementRows,
+      [
+        { header: t("suppliers.statementDate"), value: (row) => row.date },
+        { header: t("suppliers.statementType"), value: (row) => row.type },
+        { header: t("suppliers.statementReference"), value: (row) => row.reference },
+        { header: t("suppliers.statementDebit"), value: (row) => row.debit },
+        { header: t("suppliers.statementCredit"), value: (row) => row.credit },
+        { header: t("suppliers.statementBalance"), value: (row) => row.balance },
+        { header: t("suppliers.note"), value: (row) => row.note ?? "" },
+      ],
+      `asas-supplier-statement-${selected.name.replace(/[^\w\u0600-\u06FF-]+/g, "-")}-${stamp}.csv`,
+    );
+  }
 
   async function savePayment() {
     if (!selected) return;
@@ -268,9 +375,14 @@ export function SupplierLedgerWorkspace() {
               {t("common.close")}
             </Button>
             {selected && (
-              <Button type="button" onClick={() => setPaymentOpen(true)}>
-                {t("suppliers.recordPayment")}
-              </Button>
+              <>
+                <Button type="button" variant="secondary" onClick={() => setStatementOpen(true)}>
+                  {t("suppliers.statement")}
+                </Button>
+                <Button type="button" onClick={() => setPaymentOpen(true)}>
+                  {t("suppliers.recordPayment")}
+                </Button>
+              </>
             )}
           </>
         }
@@ -365,6 +477,119 @@ export function SupplierLedgerWorkspace() {
                   ))}
                 </div>
               )}
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={statementOpen && Boolean(selected)}
+        title={selected ? t("suppliers.statementFor", { name: selected.name }) : t("suppliers.statement")}
+        description={t("suppliers.statementDesc")}
+        onClose={() => setStatementOpen(false)}
+        presentation="sheet"
+        className="sm:max-w-4xl"
+        footer={
+          <>
+            <Button type="button" variant="ghost" onClick={() => setStatementOpen(false)}>
+              {t("common.close")}
+            </Button>
+            <Button type="button" variant="secondary" onClick={exportSupplierStatementCsv}>
+              {t("suppliers.exportStatementCsv")}
+            </Button>
+            <Button type="button" onClick={() => window.print()}>
+              {t("suppliers.printStatement")}
+            </Button>
+          </>
+        }
+      >
+        {selected && (
+          <div className="space-y-4">
+            <div className="no-print grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                  {t("reports.fromDate")}
+                </span>
+                <Input type="date" value={statementFrom} onChange={(event) => setStatementFrom(event.target.value)} />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                  {t("reports.toDate")}
+                </span>
+                <Input type="date" value={statementTo} onChange={(event) => setStatementTo(event.target.value)} />
+              </label>
+            </div>
+
+            <div id="receipt-print-area" className="rounded-2xl border border-slate-200 bg-white p-4 text-slate-900 print:border-0">
+              <div className="border-b border-dashed border-slate-300 pb-4 text-center">
+                <p className="text-lg font-black tracking-tight">{settings?.storeName || "Asas POS"}</p>
+                {settings?.businessPhone && <p className="text-xs text-slate-500">{settings.businessPhone}</p>}
+                {settings?.businessAddress && <p className="text-xs text-slate-500">{settings.businessAddress}</p>}
+                <p className="mt-1 text-xs uppercase tracking-[0.2em] text-slate-500">{t("suppliers.statement")}</p>
+                <p className="mt-1 text-sm font-semibold text-slate-800">{selected.name}</p>
+                {selected.phone && <p className="text-xs text-slate-500">{selected.phone}</p>}
+                <p className="mt-1 text-xs text-slate-500">
+                  {statementFrom || t("reports.allTime")} → {statementTo || t("reports.allTime")}
+                </p>
+                <p className="text-xs text-slate-500">{t("suppliers.generatedAt")}: {formatDateTime(new Date().toISOString())}</p>
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <StatCard label={t("suppliers.openingBalance")} value={formatCurrency(statementSummary.opening, currency)} />
+                <StatCard label={t("suppliers.statementDebit")} value={formatCurrency(statementSummary.debit, currency)} />
+                <StatCard label={t("suppliers.statementCredit")} value={formatCurrency(statementSummary.credit, currency)} />
+                <StatCard label={t("suppliers.endingBalance")} value={formatCurrency(statementSummary.ending, currency)} />
+              </div>
+
+              <div className="mt-4 space-y-2 sm:hidden">
+                {statementRows.length === 0 ? (
+                  <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-500">{t("suppliers.noStatementRows")}</p>
+                ) : statementRows.map((row) => (
+                  <div key={row.id} className="rounded-xl border border-slate-100 p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-slate-900">{row.type}</p>
+                        <p className="text-xs text-slate-500">{row.reference} · {formatDateTime(row.date)}</p>
+                      </div>
+                      <span className="text-xs font-semibold text-slate-500" dir="ltr">{formatCurrency(row.balance, currency)}</span>
+                    </div>
+                    <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                      <p><span className="text-slate-500">{t("suppliers.statementDebit")}: </span><span dir="ltr">{formatCurrency(row.debit, currency)}</span></p>
+                      <p><span className="text-slate-500">{t("suppliers.statementCredit")}: </span><span dir="ltr">{formatCurrency(row.credit, currency)}</span></p>
+                    </div>
+                    {row.note && <p className="mt-2 text-xs text-slate-500">{row.note}</p>}
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4 hidden overflow-x-auto rounded-2xl border border-slate-100 sm:block print:block print:overflow-visible">
+                <table className="min-w-full divide-y divide-slate-100 text-sm">
+                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-3 py-2 text-start">{t("suppliers.statementDate")}</th>
+                      <th className="px-3 py-2 text-start">{t("suppliers.statementType")}</th>
+                      <th className="px-3 py-2 text-start">{t("suppliers.statementReference")}</th>
+                      <th className="px-3 py-2 text-end">{t("suppliers.statementDebit")}</th>
+                      <th className="px-3 py-2 text-end">{t("suppliers.statementCredit")}</th>
+                      <th className="px-3 py-2 text-end">{t("suppliers.statementBalance")}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {statementRows.length === 0 ? (
+                      <tr><td colSpan={6} className="px-3 py-4 text-center text-sm text-slate-500">{t("suppliers.noStatementRows")}</td></tr>
+                    ) : statementRows.map((row) => (
+                      <tr key={row.id}>
+                        <td className="px-3 py-2 whitespace-nowrap">{formatDateTime(row.date)}</td>
+                        <td className="px-3 py-2">{row.type}</td>
+                        <td className="px-3 py-2">{row.reference}</td>
+                        <td className="px-3 py-2 text-end tabular-nums" dir="ltr">{formatCurrency(row.debit, currency)}</td>
+                        <td className="px-3 py-2 text-end tabular-nums" dir="ltr">{formatCurrency(row.credit, currency)}</td>
+                        <td className="px-3 py-2 text-end font-semibold tabular-nums" dir="ltr">{formatCurrency(row.balance, currency)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}

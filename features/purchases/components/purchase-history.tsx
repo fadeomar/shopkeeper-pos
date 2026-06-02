@@ -17,6 +17,7 @@ import { db } from "@/lib/db/schema";
 import { settingsRepo } from "@/lib/db/repositories";
 import { formatDateTime } from "@/lib/utils/date";
 import { formatCurrency } from "@/lib/utils/money";
+import { downloadCSV } from "@/lib/utils/export-csv";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { DataTable, useDataTableLabels } from "@/components/ui/data-table";
@@ -152,15 +153,47 @@ export function PurchaseHistory() {
     });
   }, [purchases, query, dateFilter, supplierFilter, paymentStatusFilter, customFrom, customTo]);
 
+  function paymentStatusLabel(purchase: Purchase): string {
+    const due = getPurchaseAmountDue(purchase);
+    if (due <= 0) return t("purchases.paidStatus");
+    return purchase.paidAmount > 0
+      ? t("purchases.partiallyPaidStatus")
+      : t("purchases.unpaidStatus");
+  }
+
+  function exportPurchasesCsv() {
+    const stamp = new Date().toISOString().slice(0, 10);
+    downloadCSV(
+      filteredPurchases,
+      [
+        { header: t("purchases.purchaseNumber"), value: (row) => row.purchaseNumber },
+        { header: t("purchases.invoiceNumber"), value: (row) => row.supplierInvoiceNumber ?? "" },
+        { header: t("purchases.invoiceDateShort"), value: (row) => row.invoiceDate ?? row.createdAt },
+        { header: t("purchases.supplier"), value: (row) => row.supplierName ?? "" },
+        { header: t("bills.itemCount"), value: (row) => row.itemCount },
+        { header: t("purchases.total"), value: (row) => row.totalAmount },
+        { header: t("purchases.paid"), value: (row) => row.paidAmount },
+        { header: t("purchases.amountDue"), value: (row) => getPurchaseAmountDue(row) },
+        { header: t("purchases.paymentStatus"), value: (row) => paymentStatusLabel(row) },
+        { header: t("purchases.status"), value: (row) => t(`common.${row.status}`) },
+        { header: t("sync.status"), value: (row) => row.syncStatus ?? "synced" },
+      ],
+      `asas-purchases-${stamp}.csv`,
+    );
+  }
+
   const columns = useMemo<ColumnDef<Purchase>[]>(
     () => [
       {
         header: t("purchases.purchaseNumber"),
         accessorKey: "purchaseNumber",
         cell: ({ row }) => (
-          <span className="font-medium text-slate-800 tabular-nums">
+          <a
+            href={`/purchases/${encodeURIComponent(row.original.id)}`}
+            className="font-medium tabular-nums text-info hover:text-info/80"
+          >
             {row.original.purchaseNumber}
-          </span>
+          </a>
         ),
       },
       {
@@ -257,6 +290,20 @@ export function PurchaseHistory() {
           </Badge>
         ),
       },
+
+      {
+        header: t("bills.action"),
+        id: "actions",
+        enableSorting: false,
+        cell: ({ row }) => (
+          <a
+            href={`/purchases/${encodeURIComponent(row.original.id)}`}
+            className="inline-flex min-h-[34px] items-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            {t("purchases.viewDetails")}
+          </a>
+        ),
+      },
       {
         header: t("sync.status"),
         id: "sync",
@@ -328,21 +375,30 @@ export function PurchaseHistory() {
               { value: "unpaid", label: t("purchases.unpaidStatus") },
             ]}
           />
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => {
-              setQuery("");
-              setDateFilter("today");
-              setSupplierFilter("all");
-              setPaymentStatusFilter("all");
-              setCustomFrom("");
-              setCustomTo("");
-            }}
-            className="xl:col-start-6"
-          >
-            {t("common.reset")}
-          </Button>
+          <div className="flex flex-col gap-2 sm:flex-row xl:col-start-6 xl:flex-col">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setQuery("");
+                setDateFilter("today");
+                setSupplierFilter("all");
+                setPaymentStatusFilter("all");
+                setCustomFrom("");
+                setCustomTo("");
+              }}
+            >
+              {t("common.reset")}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={exportPurchasesCsv}
+              disabled={filteredPurchases.length === 0}
+            >
+              {t("reports.exportCsv")}
+            </Button>
+          </div>
         </div>
         {dateFilter === "custom" && (
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">

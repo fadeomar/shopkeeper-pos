@@ -6,6 +6,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db/schema";
 import { settingsRepo } from "@/lib/db/repositories";
 import { formatCurrency, roundMoney } from "@/lib/utils/money";
+import { downloadCSV } from "@/lib/utils/export-csv";
 import { Card } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
 import { Button } from "@/components/ui/button";
@@ -19,12 +20,18 @@ import {
   buildDailyTrend,
   filterBillsForReport,
   filterByDateRange,
+  filterExpensesForReport,
   getLowStockSoldProducts,
   getReportRange,
   summarizeProductSales,
+  summarizeCategorySales,
+  summarizeCustomerSales,
+  summarizeSupplierPurchases,
   summarizeReportBills,
   summarizeReportExpenses,
   summarizeReportPurchases,
+  type CategorySalesRow,
+  type PartyReportRow,
   type ProductSalesRow,
   type ReportRange,
   type TrendRow,
@@ -69,6 +76,75 @@ function ProductRows({
               {t("reports.qty")}: {row.quantity}
               {showProfit ? ` · ${formatCurrency(row.profit, currency)}` : ""}
             </p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+
+function CategoryRows({
+  rows,
+  currency,
+  emptyText,
+  showProfit,
+}: {
+  rows: CategorySalesRow[];
+  currency: string;
+  emptyText: string;
+  showProfit: boolean;
+}) {
+  const { t } = useLocale();
+  if (rows.length === 0) {
+    return <p className="py-8 text-center text-sm text-slate-400">{emptyText}</p>;
+  }
+  return (
+    <div className="divide-y divide-slate-100">
+      {rows.map((row) => (
+        <div key={row.key} className="grid grid-cols-[1fr_auto] gap-3 py-3 text-sm">
+          <div>
+            <p className="font-semibold text-slate-800">{row.category}</p>
+            <p className="text-xs text-slate-500">{t("reports.qty")}: {row.quantity}</p>
+          </div>
+          <div className="text-end">
+            <p className="font-bold tabular-nums text-slate-900">{formatCurrency(row.revenue, currency)}</p>
+            {showProfit && <p className="text-xs text-success">{formatCurrency(row.profit, currency)}</p>}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PartyRows({
+  rows,
+  currency,
+  emptyText,
+  dueLabel,
+}: {
+  rows: PartyReportRow[];
+  currency: string;
+  emptyText: string;
+  dueLabel: string;
+}) {
+  const { t } = useLocale();
+  if (rows.length === 0) {
+    return <p className="py-8 text-center text-sm text-slate-400">{emptyText}</p>;
+  }
+  return (
+    <div className="divide-y divide-slate-100">
+      {rows.map((row) => (
+        <div key={row.key} className="grid grid-cols-[1fr_auto] gap-3 py-3 text-sm">
+          <div className="min-w-0">
+            <p className="truncate font-semibold text-slate-800">{row.name}</p>
+            <p className="truncate text-xs text-slate-500">
+              {row.phone || "—"} · {row.count} {t("reports.entries")}
+            </p>
+          </div>
+          <div className="text-end">
+            <p className="font-bold tabular-nums text-slate-900">{formatCurrency(row.total, currency)}</p>
+            {row.due > 0 && <p className="text-xs font-medium text-danger">{dueLabel}: {formatCurrency(row.due, currency)}</p>}
           </div>
         </div>
       ))}
@@ -159,7 +235,7 @@ export function ReportsWorkspace() {
     [supplierPayments, range, customFrom, customTo],
   );
   const filteredExpenses = useMemo(
-    () => filterByDateRange(expenses ?? [], { range, customFrom, customTo }),
+    () => filterExpensesForReport(expenses ?? [], { range, customFrom, customTo }),
     [expenses, range, customFrom, customTo],
   );
   const summary = useMemo(
@@ -196,6 +272,9 @@ export function ReportsWorkspace() {
     () => summarizeProductSales(filteredBills, billItems ?? [], products ?? []),
     [filteredBills, billItems, products],
   );
+  const categorySales = useMemo(() => summarizeCategorySales(productSales).slice(0, 8), [productSales]);
+  const topCustomers = useMemo(() => summarizeCustomerSales(filteredBills).slice(0, 8), [filteredBills]);
+  const topSuppliers = useMemo(() => summarizeSupplierPurchases(filteredPurchases).slice(0, 8), [filteredPurchases]);
   const topProducts = productSales.slice(0, 8);
   const highestProfitProducts = [...productSales]
     .sort((a, b) => b.profit - a.profit)
@@ -208,6 +287,32 @@ export function ReportsWorkspace() {
     () => buildDailyTrend(filteredBills, 7),
     [filteredBills],
   );
+
+  function exportReportsCsv() {
+    const stamp = new Date().toISOString().slice(0, 10);
+    const rows = [
+      { label: t("reports.totalSales"), value: summary.sales },
+      ...(canViewProfit
+        ? [
+            { label: t("reports.totalProfit"), value: summary.profit },
+            { label: t("reports.expensesTotal"), value: expenseSummary.total },
+            { label: t("reports.netProfitAfterExpenses"), value: netProfitAfterExpenses },
+          ]
+        : []),
+      { label: t("reports.purchaseCost"), value: purchaseSummary.purchaseCost },
+      { label: t("reports.supplierPayments"), value: purchaseSummary.supplierPayments },
+      { label: t("reports.cashExpected"), value: summary.cashExpected },
+    ];
+
+    downloadCSV(
+      rows,
+      [
+        { header: "metric", value: (row) => row.label },
+        { header: "value", value: (row) => row.value },
+      ],
+      `asas-reports-${stamp}.csv`,
+    );
+  }
 
   if (loading) {
     return (
@@ -232,6 +337,9 @@ export function ReportsWorkspace() {
             >
               {t("reports.openZReport")}
             </Link>
+            <Button type="button" variant="secondary" onClick={exportReportsCsv}>
+              {t("reports.exportCsv")}
+            </Button>
             <Link
               href="/bills"
               className="inline-flex min-h-[42px] items-center justify-center rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-200"
@@ -465,6 +573,20 @@ export function ReportsWorkspace() {
 
         <Card>
           <h3 className="text-base font-semibold text-slate-900">
+            {t("reports.purchasePaymentBreakdown")}
+          </h3>
+          <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+            <StatCard filled tone="warning" label={t("common.cash")} value={formatCurrency(purchaseSummary.cashPaidOut, currency)} />
+            <StatCard filled tone="info" label={t("common.card")} value={formatCurrency(purchaseSummary.cardPaidOut, currency)} />
+            <StatCard filled tone="neutral" label={t("common.credit")} value={formatCurrency(purchaseSummary.debtAccrued, currency)} />
+            <StatCard filled tone="danger" label={t("reports.supplierPayments")} value={formatCurrency(purchaseSummary.supplierPayments, currency)} />
+          </div>
+        </Card>
+      </section>
+
+      <section className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <h3 className="text-base font-semibold text-slate-900">
             {t("reports.salesTrend")}
           </h3>
           <p className="mt-1 text-sm text-slate-500">
@@ -473,6 +595,26 @@ export function ReportsWorkspace() {
           <div className="mt-4">
             <TrendBars rows={trendRows} currency={currency} />
           </div>
+        </Card>
+      </section>
+
+
+
+      <section className="grid gap-4 xl:grid-cols-3">
+        <Card>
+          <h3 className="text-base font-semibold text-slate-900">{t("reports.categorySales")}</h3>
+          <p className="mt-1 text-sm text-slate-500">{t("reports.categorySalesDesc")}</p>
+          <CategoryRows rows={categorySales} currency={currency} emptyText={t("reports.noProductSales")} showProfit={canViewProfit} />
+        </Card>
+        <Card>
+          <h3 className="text-base font-semibold text-slate-900">{t("reports.topCustomers")}</h3>
+          <p className="mt-1 text-sm text-slate-500">{t("reports.topCustomersDesc")}</p>
+          <PartyRows rows={topCustomers} currency={currency} emptyText={t("reports.noCustomersInPeriod")} dueLabel={t("reports.creditDue")} />
+        </Card>
+        <Card>
+          <h3 className="text-base font-semibold text-slate-900">{t("reports.topSuppliers")}</h3>
+          <p className="mt-1 text-sm text-slate-500">{t("reports.topSuppliersDesc")}</p>
+          <PartyRows rows={topSuppliers} currency={currency} emptyText={t("reports.noSuppliersInPeriod")} dueLabel={t("reports.amountDue")} />
         </Card>
       </section>
 

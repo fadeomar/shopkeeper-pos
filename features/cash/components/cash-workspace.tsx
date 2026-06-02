@@ -11,6 +11,7 @@ import {
 import { getActiveShift } from "@/lib/services/shift-service";
 import type { CashMovement, CashMovementType } from "@/types/domain";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { MoneyInput } from "@/components/ui/money-input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -51,6 +52,18 @@ const OUTFLOW_TYPES: CashMovementType[] = [
   "petty_cash",
 ];
 
+const REASON_REQUIRED_TYPES: CashMovementType[] = [
+  "cash_out",
+  "owner_withdrawal",
+  "bank_deposit",
+  "petty_cash",
+  "drawer_correction",
+];
+
+function requiresReason(type: CashMovementType): boolean {
+  return REASON_REQUIRED_TYPES.includes(type);
+}
+
 function directionFor(type: CashMovementType): "in" | "out" | "signed" {
   if (INFLOW_TYPES.includes(type)) return "in";
   if (OUTFLOW_TYPES.includes(type)) return "out";
@@ -77,12 +90,45 @@ export function CashWorkspace() {
   const [reason, setReason] = useState("");
   const [referenceLabel, setReferenceLabel] = useState("");
   const [saving, setSaving] = useState(false);
+  const [typeFilter, setTypeFilter] = useState<"all" | CashMovementType>("all");
+  const [actorFilter, setActorFilter] = useState("all");
+  const [shiftFilter, setShiftFilter] = useState("all");
+  const [filterFrom, setFilterFrom] = useState("");
+  const [filterTo, setFilterTo] = useState("");
+
+  const filteredMovements = useMemo(() => {
+    return movements.filter((m) => {
+      const date = m.createdAt.slice(0, 10);
+      if (filterFrom && date < filterFrom) return false;
+      if (filterTo && date > filterTo) return false;
+      if (typeFilter !== "all" && m.type !== typeFilter) return false;
+      if (actorFilter !== "all" && (m.cashierName || "") !== actorFilter) return false;
+      if (shiftFilter !== "all" && (m.shiftId || "") !== shiftFilter) return false;
+      return true;
+    });
+  }, [movements, typeFilter, actorFilter, shiftFilter, filterFrom, filterTo]);
+
+  const actorOptions = useMemo(() => {
+    const actors = new Set<string>();
+    for (const movement of movements) {
+      if (movement.cashierName) actors.add(movement.cashierName);
+    }
+    return Array.from(actors).sort();
+  }, [filteredMovements]);
+
+  const shiftOptions = useMemo(() => {
+    const ids = new Set<string>();
+    for (const movement of movements) {
+      if (movement.shiftId) ids.add(movement.shiftId);
+    }
+    return Array.from(ids).sort();
+  }, [movements]);
 
   const totals = useMemo(() => {
-    const cashIn = movements
+    const cashIn = filteredMovements
       .filter((m) => m.amount > 0)
       .reduce((sum, m) => sum + m.amount, 0);
-    const cashOut = movements
+    const cashOut = filteredMovements
       .filter((m) => m.amount < 0)
       .reduce((sum, m) => sum + m.amount, 0);
     return {
@@ -102,6 +148,10 @@ export function CashWorkspace() {
   async function handleSave() {
     if (!Number.isFinite(amount) || Math.abs(amount) < MONEY_EPSILON) {
       push(t("common.invalidAmount"), "error");
+      return;
+    }
+    if (requiresReason(type) && !reason.trim()) {
+      push(t("cash.reasonRequired"), "error");
       return;
     }
     setSaving(true);
@@ -124,6 +174,7 @@ export function CashWorkspace() {
   }
 
   const direction = directionFor(type);
+  const reasonIsRequired = requiresReason(type);
 
   const columns = useMemo<ColumnDef<CashMovement, unknown>[]>(
     () => [
@@ -220,12 +271,73 @@ export function CashWorkspace() {
         />
       </div>
 
+      <Card>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+            {t("cash.filterType")}
+            <SearchableSelect
+              value={typeFilter}
+              onValueChange={(v) => setTypeFilter((v ?? "all") as "all" | CashMovementType)}
+              options={[
+                { value: "all", label: t("cash.allTypes") },
+                ...TYPE_OPTIONS.map((option) => ({ value: option, label: t(typeKey(option)) })),
+              ]}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+            {t("cash.filterActor")}
+            <SearchableSelect
+              value={actorFilter}
+              onValueChange={(v) => setActorFilter(v ?? "all")}
+              options={[
+                { value: "all", label: t("cash.allActors") },
+                ...actorOptions.map((actor) => ({ value: actor, label: actor })),
+              ]}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+            {t("cash.filterShift")}
+            <SearchableSelect
+              value={shiftFilter}
+              onValueChange={(v) => setShiftFilter(v ?? "all")}
+              options={[
+                { value: "all", label: t("cash.allShifts") },
+                ...shiftOptions.map((id) => ({ value: id, label: id.slice(0, 8) })),
+              ]}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+            {t("cash.fromDate")}
+            <Input type="date" value={filterFrom} onChange={(e) => setFilterFrom(e.target.value)} dir="ltr" />
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+            {t("cash.toDate")}
+            <Input type="date" value={filterTo} onChange={(e) => setFilterTo(e.target.value)} dir="ltr" />
+          </label>
+        </div>
+        <div className="mt-3 flex justify-end">
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => {
+              setTypeFilter("all");
+              setActorFilter("all");
+              setShiftFilter("all");
+              setFilterFrom("");
+              setFilterTo("");
+            }}
+          >
+            {t("cash.resetFilters")}
+          </Button>
+        </div>
+      </Card>
+
       {movements.length === 0 ? (
         <EmptyState title={t("cash.empty")} description={t("cash.emptyDesc")} />
       ) : (
         <DataTable
           columns={columns}
-          data={movements}
+          data={filteredMovements}
           labels={tableLabels}
           enableGlobalSearch={false}
         />
@@ -311,8 +423,18 @@ export function CashWorkspace() {
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium text-slate-700">
               {t("cash.reason")}
+              {reasonIsRequired && <span className="text-danger"> *</span>}
             </span>
-            <Input value={reason} onChange={(e) => setReason(e.target.value)} />
+            <Input
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              aria-required={reasonIsRequired}
+            />
+            {reasonIsRequired && (
+              <span className="text-xs text-slate-500">
+                {t("cash.reasonRequiredHint")}
+              </span>
+            )}
           </label>
         </div>
       </Modal>

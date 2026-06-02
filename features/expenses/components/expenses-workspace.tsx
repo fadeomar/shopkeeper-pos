@@ -24,6 +24,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { useToast } from "@/components/ui/toast";
 import { useLocale } from "@/components/providers/locale-context";
 import { formatCurrency, roundMoney } from "@/lib/utils/money";
+import { downloadCSV } from "@/lib/utils/export-csv";
 import { blurInputOnEnter } from "@/lib/utils/dismiss-on-enter";
 import { formatDateTime, localDateKey } from "@/lib/utils/date";
 import { RecordSyncBadge } from "@/components/sync/record-sync-badge";
@@ -73,6 +74,11 @@ export function ExpensesWorkspace() {
   const currency = settings?.currency ?? "ILS";
 
   const [open, setOpen] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState<"all" | ExpenseCategory>("all");
+  const [methodFilter, setMethodFilter] = useState<"all" | ExpensePaymentMethod>("all");
+  const [filterFrom, setFilterFrom] = useState("");
+  const [filterTo, setFilterTo] = useState("");
+  const [filterSearch, setFilterSearch] = useState("");
   const [category, setCategory] = useState<ExpenseCategory>("rent");
   const [paymentMethod, setPaymentMethod] =
     useState<ExpensePaymentMethod>("cash");
@@ -82,11 +88,28 @@ export function ExpensesWorkspace() {
   const [expenseDate, setExpenseDate] = useState(() => localDateKey());
   const [saving, setSaving] = useState(false);
 
+  const filteredExpenses = useMemo(() => {
+    const q = filterSearch.trim().toLowerCase();
+    return expenses.filter((e) => {
+      const date = e.expenseDate || e.createdAt.slice(0, 10);
+      if (filterFrom && date < filterFrom) return false;
+      if (filterTo && date > filterTo) return false;
+      if (categoryFilter !== "all" && e.category !== categoryFilter) return false;
+      if (methodFilter !== "all" && e.paymentMethod !== methodFilter) return false;
+      if (q) {
+        const haystack = [e.payee, e.note, e.category, e.paymentMethod].filter(Boolean).join(" ").toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [expenses, categoryFilter, methodFilter, filterFrom, filterTo, filterSearch]);
+
   const { monthTotal, cashTotal, byCategory } = useMemo(() => {
     const { from, to } = currentMonthRange();
-    const month = expenses.filter(
-      (e) => e.createdAt >= from && e.createdAt < to,
-    );
+    const month = expenses.filter((e) => {
+      const date = e.expenseDate ? `${e.expenseDate}T00:00:00.000Z` : e.createdAt;
+      return date >= from && date < to;
+    });
     const total = month.reduce((sum, e) => sum + e.amount, 0);
     const cash = month
       .filter((e) => e.paymentMethod === "cash")
@@ -134,6 +157,24 @@ export function ExpensesWorkspace() {
     } finally {
       setSaving(false);
     }
+  }
+
+  function exportExpensesCsv() {
+    const stamp = new Date().toISOString().slice(0, 10);
+    downloadCSV(
+      filteredExpenses,
+      [
+        { header: t("expenses.expenseDate"), value: (row) => row.expenseDate ?? row.createdAt },
+        { header: t("expenses.colCategory"), value: (row) => t(categoryKey(row.category)) },
+        { header: t("expenses.colPayee"), value: (row) => row.payee ?? "" },
+        { header: t("expenses.note"), value: (row) => row.note ?? "" },
+        { header: t("expenses.colAmount"), value: (row) => row.amount },
+        { header: t("expenses.colMethod"), value: (row) => t(methodKey(row.paymentMethod)) },
+        { header: t("expenses.colShift"), value: (row) => row.shiftId ?? "" },
+        { header: t("sync.status"), value: (row) => row.syncStatus ?? "synced" },
+      ],
+      `asas-expenses-${stamp}.csv`,
+    );
   }
 
   const columns = useMemo<ColumnDef<Expense, unknown>[]>(
@@ -212,9 +253,19 @@ export function ExpensesWorkspace() {
         title={t("expenses.title")}
         description={t("expenses.subtitle")}
         actions={
-          <Button type="button" onClick={() => setOpen(true)}>
-            {t("expenses.addButton")}
-          </Button>
+          <>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={exportExpensesCsv}
+              disabled={filteredExpenses.length === 0}
+            >
+              {t("reports.exportCsv")}
+            </Button>
+            <Button type="button" onClick={() => setOpen(true)}>
+              {t("expenses.addButton")}
+            </Button>
+          </>
         }
       />
 
@@ -255,6 +306,60 @@ export function ExpensesWorkspace() {
         </Card>
       </div>
 
+      <Card>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+            {t("expenses.filterCategory")}
+            <SearchableSelect
+              value={categoryFilter}
+              onValueChange={(v) => setCategoryFilter((v ?? "all") as "all" | ExpenseCategory)}
+              options={[
+                { value: "all", label: t("expenses.allCategories") },
+                ...CATEGORIES.map((c) => ({ value: c, label: t(categoryKey(c)) })),
+              ]}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+            {t("expenses.filterMethod")}
+            <SearchableSelect
+              value={methodFilter}
+              onValueChange={(v) => setMethodFilter((v ?? "all") as "all" | ExpensePaymentMethod)}
+              options={[
+                { value: "all", label: t("expenses.allMethods") },
+                ...METHODS.map((m) => ({ value: m, label: t(methodKey(m)) })),
+              ]}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+            {t("expenses.fromDate")}
+            <Input type="date" value={filterFrom} onChange={(e) => setFilterFrom(e.target.value)} dir="ltr" />
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+            {t("expenses.toDate")}
+            <Input type="date" value={filterTo} onChange={(e) => setFilterTo(e.target.value)} dir="ltr" />
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+            {t("expenses.filterPayee")}
+            <Input value={filterSearch} onChange={(e) => setFilterSearch(e.target.value)} />
+          </label>
+        </div>
+        <div className="mt-3 flex justify-end">
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => {
+              setCategoryFilter("all");
+              setMethodFilter("all");
+              setFilterFrom("");
+              setFilterTo("");
+              setFilterSearch("");
+            }}
+          >
+            {t("expenses.resetFilters")}
+          </Button>
+        </div>
+      </Card>
+
       {expenses.length === 0 ? (
         <EmptyState
           title={t("expenses.empty")}
@@ -263,7 +368,7 @@ export function ExpensesWorkspace() {
       ) : (
         <DataTable
           columns={columns}
-          data={expenses}
+          data={filteredExpenses}
           labels={tableLabels}
           enableGlobalSearch={false}
         />

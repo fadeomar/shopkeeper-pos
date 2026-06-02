@@ -92,3 +92,7 @@ Firebase work at module scope / in `generateMetadata`.
 - [ ] B. Firestore rules validated (owner can admin; cashier can't)
 - [ ] C. `npm ci && typecheck && build` green in CI
 - [ ] Full mobile UI pass in English **and** Arabic (RTL)
+
+## Sprint 4 production QA focus
+
+Customer and supplier statements must be tested with: all-time period, custom period, no matching rows, partial payments, cash/card paid at bill or purchase time, and later debt payments. CSV exports should match the filtered statement rows shown in the UI and print output should hide app navigation.
