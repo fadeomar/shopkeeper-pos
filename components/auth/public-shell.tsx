@@ -30,7 +30,7 @@ export function PublicShell({ children }: { children: React.ReactNode }) {
             <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-brand text-sm font-black text-white">
               S
             </span>
-            <span className="text-sm sm:text-base">Shopkeeper POS</span>
+            <span className="text-sm sm:text-base">Asas POS</span>
           </Link>
 
           <div className="ms-auto flex items-center gap-2">

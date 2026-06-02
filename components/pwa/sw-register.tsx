@@ -24,22 +24,9 @@ const OFFLINE_NAV_ROUTES = [
   "/settings",
 ] as const;
 
-// These are the routes the store must have offline. Inventory and customers are
-// core daily workflows (stock receive / count, customer credit ledger). Shift,
-// suppliers and purchases are required for daily open/close and stock receiving.
-const REQUIRED_OFFLINE_ROUTES = [
-  "/",
-  "/guide",
-  "/products",
-  "/billing",
-  "/bills",
-  "/inventory",
-  "/customers",
-  "/suppliers",
-  "/purchases/new",
-  "/shift",
-  "/settings",
-] as const;
+// If we show an operational route in the offline navigation set, cache readiness
+// should not be marked complete until that route is available offline too.
+const REQUIRED_OFFLINE_ROUTES = OFFLINE_NAV_ROUTES;
 const OFFLINE_NAV_ROUTE_SET = new Set<string>(OFFLINE_NAV_ROUTES);
 const FIRST_CONTROL_RELOAD_KEY = "shopkeeper_sw_first_control_reload_v3";
 

@@ -64,6 +64,7 @@ const routes: readonly Route[] = [
   { href: '/billing',       key: 'nav.newBill',     icon: ShoppingCart },
   { href: '/bills',         key: 'nav.billHistory', icon: ReceiptText },
   { href: '/purchases/new', key: 'nav.newPurchase', icon: Truck },
+  { href: '/purchases',     key: 'nav.purchaseHistory', icon: ReceiptText },
   { href: '/products',      key: 'nav.products',    icon: Package },
   { href: '/inventory',     key: 'nav.inventory',   icon: Boxes },
   { href: '/reports',       key: 'nav.reports',     icon: BarChart3 },
@@ -84,14 +85,22 @@ export function SidebarNav() {
     [],
   );
 
+  function isActive(href: string) {
+    if (href === '/') return pathname === '/';
+    // /purchases and /purchases/new are separate top-level actions.
+    // Keep history from looking active while the cashier is receiving stock.
+    if (href === '/purchases') return pathname === '/purchases';
+    return pathname === href || pathname.startsWith(`${href}/`);
+  }
+
   return (
     // hidden on mobile — MobileBottomNav handles routing below lg.
     <nav
       aria-label={t('nav.mainNavLabel')}
-      className="hidden lg:flex lg:flex-col lg:flex-1 lg:px-3 lg:py-2 lg:gap-1"
+      className="hidden lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:gap-1 lg:overflow-y-auto lg:px-3 lg:py-2"
     >
       {routes.map(({ href, key, icon: Icon }) => {
-        const active = pathname === href || (href !== '/' && pathname.startsWith(href));
+        const active = isActive(href);
         const showShiftDot = href === '/shift' && Boolean(activeShift);
 
         return (
@@ -129,10 +138,13 @@ export function SidebarNav() {
             />
             <span className="flex-1 truncate">{t(key)}</span>
             {showShiftDot && (
-              <span
-                className="inline-block h-2 w-2 shrink-0 rounded-full bg-success"
-                aria-label={t('nav.shiftOpen')}
-              />
+              <span className="inline-flex items-center">
+                <span
+                  className="inline-block h-2 w-2 shrink-0 rounded-full bg-success"
+                  aria-hidden
+                />
+                <span className="sr-only">{t('nav.shiftOpen')}</span>
+              </span>
             )}
           </Link>
         );

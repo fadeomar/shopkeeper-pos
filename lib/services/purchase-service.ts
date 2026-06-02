@@ -37,6 +37,14 @@ function validatePurchaseLine(line: PurchaseDraftItem, product: Product) {
   }
 }
 
+async function assertShiftStillEditable(shiftId?: string): Promise<void> {
+  if (!shiftId) return;
+  const shift = await db.shifts.get(shiftId);
+  if (shift?.status === 'closed') {
+    throw new AppError(AppErrorCode.CLOSED_SHIFT_RECORD_LOCKED);
+  }
+}
+
 /**
  * Derive the cash/card/credit split for a finalized purchase. Mirror of the
  * billing-service helper, with one semantic flip: for purchases, creditAmount
@@ -45,9 +53,9 @@ function validatePurchaseLine(line: PurchaseDraftItem, product: Product) {
  *
  *   cashAmount + cardAmount + creditAmount === totalAmount
  *
- * Mixed purchases must provide an explicit cash/card split that sums to
- * total. Pure-cash purchases support "we handed over more than the bill"
- * (paidAmount > total) with a change amount, mirroring the cashier flow.
+ * Mixed payment is retired. Old mixed purchases remain readable through
+ * normalizeBillSplit(), but new purchases cannot be created with paymentMethod
+ * 'mixed'. Pure-cash purchases support overpayment/change.
  */
 function derivePurchaseSplit(
   paymentMethod: PaymentMethod,
@@ -85,20 +93,8 @@ function derivePurchaseSplit(
         changeAmount: 0,
       };
     }
-    case "mixed": {
-      const cashAmount = roundMoney(Math.max(0, Number(form.cashAmount) || 0));
-      const cardAmount = roundMoney(Math.max(0, Number(form.cardAmount) || 0));
-      if (Math.abs(cashAmount + cardAmount - total) > MONEY_EPSILON) {
-        throw new AppError(AppErrorCode.PURCHASE_MIXED_SPLIT_MISMATCH);
-      }
-      return {
-        cashAmount,
-        cardAmount,
-        creditAmount: 0,
-        paidAmount: roundMoney(cashAmount + cardAmount),
-        changeAmount: 0,
-      };
-    }
+    case "mixed":
+      throw new AppError(AppErrorCode.PAYMENT_METHOD_DISABLED);
   }
 }
 
@@ -137,8 +133,8 @@ export async function createFinalizedPurchase(input: {
     throw new AppError(AppErrorCode.DISCOUNT_TOO_HIGH);
   }
 
-  // Pre-transaction validation: cash and mixed must satisfy their split
-  // invariants before we open the transaction.
+  // Pre-transaction validation: cash must have enough tendered money before
+  // we open the transaction. Mixed payment is retired and rejected.
   if (
     input.form.paymentMethod === "cash" &&
     calculateChange(input.form.paidAmount, totalAmountPreview) < 0
@@ -146,11 +142,7 @@ export async function createFinalizedPurchase(input: {
     throw new AppError(AppErrorCode.PURCHASE_PAID_TOO_LOW);
   }
   if (input.form.paymentMethod === "mixed") {
-    const c = Math.max(0, Number(input.form.cashAmount) || 0);
-    const k = Math.max(0, Number(input.form.cardAmount) || 0);
-    if (Math.abs(c + k - totalAmountPreview) > MONEY_EPSILON) {
-      throw new AppError(AppErrorCode.PURCHASE_MIXED_SPLIT_MISMATCH);
-    }
+    throw new AppError(AppErrorCode.PAYMENT_METHOD_DISABLED);
   }
   const isCreditPurchase = input.form.paymentMethod === "credit";
   if (
@@ -239,6 +231,9 @@ export async function createFinalizedPurchase(input: {
       // Tag with active shift if one is open so the cash portion subtracts
       // from drawer expected cash at close.
       const activeShift = await db.shifts.where("status").equals("open").first();
+      if (settings.requireShift && split.cashAmount > MONEY_EPSILON && !activeShift) {
+        throw new AppError(AppErrorCode.SHIFT_REQUIRED_FOR_CASH_ACTION);
+      }
       const resolvedShiftId = activeShift?.id;
 
       const purchaseItems: PurchaseItem[] = input.items.map((item) => ({
@@ -262,6 +257,9 @@ export async function createFinalizedPurchase(input: {
         supplierId: resolvedSupplierId,
         supplierName: input.form.supplierName,
         supplierPhone: input.form.supplierPhone,
+        supplierInvoiceNumber: input.form.supplierInvoiceNumber?.trim() || undefined,
+        invoiceDate: input.form.invoiceDate?.trim() || undefined,
+        paymentDueDate: input.form.paymentDueDate?.trim() || undefined,
         paymentMethod: input.form.paymentMethod,
         subtotal: totals.subtotal,
         discountAmount: input.form.discountAmount,
@@ -378,6 +376,14 @@ export async function createFinalizedPurchase(input: {
   );
 
   requestSync();
+  void logAudit({
+    category: 'purchase',
+    action: 'create',
+    entityId: result.purchase.id,
+    entityLabel: result.purchase.purchaseNumber,
+    summary: `${result.purchase.itemCount} items / ${result.purchase.totalAmount}`,
+    shiftId: result.purchase.shiftId,
+  });
   return result;
 }
 
@@ -419,7 +425,7 @@ export async function voidPurchase(input: {
 
   await db.transaction(
     "rw",
-    [db.purchases, db.purchaseItems, db.products, db.stockMovements, db.syncQueue],
+    [db.purchases, db.purchaseItems, db.products, db.stockMovements, db.shifts, db.syncQueue],
     async () => {
       const purchase = await db.purchases.get(input.purchaseId);
       if (!purchase) throw new AppError(AppErrorCode.PURCHASE_NOT_FOUND);
@@ -429,6 +435,7 @@ export async function voidPurchase(input: {
       if (purchase.status !== "finalized") {
         throw new AppError(AppErrorCode.PURCHASE_NOT_FINALIZED);
       }
+      await assertShiftStillEditable(purchase.shiftId);
       auditPurchaseNumber = purchase.purchaseNumber;
       auditShiftId = purchase.shiftId;
 
@@ -560,7 +567,7 @@ export async function returnPurchaseItem(input: {
 
   await db.transaction(
     "rw",
-    [db.purchases, db.purchaseItems, db.products, db.stockMovements, db.syncQueue],
+    [db.purchases, db.purchaseItems, db.products, db.stockMovements, db.shifts, db.syncQueue],
     async () => {
       const [purchase, item] = await Promise.all([
         db.purchases.get(input.purchaseId),
@@ -573,6 +580,7 @@ export async function returnPurchaseItem(input: {
       if (purchase.status === "voided") {
         throw new AppError(AppErrorCode.PURCHASE_VOIDED_NO_RETURN);
       }
+      await assertShiftStillEditable(purchase.shiftId);
 
       const remainingQuantity = getRemainingPurchaseItemQuantity(item);
       if (quantity > remainingQuantity) {

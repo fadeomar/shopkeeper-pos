@@ -27,7 +27,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 
 type InventoryModalMode = "count" | null;
 
-const EXPIRY_WINDOW_DAYS = 30;
+const DEFAULT_EXPIRY_WARNING_DAYS = 30;
 
 function daysUntil(date: string): number {
   const today = new Date();
@@ -79,11 +79,15 @@ export function InventoryWorkspace() {
   const outOfStockProducts = activeProducts.filter(
     (product) => product.quantityInStock <= 0,
   );
+  const expiryWarningDays = Math.max(
+    0,
+    Math.trunc(settings?.expiryWarningDays ?? DEFAULT_EXPIRY_WARNING_DAYS),
+  );
   const expiringProducts = activeProducts
     .filter((product) => {
       if (!product.expiryDate) return false;
       const days = daysUntil(product.expiryDate);
-      return days >= 0 && days <= EXPIRY_WINDOW_DAYS;
+      return days >= 0 && days <= expiryWarningDays;
     })
     .sort((a, b) => String(a.expiryDate).localeCompare(String(b.expiryDate)));
 
@@ -278,8 +282,8 @@ export function InventoryWorkspace() {
           emptyText={t("inventory.noLowStock")}
           products={lowStockProducts}
           actionLabel={t("purchases.newPurchase")}
-          onAction={() => {
-            window.location.href = "/purchases/new";
+          onAction={(product) => {
+            window.location.href = `/purchases/new?productId=${encodeURIComponent(product.id)}&source=inventory`;
           }}
         />
         <InventoryListCard
@@ -287,13 +291,15 @@ export function InventoryWorkspace() {
           emptyText={t("inventory.noOutOfStock")}
           products={outOfStockProducts}
           actionLabel={t("purchases.newPurchase")}
-          onAction={() => {
-            window.location.href = "/purchases/new";
+          onAction={(product) => {
+            window.location.href = `/purchases/new?productId=${encodeURIComponent(product.id)}&source=inventory`;
           }}
         />
         <InventoryListCard
           title={t("inventory.expiringSoon")}
-          emptyText={t("inventory.noExpiringSoon")}
+          emptyText={t("inventory.noExpiringSoon", {
+            days: expiryWarningDays,
+          })}
           products={expiringProducts}
           actionLabel={t("inventory.count")}
           onAction={(product) => openModal("count", product)}

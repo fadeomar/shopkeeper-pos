@@ -1,5 +1,6 @@
 import { AppError, AppErrorCode } from '@/lib/errors/app-error';
 import { db } from '@/lib/db/schema';
+import { SETTINGS_ID } from '@/lib/db/repositories';
 import { nowIso } from '@/lib/utils/date';
 import { createId } from '@/lib/utils/id';
 import { buildSyncQueueItem } from '@/lib/services/sync-queue-service';
@@ -220,7 +221,14 @@ export async function recordSupplierPayment(input: {
   }
 
   const now = nowIso();
-  const activeShift = await db.shifts.where('status').equals('open').first();
+  const paymentMethod = input.paymentMethod ?? 'cash';
+  const [settings, activeShift] = await Promise.all([
+    db.settings.get(SETTINGS_ID),
+    db.shifts.where('status').equals('open').first(),
+  ]);
+  if (settings?.requireShift && paymentMethod === 'cash' && !activeShift) {
+    throw new AppError(AppErrorCode.SHIFT_REQUIRED_FOR_CASH_ACTION);
+  }
 
   const payment: SupplierPayment = {
     id: createId('supp_pay'),
@@ -229,7 +237,7 @@ export async function recordSupplierPayment(input: {
     supplierPhone: input.supplierPhone?.trim() || undefined,
     amount,
     note: input.note?.trim() || undefined,
-    paymentMethod: input.paymentMethod ?? 'cash',
+    paymentMethod,
     createdAt: now,
     shiftId: activeShift?.id,
     syncStatus: 'pending',

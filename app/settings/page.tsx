@@ -472,7 +472,7 @@ export default function SettingsPage() {
 
 // ─── Role Permissions Card ───────────────────────────────────────────────────
 
-const ROLES: UserRole[] = ["owner", "manager", "cashier", "accountant"];
+const ROLES: UserRole[] = ["cashier", "manager", "accountant"];
 const PERM_KEYS: Array<keyof RolePermissions> = [
   "canVoid",
   "canReturn",
@@ -505,7 +505,7 @@ function RolePermissionsCard() {
 
   function toggle(role: UserRole, perm: keyof RolePermissions) {
     if (!canManageRolePermissions) return;
-    if (role === "owner") return; // owner always has full access
+    if (role === "cashier") return; // cashier is fixed as the top POS role
     const current = getEffective(role, perm);
     setOverrides((prev) => ({
       ...prev,
@@ -587,7 +587,7 @@ function RolePermissionsCard() {
                   className="text-center text-xs font-semibold text-slate-600 pb-3 px-3 min-w-[80px]"
                 >
                   {roleLabels[role]}
-                  {role === "owner" && (
+                  {role === "cashier" && (
                     <span className="block text-[10px] font-normal text-slate-400">
                       {t("settings.roleFullAccess")}
                     </span>
@@ -604,14 +604,14 @@ function RolePermissionsCard() {
                 </td>
                 {ROLES.map((role) => {
                   const checked = getEffective(role, perm);
-                  const isOwner = role === "owner";
+                  const isFixedTopRole = role === "cashier";
                   return (
                     <td key={role} className="py-2.5 px-3 text-center">
                       <input
                         type="checkbox"
                         className="h-4 w-4 rounded accent-brand cursor-pointer disabled:cursor-not-allowed"
                         checked={checked}
-                        disabled={isOwner}
+                        disabled={isFixedTopRole}
                         onChange={() => toggle(role, perm)}
                         aria-label={`${roleLabels[role]} — ${permLabels[perm]}`}
                       />

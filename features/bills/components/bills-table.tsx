@@ -23,6 +23,7 @@ import {
   getBillNetProfit,
   getBillNetTotal,
   summarizeBills,
+  type BillStatusFilter,
   type BillDateFilter,
   type PaymentFilter,
 } from "@/features/bills/utils/bill-summary";
@@ -80,6 +81,8 @@ export function BillsTable() {
   const [query, setQuery] = useState("");
   const [dateFilter, setDateFilter] = useState<BillDateFilter>("today");
   const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<BillStatusFilter>("all");
+  const [cashierFilter, setCashierFilter] = useState("all");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
 
@@ -88,12 +91,52 @@ export function BillsTable() {
       query,
       dateFilter,
       paymentFilter,
+      statusFilter,
+      cashierFilter,
       customFrom,
       customTo,
     });
-  }, [bills, query, dateFilter, paymentFilter, customFrom, customTo]);
+  }, [bills, query, dateFilter, paymentFilter, statusFilter, cashierFilter, customFrom, customTo]);
 
   const summary = useMemo(() => summarizeBills(filteredBills), [filteredBills]);
+  const paymentFilterOptions = useMemo(() => {
+    const options = [
+      { value: "all", label: t("bills.allPayments") },
+      { value: "cash", label: t("common.cash") },
+      { value: "card", label: t("common.card") },
+      { value: "credit", label: t("common.credit") },
+    ];
+    // Mixed payment is retired. Keep the filter discoverable only when old
+    // historical bills in the current result set still need it.
+    if (summary.byPayment.mixed > 0) {
+      options.splice(3, 0, { value: "mixed", label: t("common.mixed") });
+    }
+    return options;
+  }, [summary.byPayment.mixed, t]);
+  const statusFilterOptions = useMemo(
+    () => [
+      { value: "all", label: t("bills.allStatuses") },
+      { value: "finalized", label: t("common.finalized") },
+      { value: "voided", label: t("common.voided") },
+      { value: "partially_returned", label: t("common.partially_returned") },
+      { value: "returned", label: t("common.returned") },
+    ],
+    [t],
+  );
+  const cashierFilterOptions = useMemo(() => {
+    const names = Array.from(
+      new Set(
+        (bills ?? [])
+          .map((bill) => bill.cashierName?.trim())
+          .filter((value): value is string => Boolean(value)),
+      ),
+    ).sort((a, b) => a.localeCompare(b));
+    return [
+      { value: "all", label: t("bills.allCashiers") },
+      { value: "__unknown__", label: t("bills.unknownCashier") },
+      ...names.map((name) => ({ value: name, label: name })),
+    ];
+  }, [bills, t]);
   const [mobilePage, setMobilePage] = useState(0);
   const mobilePageSize = 10;
   const mobilePageCount = Math.max(
@@ -108,7 +151,7 @@ export function BillsTable() {
 
   useEffect(() => {
     setMobilePage(0);
-  }, [query, dateFilter, paymentFilter, customFrom, customTo]);
+  }, [query, dateFilter, paymentFilter, statusFilter, cashierFilter, customFrom, customTo]);
 
   if (!bills)
     return (
@@ -279,7 +322,7 @@ export function BillsTable() {
       </Card>
 
       <Card>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
           <Input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -309,13 +352,23 @@ export function BillsTable() {
             }
             placeholder={t("bills.paymentFilter")}
             searchPlaceholder={t("common.search")}
-            options={[
-              { value: "all", label: t("bills.allPayments") },
-              { value: "cash", label: t("common.cash") },
-              { value: "card", label: t("common.card") },
-              { value: "mixed", label: t("common.mixed") },
-              { value: "credit", label: t("common.credit") },
-            ]}
+            options={paymentFilterOptions}
+          />
+          <SearchableSelect
+            value={statusFilter}
+            onValueChange={(value) =>
+              setStatusFilter((value ?? "all") as BillStatusFilter)
+            }
+            placeholder={t("bills.statusFilter")}
+            searchPlaceholder={t("common.search")}
+            options={statusFilterOptions}
+          />
+          <SearchableSelect
+            value={cashierFilter}
+            onValueChange={(value) => setCashierFilter(value ?? "all")}
+            placeholder={t("bills.cashierFilter")}
+            searchPlaceholder={t("common.search")}
+            options={cashierFilterOptions}
           />
           <Button
             type="button"
@@ -324,6 +377,8 @@ export function BillsTable() {
               setQuery("");
               setDateFilter("today");
               setPaymentFilter("all");
+              setStatusFilter("all");
+              setCashierFilter("all");
               setCustomFrom("");
               setCustomTo("");
             }}
@@ -400,13 +455,20 @@ export function BillsTable() {
                     <span className="truncate">
                       {bill.customerName || t("common.walkin")}
                     </span>
-                    <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
-                      {t(
-                        `common.${bill.paymentMethod}` as Parameters<
-                          typeof t
-                        >[0],
-                      )}
-                    </span>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
+                        {t(
+                          `common.${bill.status}` as Parameters<typeof t>[0],
+                        )}
+                      </span>
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
+                        {t(
+                          `common.${bill.paymentMethod}` as Parameters<
+                            typeof t
+                          >[0],
+                        )}
+                      </span>
+                    </div>
                   </div>
                 </Link>
               ))}

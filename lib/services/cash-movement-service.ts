@@ -3,6 +3,7 @@ import { nowIso } from '@/lib/utils/date';
 import { createId } from '@/lib/utils/id';
 import { roundMoney } from '@/lib/utils/money';
 import { AppError, AppErrorCode } from '@/lib/errors/app-error';
+import { SETTINGS_ID } from '@/lib/db/repositories';
 import { buildSyncQueueItem } from '@/lib/services/sync-queue-service';
 import { logAudit } from '@/lib/services/audit-service';
 import type { CashMovement, CashMovementType } from '@/types/domain';
@@ -48,7 +49,13 @@ export async function recordCashMovement(input: RecordCashMovementInput): Promis
   }
 
   const now = nowIso();
-  const activeShift = await db.shifts.where('status').equals('open').first();
+  const [settings, activeShift] = await Promise.all([
+    db.settings.get(SETTINGS_ID),
+    db.shifts.where('status').equals('open').first(),
+  ]);
+  if (settings?.requireShift && !activeShift) {
+    throw new AppError(AppErrorCode.SHIFT_REQUIRED_FOR_CASH_ACTION);
+  }
   const signedAmount = roundMoney(signFor(input.type, magnitude));
 
   const movement: CashMovement = {
@@ -79,8 +86,8 @@ export async function recordCashMovement(input: RecordCashMovementInput): Promis
   }
 
   void logAudit({
-    category: 'shift',
-    action: signedAmount > 0 ? 'open' : 'close', // best-fit existing actions; audit only logs the cash event itself
+    category: 'cash',
+    action: signedAmount > 0 ? 'cash_in' : 'cash_out',
     entityId: movement.id,
     entityLabel: input.referenceLabel || input.type,
     summary: `${input.type}: ${signedAmount > 0 ? '+' : ''}${signedAmount}`,

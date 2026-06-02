@@ -80,6 +80,7 @@ export interface TranslationDict {
     newBill: string;
     billHistory: string;
     newPurchase: string;
+    purchaseHistory: string;
     shift: string;
     cash: string;
     expenses: string;
@@ -228,6 +229,8 @@ export interface TranslationDict {
     catSupplier: string;
     catSettings: string;
     catShift: string;
+    catCash: string;
+    catExpense: string;
     catUser: string;
     catSync: string;
     actCreate: string;
@@ -239,6 +242,9 @@ export interface TranslationDict {
     actStockAdjust: string;
     actOpen: string;
     actClose: string;
+    actCashIn: string;
+    actCashOut: string;
+    actExpenseCreate: string;
     actApprove: string;
     actReject: string;
     actDeactivate: string;
@@ -330,6 +336,8 @@ export interface TranslationDict {
     editNote: string;
     stockEditNote: string;
     barcodeUnique: string;
+    barcodeAlreadyUsed: string;
+    openExistingProductInstead: string;
     productCreated: string;
     productUpdated: string;
     productDeactivated: string;
@@ -466,6 +474,13 @@ export interface TranslationDict {
     toDate: string;
     totalSales: string;
     totalProfit: string;
+    grossProfitBeforeExpenses: string;
+    grossProfitBeforeExpensesHelper: string;
+    expensesTotal: string;
+    netProfitAfterExpenses: string;
+    netProfitAfterExpensesHelper: string;
+    grossMargin: string;
+    grossMarginHelper: string;
     billCount: string;
     averageBill: string;
     cashExpected: string;
@@ -680,6 +695,8 @@ export interface TranslationDict {
     searchPlaceholder: string;
     dateFilter: string;
     paymentFilter: string;
+    statusFilter: string;
+    cashierFilter: string;
     allDates: string;
     today: string;
     yesterday: string;
@@ -689,6 +706,9 @@ export interface TranslationDict {
     fromDate: string;
     toDate: string;
     allPayments: string;
+    allStatuses: string;
+    allCashiers: string;
+    unknownCashier: string;
     filteredSales: string;
     filteredProfit: string;
     filteredBills: string;
@@ -911,6 +931,10 @@ export interface TranslationDict {
     appLoading: string;
     restoreStatBills: string;
     restoreStatProducts: string;
+    restoreStatPurchases: string;
+    restoreStatCustomers: string;
+    restoreStatSuppliers: string;
+    restoreStatPayments: string;
     restoreStatMovements: string;
   };
   sync: {
@@ -947,6 +971,28 @@ export interface TranslationDict {
   purchases: {
     productMissingNote: string;
     addProductInProducts: string;
+    addMissingProduct: string;
+    quickAddProduct: string;
+    quickAddProductDesc: string;
+    quickAddProductDescWithBarcode: string;
+    saveAndAddToPurchase: string;
+    quickAddCreated: string;
+    quickAddFailed: string;
+    noProductFoundForBarcode: string;
+    purchaseQuantity: string;
+    buyPriceWillUpdate: string;
+    reviewSellPrice: string;
+    lowMarginWarning: string;
+    invoiceDetails: string;
+    invoiceDetailsHelper: string;
+    supplierInvoiceNumber: string;
+    invoiceNumber: string;
+    invoiceDate: string;
+    invoiceDateShort: string;
+    paymentDueDate: string;
+    prefilledFromInventory: string;
+    alreadyInPurchaseDraft: string;
+    prefillProductNotFound: string;
     newPurchase: string;
     title: string;
     subtitle: string;
@@ -970,11 +1016,14 @@ export interface TranslationDict {
     notes: string;
     paymentMethod: string;
     actualPaid: string;
+    recordedBy: string;
+    recordedByHelper: string;
     mixedSplit: string;
     mixedSumMismatch: string;
     paidBelowTotal: string;
     creditSupplierRequired: string;
     invalidTotal: string;
+    shiftRequiredError: string;
     clearDraft: string;
     reviewFinalize: string;
     finalizePurchase: string;
@@ -989,9 +1038,21 @@ export interface TranslationDict {
     historyTitle: string;
     historySubtitle: string;
     noPurchases: string;
+    noFilteredPurchases: string;
     purchaseNumber: string;
     dateTime: string;
     supplier: string;
+    searchPlaceholder: string;
+    dateFilter: string;
+    supplierFilter: string;
+    allSuppliers: string;
+    noSupplier: string;
+    paymentStatus: string;
+    paymentStatusFilter: string;
+    allPaymentStatuses: string;
+    paidStatus: string;
+    partiallyPaidStatus: string;
+    unpaidStatus: string;
     status: string;
     walkInSupplier: string;
     pickSupplier: string;
@@ -1258,6 +1319,8 @@ export interface TranslationDict {
     BILL_ITEM_NOT_FOUND: string;
     BILL_VOIDED_NO_RETURN: string;
     BILL_SHIFT_REQUIRED: string;
+    CLOSED_SHIFT_RECORD_LOCKED: string;
+    SHIFT_REQUIRED_FOR_CASH_ACTION: string;
     PAYMENT_METHOD_DISABLED: string;
     PERMISSION_DENIED: string;
     // Purchase-specific

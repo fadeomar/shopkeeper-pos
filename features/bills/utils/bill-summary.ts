@@ -1,4 +1,4 @@
-import type { Bill, BillItem, PaymentMethod } from "@/types/domain";
+import type { Bill, BillItem, BillStatus, PaymentMethod } from "@/types/domain";
 import { netSplitField, normalizeBillSplit } from "@/lib/utils/bill-split";
 
 export type BillDateFilter =
@@ -9,11 +9,14 @@ export type BillDateFilter =
   | "month"
   | "custom";
 export type PaymentFilter = "all" | PaymentMethod;
+export type BillStatusFilter = "all" | BillStatus;
 
 export interface BillFilters {
   query: string;
   dateFilter: BillDateFilter;
   paymentFilter: PaymentFilter;
+  statusFilter: BillStatusFilter;
+  cashierFilter: string;
   customFrom: string;
   customTo: string;
 }
@@ -68,6 +71,15 @@ export function filterBills(bills: Bill[], filters: BillFilters) {
     )
       return false;
 
+    if (filters.statusFilter !== "all" && bill.status !== filters.statusFilter) {
+      return false;
+    }
+
+    if (filters.cashierFilter !== "all") {
+      const cashier = bill.cashierName?.trim() || "__unknown__";
+      if (cashier !== filters.cashierFilter) return false;
+    }
+
     const created = new Date(bill.createdAt);
     if (from && created < from) return false;
     if (to && created >= to) return false;
@@ -99,12 +111,23 @@ export function getBillReturnedItemCount(items: BillItem[]): number {
   return items.reduce((sum, item) => sum + (item.quantityReturned ?? 0), 0);
 }
 
+export function getBillNetItemCount(bill: Bill): number {
+  if (bill.status === "voided" || bill.status === "returned") return 0;
+  const itemCount = Number(bill.itemCount) || 0;
+  const total = Number(bill.totalAmount) || 0;
+  if (itemCount <= 0) return 0;
+  if (total <= 0) return itemCount;
+
+  const netRatio = getBillNetTotal(bill) / total;
+  return Math.max(0, Math.round(itemCount * netRatio));
+}
+
 export function summarizeBills(bills: Bill[]) {
   return bills.reduce(
     (summary, bill) => {
       const billWithSplit = normalizeBillSplit(bill) as Bill;
       summary.billCount += 1;
-      summary.itemCount += billWithSplit.itemCount;
+      summary.itemCount += getBillNetItemCount(billWithSplit);
       const netTotal = getBillNetTotal(billWithSplit);
       const netProfit = getBillNetProfit(billWithSplit);
       summary.totalSales += netTotal;

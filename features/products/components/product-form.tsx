@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -12,6 +12,7 @@ import {
 } from "@/lib/services/inventory-service";
 import { createId } from "@/lib/utils/id";
 import { localDateKey } from "@/lib/utils/date";
+import { normalizeBarcode } from "@/lib/utils/barcode";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NumberFieldRHF } from "@/components/ui/number-field-rhf";
@@ -21,32 +22,76 @@ import { useToast } from "@/components/ui/toast";
 import { BarcodeScannerModal } from "@/components/barcode/barcode-scanner-modal";
 import { useLocale } from "@/components/providers/locale-context";
 import { usePermissions } from "@/lib/hooks/use-permissions";
-import type { Product } from "@/types/domain";
+import type { Product, Settings } from "@/types/domain";
 import clsx from "clsx";
 
 interface Props {
   product?: Product;
   onSaved?: () => void;
   onCancel?: () => void;
+  onOpenExisting?: (product: Product) => void;
 }
 
-const emptyDefaults: ProductSchema = {
-  barcode: "",
-  name: "",
-  category: "",
-  brand: "",
-  unit: "pcs",
-  quantityInStock: 0,
-  buyPrice: 0,
-  sellPrice: 0,
-  minimumStockAlert: 0,
-  supplierName: "",
-  dateAdded: localDateKey(),
-  expiryDate: "",
-  shelfLocation: "",
-  notes: "",
-  status: "active",
+const PRODUCT_DEFAULTS_STORAGE_KEY = "shopkeeper-product-form-defaults-v1";
+
+type StoredProductDefaults = {
+  category?: string;
+  unit?: string;
 };
+
+function getStoredProductDefaults(): StoredProductDefaults {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(PRODUCT_DEFAULTS_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as StoredProductDefaults;
+    return {
+      category: parsed.category?.trim() || undefined,
+      unit: parsed.unit?.trim() || undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
+function rememberProductDefaults(values: ProductSchema) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      PRODUCT_DEFAULTS_STORAGE_KEY,
+      JSON.stringify({
+        category: values.category.trim() || undefined,
+        unit: values.unit.trim() || undefined,
+      } satisfies StoredProductDefaults),
+    );
+  } catch {
+    // localStorage can be unavailable in private mode. Defaults are a UX bonus.
+  }
+}
+
+function buildEmptyDefaults(settings?: Settings): ProductSchema {
+  const stored = getStoredProductDefaults();
+  return {
+    barcode: "",
+    name: "",
+    category: stored.category ?? "General",
+    brand: "",
+    unit: stored.unit ?? "pcs",
+    quantityInStock: 0,
+    buyPrice: 0,
+    sellPrice: 0,
+    minimumStockAlert: Math.max(
+      0,
+      Math.trunc(settings?.lowStockThreshold ?? 0),
+    ),
+    supplierName: "",
+    dateAdded: localDateKey(),
+    expiryDate: "",
+    shelfLocation: "",
+    notes: "",
+    status: "active",
+  };
+}
 
 function FormField({
   label,
@@ -68,26 +113,43 @@ function FormField({
   );
 }
 
-export function ProductForm({ product, onSaved, onCancel }: Props) {
+export function ProductForm({ product, onSaved, onCancel, onOpenExisting }: Props) {
   const { t } = useLocale();
   const { push } = useToast();
   const { canEditCost } = usePermissions();
   const settings = useLiveQuery(() => settingsRepo.get(), []);
+  const products = useLiveQuery(() => productRepo.list(), []);
   const currency = settings?.currency ?? "ILS";
   const [lossWarning, setLossWarning] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
 
   const form = useForm<ProductSchema>({
     resolver: zodResolver(productSchema),
-    defaultValues: product ?? emptyDefaults,
+    defaultValues: product ?? buildEmptyDefaults(settings),
   });
 
   const sellPrice = form.watch("sellPrice");
   const buyPrice = form.watch("buyPrice");
+  const watchedBarcode = form.watch("barcode");
+  const duplicateBarcodeProduct = useMemo(() => {
+    const normalized = normalizeBarcode(watchedBarcode);
+    if (normalized.length < 3) return undefined;
+    return (products ?? []).find(
+      (candidate) =>
+        normalizeBarcode(candidate.barcode) === normalized &&
+        candidate.id !== product?.id,
+    );
+  }, [products, product?.id, watchedBarcode]);
 
   useEffect(() => {
-    form.reset(product ?? emptyDefaults);
-  }, [form, product]);
+    if (product) {
+      form.reset(product);
+      return;
+    }
+    if (!form.formState.isDirty) {
+      form.reset(buildEmptyDefaults(settings));
+    }
+  }, [form, product, settings, form.formState.isDirty]);
   useEffect(() => {
     setLossWarning(Number(sellPrice) < Number(buyPrice));
   }, [sellPrice, buyPrice]);
@@ -95,6 +157,11 @@ export function ProductForm({ product, onSaved, onCancel }: Props) {
   async function onSubmit(values: ProductSchema) {
     const existing = await productRepo.findByBarcode(values.barcode);
     if (existing && existing.id !== product?.id) {
+      form.setError("barcode", {
+        message: t("products.barcodeAlreadyUsed", {
+          name: existing.name,
+        }),
+      });
       push(t("products.barcodeUnique"), "error");
       return;
     }
@@ -121,7 +188,8 @@ export function ProductForm({ product, onSaved, onCancel }: Props) {
         syncStatus: "pending",
       };
       await createProductWithInitialMovement(created);
-      form.reset(emptyDefaults);
+      rememberProductDefaults(values);
+      form.reset(buildEmptyDefaults(settings));
       push(t("products.productCreated"));
     }
     onSaved?.();
@@ -150,6 +218,24 @@ export function ProductForm({ product, onSaved, onCancel }: Props) {
               {t("common.scan")}
             </Button>
           </div>
+          {duplicateBarcodeProduct && (
+            <div className="rounded-xl border border-warning/30 bg-warning-soft px-3 py-2 text-xs text-warning">
+              <p className="font-medium">
+                {t("products.barcodeAlreadyUsed", {
+                  name: duplicateBarcodeProduct.name,
+                })}
+              </p>
+              {onOpenExisting && (
+                <button
+                  type="button"
+                  className="mt-1 font-semibold underline underline-offset-2"
+                  onClick={() => onOpenExisting(duplicateBarcodeProduct)}
+                >
+                  {t("products.openExistingProductInstead")}
+                </button>
+              )}
+            </div>
+          )}
         </FormField>
 
         <FormField label={t("products.category")}>

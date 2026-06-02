@@ -51,7 +51,7 @@ export function ShiftReport({
 }) {
   const { t } = useLocale();
   const currency = settings?.currency ?? "ILS";
-  const storeName = settings?.storeName || "Shopkeeper POS";
+  const storeName = settings?.storeName || "Asas POS";
 
   const bills = useLiveQuery<Bill[]>(
     () => db.bills.where("shiftId").equals(shift.id).toArray(),

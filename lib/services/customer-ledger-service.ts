@@ -1,5 +1,6 @@
 import { AppError, AppErrorCode } from "@/lib/errors/app-error";
 import { db } from "@/lib/db/schema";
+import { SETTINGS_ID } from "@/lib/db/repositories";
 import { nowIso } from "@/lib/utils/date";
 import { createId } from "@/lib/utils/id";
 import { buildSyncQueueItem } from "@/lib/services/sync-queue-service";
@@ -260,6 +261,21 @@ export async function recordCustomerPayment(input: {
     throw new AppError(AppErrorCode.PAYMENT_AMOUNT_INVALID);
 
   const now = nowIso();
+  const paymentMethod = input.paymentMethod ?? "cash";
+  const [settings, shift] = await Promise.all([
+    db.settings.get(SETTINGS_ID),
+    input.shiftId
+      ? db.shifts.get(input.shiftId)
+      : db.shifts.where("status").equals("open").first(),
+  ]);
+  if (input.shiftId && shift?.status === "closed") {
+    throw new AppError(AppErrorCode.CLOSED_SHIFT_RECORD_LOCKED);
+  }
+  const resolvedShiftId = shift?.status === "open" ? shift.id : undefined;
+  if (settings?.requireShift && paymentMethod === "cash" && !resolvedShiftId) {
+    throw new AppError(AppErrorCode.SHIFT_REQUIRED_FOR_CASH_ACTION);
+  }
+
   const payment: CustomerPayment = {
     id: createId("cust_pay"),
     customerKey: input.customerKey,
@@ -267,8 +283,8 @@ export async function recordCustomerPayment(input: {
     customerPhone: input.customerPhone?.trim() || undefined,
     amount,
     note: input.note?.trim() || undefined,
-    paymentMethod: input.paymentMethod ?? "cash",
-    shiftId: input.shiftId,
+    paymentMethod,
+    shiftId: resolvedShiftId,
     createdAt: now,
     syncStatus: "pending",
   };

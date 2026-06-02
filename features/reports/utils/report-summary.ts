@@ -1,5 +1,5 @@
 import type { Bill, BillItem, CashMovement, Expense, ExpenseCategory, PaymentMethod, Product, Purchase, SupplierPayment } from '@/types/domain';
-import { getBillNetProfit, getBillNetTotal } from '@/features/bills/utils/bill-summary';
+import { getBillNetItemCount, getBillNetProfit, getBillNetTotal } from '@/features/bills/utils/bill-summary';
 import { calculateBillItemNetContribution, calculateLineProfit, calculateLineSubtotal } from '@/lib/utils/calculations';
 import { roundMoney } from '@/lib/utils/money';
 import { localDateKey } from '@/lib/utils/date';
@@ -95,7 +95,7 @@ export function summarizeReportBills(bills: Bill[]) {
       const netSales = getBillNetTotal(billWithSplit);
       const netProfit = getBillNetProfit(billWithSplit);
       acc.billCount += 1;
-      acc.itemCount += billWithSplit.status === 'voided' ? 0 : billWithSplit.itemCount;
+      acc.itemCount += getBillNetItemCount(billWithSplit);
       acc.sales += netSales;
       acc.profit += netProfit;
       // Cash retained = the cashAmount portion of the bill, less the
@@ -124,6 +124,16 @@ export function summarizeReportBills(bills: Bill[]) {
   const activeBillCount = summary.billCount - summary.voidedBills;
   summary.averageBill = activeBillCount > 0 ? roundMoney(summary.sales / activeBillCount) : 0;
   return summary;
+}
+
+function getPurchaseNetItemCount(purchase: Purchase): number {
+  if (purchase.status === 'voided' || purchase.status === 'returned') return 0;
+  const itemCount = Number(purchase.itemCount) || 0;
+  const total = Number(purchase.totalAmount) || 0;
+  if (itemCount <= 0) return 0;
+  if (total <= 0) return itemCount;
+  const netCost = Math.max(0, total - (purchase.returnedAmount ?? 0));
+  return Math.max(0, Math.round(itemCount * (netCost / total)));
 }
 
 /**
@@ -155,7 +165,7 @@ export function summarizeReportPurchases(
       const netCard = netSplitField(p, p.cardAmount);
       const netCredit = netSplitField(p, p.creditAmount);
       acc.purchaseCount += 1;
-      acc.itemCount += p.status === 'voided' ? 0 : p.itemCount;
+      acc.itemCount += getPurchaseNetItemCount(p as Purchase);
       acc.purchaseCost = roundMoney(acc.purchaseCost + netCost);
       acc.cashPaidOut = roundMoney(acc.cashPaidOut + netCash);
       acc.cardPaidOut = roundMoney(acc.cardPaidOut + netCard);

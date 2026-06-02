@@ -4,6 +4,7 @@ import { nowIso } from '@/lib/utils/date';
 import { createId } from '@/lib/utils/id';
 import { netSplitField, normalizeBillSplit } from '@/lib/utils/bill-split';
 import { roundMoney } from '@/lib/utils/money';
+import { getBillNetItemCount } from '@/features/bills/utils/bill-summary';
 import { buildSyncQueueItem } from '@/lib/services/sync-queue-service';
 import { logAudit } from '@/lib/services/audit-service';
 import type { Bill, CashMovement, CustomerPayment, Expense, Purchase, Shift, SupplierPayment } from '@/types/domain';
@@ -52,7 +53,7 @@ export function summarizeShiftBills(bills: Bill[]): ShiftTenderTotals {
       if (bill.status === 'returned' || bill.status === 'partially_returned') {
         acc.returnedBillCount += 1;
       }
-      acc.itemCount += bill.status === 'voided' ? 0 : bill.itemCount;
+      acc.itemCount += getBillNetItemCount(bill);
       return acc;
     },
     {
@@ -213,14 +214,14 @@ export async function openShift(input: {
   }
   const cashierName = input.cashierName.trim() || 'Owner';
 
-  return db.transaction('rw', [db.shifts, db.syncQueue], async () => {
+  const shift = await db.transaction('rw', [db.shifts, db.syncQueue], async () => {
     const existing = await db.shifts.where('status').equals('open').first();
     if (existing) {
       throw new AppError(AppErrorCode.SHIFT_ALREADY_OPEN);
     }
 
     const now = nowIso();
-    const shift: Shift = {
+    const nextShift: Shift = {
       id: createId('shift'),
       openedAt: now,
       openedByCashierName: cashierName,
@@ -230,27 +231,29 @@ export async function openShift(input: {
       syncStatus: 'pending',
     };
 
-    await db.shifts.add(shift);
+    await db.shifts.add(nextShift);
     await db.syncQueue.put(
       buildSyncQueueItem({
         entity: 'shift',
-        entityId: shift.id,
+        entityId: nextShift.id,
         operation: 'create',
       }),
     );
 
-    requestSync();
-    void logAudit({
-      category: 'shift',
-      action: 'open',
-      entityId: shift.id,
-      entityLabel: cashierName,
-      summary: `opening cash: ${shift.openingCash}`,
-      reason: shift.notes,
-      shiftId: shift.id,
-    });
-    return shift;
+    return nextShift;
   });
+
+  requestSync();
+  void logAudit({
+    category: 'shift',
+    action: 'open',
+    entityId: shift.id,
+    entityLabel: cashierName,
+    summary: `opening cash: ${shift.openingCash}`,
+    reason: shift.notes,
+    shiftId: shift.id,
+  });
+  return shift;
 }
 
 export async function closeShift(input: {
@@ -263,68 +266,70 @@ export async function closeShift(input: {
     throw new AppError(AppErrorCode.SHIFT_COUNTED_CASH_NEGATIVE);
   }
 
-  return db.transaction(
+  const closedShift = await db.transaction(
     'rw',
     [db.shifts, db.bills, db.purchases, db.supplierPayments, db.customerPayments, db.cashMovements, db.expenses, db.syncQueue],
     async () => {
-    const shift = await db.shifts.get(input.shiftId);
-    if (!shift) throw new AppError(AppErrorCode.SHIFT_NOT_FOUND);
-    if (shift.status === 'closed') throw new AppError(AppErrorCode.SHIFT_ALREADY_CLOSED);
+      const shift = await db.shifts.get(input.shiftId);
+      if (!shift) throw new AppError(AppErrorCode.SHIFT_NOT_FOUND);
+      if (shift.status === 'closed') throw new AppError(AppErrorCode.SHIFT_ALREADY_CLOSED);
 
-    const [bills, purchases, supplierPayments, customerPayments, cashMovements, expenses] = await Promise.all([
-      db.bills.where('shiftId').equals(shift.id).toArray(),
-      db.purchases.where('shiftId').equals(shift.id).toArray(),
-      db.supplierPayments.where('shiftId').equals(shift.id).toArray(),
-      db.customerPayments.where('shiftId').equals(shift.id).toArray(),
-      db.cashMovements.where('shiftId').equals(shift.id).toArray(),
-      db.expenses.where('shiftId').equals(shift.id).toArray(),
-    ]);
-    // Same shared helper the active Shift screen uses — guarantees the close
-    // calculation matches the live summary the cashier was just looking at.
-    const { expectedCash } = summarizeShiftCash(shift, {
-      bills,
-      purchases,
-      supplierPayments,
-      customerPayments,
-      cashMovements,
-      expenses,
-    });
-    const safeCounted = roundMoney(countedCash);
+      const [bills, purchases, supplierPayments, customerPayments, cashMovements, expenses] = await Promise.all([
+        db.bills.where('shiftId').equals(shift.id).toArray(),
+        db.purchases.where('shiftId').equals(shift.id).toArray(),
+        db.supplierPayments.where('shiftId').equals(shift.id).toArray(),
+        db.customerPayments.where('shiftId').equals(shift.id).toArray(),
+        db.cashMovements.where('shiftId').equals(shift.id).toArray(),
+        db.expenses.where('shiftId').equals(shift.id).toArray(),
+      ]);
+      // Same shared helper the active Shift screen uses — guarantees the close
+      // calculation matches the live summary the cashier was just looking at.
+      const { expectedCash } = summarizeShiftCash(shift, {
+        bills,
+        purchases,
+        supplierPayments,
+        customerPayments,
+        cashMovements,
+        expenses,
+      });
+      const safeCounted = roundMoney(countedCash);
 
-    const closedShift: Shift = {
-      ...shift,
-      status: 'closed',
-      closedAt: nowIso(),
-      expectedCash,
-      countedCash: safeCounted,
-      cashDifference: roundMoney(safeCounted - expectedCash),
-      closingNotes: input.notes?.trim() || undefined,
-      syncStatus: 'pending',
-      lastSyncError: undefined,
-    };
+      const nextClosedShift: Shift = {
+        ...shift,
+        status: 'closed',
+        closedAt: nowIso(),
+        expectedCash,
+        countedCash: safeCounted,
+        cashDifference: roundMoney(safeCounted - expectedCash),
+        closingNotes: input.notes?.trim() || undefined,
+        syncStatus: 'pending',
+        lastSyncError: undefined,
+      };
 
-    await db.shifts.put(closedShift);
-    await db.syncQueue.put(
-      buildSyncQueueItem({
-        entity: 'shift',
-        entityId: closedShift.id,
-        operation: 'upsert',
-      }),
-    );
+      await db.shifts.put(nextClosedShift);
+      await db.syncQueue.put(
+        buildSyncQueueItem({
+          entity: 'shift',
+          entityId: nextClosedShift.id,
+          operation: 'upsert',
+        }),
+      );
 
-    requestSync();
-    void logAudit({
-      category: 'shift',
-      action: 'close',
-      entityId: closedShift.id,
-      entityLabel: closedShift.openedByCashierName,
-      summary: `expected ${expectedCash} / counted ${safeCounted} / diff ${closedShift.cashDifference}`,
-      reason: closedShift.closingNotes,
-      shiftId: closedShift.id,
-    });
-    return closedShift;
-  },
+      return nextClosedShift;
+    },
   );
+
+  requestSync();
+  void logAudit({
+    category: 'shift',
+    action: 'close',
+    entityId: closedShift.id,
+    entityLabel: closedShift.openedByCashierName,
+    summary: `expected ${closedShift.expectedCash} / counted ${closedShift.countedCash} / diff ${closedShift.cashDifference}`,
+    reason: closedShift.closingNotes,
+    shiftId: closedShift.id,
+  });
+  return closedShift;
 }
 
 export async function listShifts(): Promise<Shift[]> {

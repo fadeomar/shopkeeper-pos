@@ -1,6 +1,15 @@
 export type EntityStatus = 'active' | 'inactive';
 export type UserRole = 'owner' | 'manager' | 'cashier' | 'accountant';
 
+export function isUserRole(value: unknown): value is UserRole {
+  return (
+    value === 'owner' ||
+    value === 'manager' ||
+    value === 'cashier' ||
+    value === 'accountant'
+  );
+}
+
 export interface RolePermissions {
   canVoid: boolean;
   canReturn: boolean;
@@ -13,16 +22,22 @@ export interface RolePermissions {
 }
 
 export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
+  // Owner is the app/account super-admin role. In this app shell it is routed to
+  // the admin dashboard for user/account management and should not be treated as
+  // an operational POS cashier role. Keep POS permissions closed here so any
+  // accidental owner access to shop pages fails safely.
   owner: {
-    canVoid: true,
-    canReturn: true,
-    canDiscount: true,
-    canViewProfit: true,
-    canEditCost: true,
-    canExport: true,
-    canManageSettings: true,
-    canManageRolePermissions: true,
+    canVoid: false,
+    canReturn: false,
+    canDiscount: false,
+    canViewProfit: false,
+    canEditCost: false,
+    canExport: false,
+    canManageSettings: false,
+    canManageRolePermissions: false,
   },
+  // Manager/accountant are future operational roles. Until their workflows are
+  // fully implemented, keep them below cashier and conservative by default.
   manager: {
     canVoid: true,
     canReturn: true,
@@ -30,14 +45,10 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canViewProfit: true,
     canEditCost: false,
     canExport: true,
-    canManageSettings: true,
+    canManageSettings: false,
     canManageRolePermissions: false,
   },
-  // Cashier is the top role on the shop/user side: the POS owner's own
-  // account. It controls the whole shop — editing buy price, managing settings,
-  // viewing profit, voiding, etc. The `owner` role above is the SaaS operator
-  // who only manages users from the admin dashboard and never touches the POS,
-  // so the cashier (not owner) is the role that needs full POS capability.
+  // Cashier is currently the top operational POS user and can do all POS work.
   cashier: {
     canVoid: true,
     canReturn: true,
@@ -99,10 +110,17 @@ export const NON_OVERRIDABLE_PERMISSIONS = [
  * service-layer guard so both compute identical, escalation-proof results.
  */
 export function resolveRolePermissions(
-  role: UserRole,
+  role: unknown,
   overrides?: Partial<RolePermissions>,
 ): RolePermissions {
-  const base = DEFAULT_ROLE_PERMISSIONS[role] ?? DEFAULT_ROLE_PERMISSIONS.cashier;
+  if (!isUserRole(role)) return NO_PERMISSIONS;
+  const base = DEFAULT_ROLE_PERMISSIONS[role];
+
+  // Cashier is intentionally fixed as the top operational POS role. Do not let
+  // stored role overrides downgrade it, because that can make the main shop
+  // account lose access to critical POS actions/settings.
+  if (role === 'cashier') return { ...base };
+
   const resolved: RolePermissions = { ...base, ...(overrides ?? {}) };
   for (const key of NON_OVERRIDABLE_PERMISSIONS) {
     resolved[key] = base[key];
@@ -336,6 +354,9 @@ export interface Purchase {
   supplierId?: string;
   supplierName?: string;
   supplierPhone?: string;
+  supplierInvoiceNumber?: string;
+  invoiceDate?: string;
+  paymentDueDate?: string;
   paymentMethod: PaymentMethod;
   subtotal: number;
   discountAmount: number;
@@ -459,7 +480,7 @@ export interface Settings {
   // Inventory alerts
   lowStockThreshold?: number;
   expiryWarningDays?: number;
-  // Role-level permission overrides. Values override DEFAULT_ROLE_PERMISSIONS.
+  // Role-level permission overrides. Values override DEFAULT_ROLE_PERMISSIONS for future/lower POS roles. Cashier remains fixed as the top operational POS role.
   rolePermissions?: Partial<Record<UserRole, Partial<RolePermissions>>>;
   createdAt: string;
   updatedAt: string;
@@ -485,6 +506,8 @@ export type AuditCategory =
   | 'supplier'
   | 'settings'
   | 'shift'
+  | 'cash'
+  | 'expense'
   | 'user'
   | 'sync';
 
@@ -496,6 +519,9 @@ export type AuditAction =
   | 'return'
   | 'payment'
   | 'stock_adjust'
+  | 'cash_in'
+  | 'cash_out'
+  | 'expense_create'
   | 'open'
   | 'close'
   | 'approve'
@@ -661,6 +687,9 @@ export interface PurchaseFormValues {
   cashierName?: string;
   supplierName?: string;
   supplierPhone?: string;
+  supplierInvoiceNumber?: string;
+  invoiceDate?: string;
+  paymentDueDate?: string;
   paymentMethod: PaymentMethod;
   discountAmount: number;
   taxAmount: number;
@@ -689,9 +718,8 @@ export interface BillFormValues {
   discountAmount: number;
   taxAmount: number;
   paidAmount: number;
-  // For 'mixed' payment method: explicit cash + card breakdown that must sum
-  // to totalAmount. Ignored for cash/card/credit (the service derives those
-  // fields from paymentMethod + paidAmount).
+  // Retained for backward compatibility with old drafts/records. New UI flows
+  // no longer create mixed cash/card payments.
   cashAmount?: number;
   cardAmount?: number;
   notes?: string;

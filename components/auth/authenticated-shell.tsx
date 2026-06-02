@@ -97,13 +97,13 @@ function AdminShell({ children }: { children: React.ReactNode }) {
         {t("nav.skipToContent")}
       </a>
 
-      <aside className="bg-slate-900 text-white flex flex-col lg:min-h-screen lg:sticky lg:top-0">
+      <aside className="bg-slate-900 text-white flex flex-col lg:h-screen lg:min-h-0 lg:sticky lg:top-0 lg:overflow-hidden">
         <div className="hidden lg:block px-5 pt-6 pb-4">
           <AppSidebarBrand />
         </div>
         <div className="flex lg:hidden items-center gap-3 px-4 py-3 border-b border-white/10">
           <span className="font-bold text-base tracking-tight">
-            Shopkeeper POS
+            Asas POS
           </span>
           <span className="text-xs text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full">
             Admin
@@ -113,7 +113,7 @@ function AdminShell({ children }: { children: React.ReactNode }) {
 
         <nav
           aria-label={t("nav.adminNavLabel")}
-          className="flex flex-row overflow-x-auto gap-1 px-3 py-2 lg:flex-col lg:overflow-x-visible lg:flex-1"
+          className="flex flex-row overflow-x-auto gap-1 px-3 py-2 lg:min-h-0 lg:flex-1 lg:flex-col lg:overflow-x-visible lg:overflow-y-auto"
         >
           <Link
             href={"/admin/users" as Route}
@@ -129,7 +129,7 @@ function AdminShell({ children }: { children: React.ReactNode }) {
           </Link>
         </nav>
 
-        <div className="hidden lg:block px-4 pb-5 mt-auto">
+        <div className="hidden lg:block shrink-0 border-t border-white/10 px-4 py-5">
           <div className="flex items-center gap-2 mb-1">
             <span className="text-xs text-slate-400 truncate">
               {user?.name}
@@ -373,7 +373,7 @@ function CashierShell({ children }: { children: React.ReactNode }) {
           {t("nav.skipToContent")}
         </a>
 
-        <aside className="bg-slate-900 text-white flex flex-col lg:min-h-screen lg:sticky lg:top-0">
+        <aside className="bg-slate-900 text-white flex flex-col lg:h-screen lg:min-h-0 lg:sticky lg:top-0 lg:overflow-hidden">
           {/* Desktop: logo at top of the sidebar */}
           <div className="hidden lg:block px-5 pt-6 pb-4">
             <AppSidebarBrand />
@@ -386,7 +386,7 @@ function CashierShell({ children }: { children: React.ReactNode }) {
             {/* Store name gives the cashier working context; falls back to the
                 product brand only until settings load. */}
             <span className="font-bold text-sm tracking-tight truncate">
-              {settings?.storeName?.trim() || "Shopkeeper POS"}
+              {settings?.storeName?.trim() || "Asas POS"}
             </span>
             <div className="ms-auto flex items-center gap-2 shrink-0">
               <SyncStatusBadge compact />
@@ -397,7 +397,7 @@ function CashierShell({ children }: { children: React.ReactNode }) {
           <SidebarNav />
 
           {/* Desktop: user info + sync badge at the foot of the sidebar */}
-          <div className="hidden lg:block px-4 pb-5 mt-auto">
+          <div className="hidden lg:block shrink-0 border-t border-white/10 px-4 py-5">
             <div className="text-xs text-slate-400 mb-1 truncate">
               {user?.name}
             </div>
@@ -460,7 +460,28 @@ function RestoreModal({
   const { t } = useLocale();
   const uid = useId();
   const titleId = `restore-title-${uid}`;
-  const { bills, products, stockMovements } = meta.recordCounts;
+  const counts = meta.recordCounts;
+  const restoreStats = [
+    { value: counts.bills ?? 0, label: t("auth.restoreStatBills") },
+    { value: counts.products ?? 0, label: t("auth.restoreStatProducts") },
+    { value: counts.purchases ?? 0, label: t("auth.restoreStatPurchases") },
+    {
+      value: (counts.customers ?? 0) + (counts.customerPayments ?? 0),
+      label: t("auth.restoreStatCustomers"),
+    },
+    {
+      value: (counts.suppliers ?? 0) + (counts.supplierPayments ?? 0),
+      label: t("auth.restoreStatSuppliers"),
+    },
+    {
+      value: (counts.cashMovements ?? 0) + (counts.expenses ?? 0),
+      label: t("auth.restoreStatPayments"),
+    },
+    {
+      value: counts.stockMovements ?? 0,
+      label: t("auth.restoreStatMovements"),
+    },
+  ].filter((stat) => stat.value > 0);
   const date = new Date(meta.lastSyncedAt).toLocaleDateString(undefined, {
     year: "numeric",
     month: "short",
@@ -522,10 +543,10 @@ function RestoreModal({
         </p>
 
         {/* Counts */}
-        <div className="flex justify-center gap-4 mb-5">
-          <Stat value={bills} label={t("auth.restoreStatBills")} />
-          <Stat value={products} label={t("auth.restoreStatProducts")} />
-          <Stat value={stockMovements} label={t("auth.restoreStatMovements")} />
+        <div className="grid grid-cols-2 gap-2 mb-5 sm:grid-cols-3">
+          {restoreStats.map((stat) => (
+            <Stat key={stat.label} value={stat.value} label={stat.label} />
+          ))}
         </div>
 
         {/* Progress / error */}
@@ -966,7 +987,7 @@ function AppLogo({ subtitle }: { subtitle?: string }) {
           />
         </svg>
       </div>
-      <h1 className="text-xl font-bold text-slate-800">Shopkeeper POS</h1>
+      <h1 className="text-xl font-bold text-slate-800">Asas POS</h1>
       <p className="text-sm text-slate-500 mt-1">
         {subtitle ?? t("auth.signInToContinue")}
       </p>
