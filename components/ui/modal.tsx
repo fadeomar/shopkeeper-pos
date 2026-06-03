@@ -44,6 +44,7 @@
 import { useEffect, useId, useRef, useState, type PropsWithChildren, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import clsx from "clsx";
+import { lockBodyScroll } from "@/lib/utils/body-scroll-lock";
 import { X } from "lucide-react";
 import { useLocale } from "@/components/providers/locale-context";
 
@@ -182,11 +183,10 @@ export function Modal({
         onClose();
       }
     }
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const unlockBodyScroll = lockBodyScroll();
     window.addEventListener("keydown", onKeyDown);
     return () => {
-      document.body.style.overflow = previousOverflow;
+      unlockBodyScroll();
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [open, onClose]);

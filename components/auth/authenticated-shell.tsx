@@ -34,6 +34,7 @@ import { SafeSignOutButton } from "@/components/auth/safe-sign-out-button";
 import { ConflictResolverModal } from "@/components/sync/conflict-resolver-modal";
 import { MobileBottomNav } from "@/components/mobile-bottom-nav";
 import { PublicShell } from "@/components/auth/public-shell";
+import { resetBodyScrollLock } from "@/lib/utils/body-scroll-lock";
 
 // Routes reachable WITHOUT authentication. Prefix-matched, allowlist-only: only
 // these paths bypass the auth gate; every other route keeps its existing
@@ -53,6 +54,10 @@ export function AuthenticatedShell({
 }) {
   const { status, user, logout } = useAuth();
   const pathname = usePathname();
+
+  useEffect(() => {
+    resetBodyScrollLock();
+  }, [pathname]);
 
   // Public allowlist takes precedence over the auth gate so /guide is reachable
   // when logged out. Checked before status so it never flashes the login screen.

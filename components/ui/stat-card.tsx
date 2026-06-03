@@ -3,37 +3,40 @@ import { FitText } from './fit-text';
 import { ChevronRight } from './icons';
 import clsx from 'clsx';
 
-type Tone = 'neutral' | 'positive' | 'warning' | 'danger' | 'brand' | 'info';
+export type StatTone = 'neutral' | 'positive' | 'warning' | 'danger' | 'brand' | 'info' | 'money';
 
 // Value text colour per tone. Applied in every mode (this preserves the
 // existing behaviour where `tone` only tinted the number).
-const VALUE_TONE: Record<Tone, string> = {
+const VALUE_TONE: Record<StatTone, string> = {
   neutral: 'text-fg',
   positive: 'text-success',
   warning: 'text-warning',
   danger: 'text-danger',
   brand: 'text-brand',
   info: 'text-info',
+  money: 'text-money',
 };
 
 // Soft tinted surface + matching border, used only when `filled` is set.
 // Keeps the colour flow consistent with the app's semantic tokens.
-const FILL_SURFACE: Record<Tone, string> = {
-  neutral: 'bg-surface-soft/55 border-border-default',
-  positive: 'bg-success-soft/45 border-success/20',
-  warning: 'bg-warning-soft/45 border-warning/20',
-  danger: 'bg-danger-soft/45 border-danger/20',
-  brand: 'bg-brand-soft/45 border-brand/20',
-  info: 'bg-info-soft/45 border-info/20',
+const FILL_SURFACE: Record<StatTone, string> = {
+  neutral: 'bg-surface-soft/45 border-border-default',
+  positive: 'bg-success-soft/35 border-success/20',
+  warning: 'bg-warning-soft/35 border-warning/20',
+  danger: 'bg-danger-soft/35 border-danger/20',
+  brand: 'bg-brand-soft/35 border-brand/20',
+  info: 'bg-info-soft/35 border-info/20',
+  money: 'bg-money-soft/35 border-money/20',
 };
 
-const FILL_HOVER: Record<Tone, string> = {
+const FILL_HOVER: Record<StatTone, string> = {
   neutral: 'hover:border-border-strong',
   positive: 'hover:border-success/50',
   warning: 'hover:border-warning/50',
   danger: 'hover:border-danger/50',
   brand: 'hover:border-brand/50',
   info: 'hover:border-info/50',
+  money: 'hover:border-money/50',
 };
 
 export function StatCard({
@@ -48,7 +51,7 @@ export function StatCard({
   label: string;
   value: string | number;
   helper?: string;
-  tone?: Tone;
+  tone?: StatTone;
   /**
    * When true, the card paints a soft tinted background + matching border
    * derived from `tone` (used by the reports dashboard for a colour-coded
@@ -81,7 +84,7 @@ export function StatCard({
 
   // Base container mirrors the shared Card look (rounded-2xl, subtle shadow,
   // 1px border) so filled and non-filled cards sit together cleanly.
-  const base = 'flex flex-col gap-1 rounded-2xl border p-4 shadow-xs';
+  const base = 'flex min-h-[112px] flex-col justify-between gap-2 rounded-2xl border p-4 shadow-xs';
   const surface = filled ? FILL_SURFACE[tone] : 'bg-surface border-border-default';
 
   if (href) {

@@ -52,7 +52,7 @@ Retail POS green palette. All colors flow through CSS variables in `app/globals.
 
 Use the app font stack from `globals.css`. Headings should be bold and compact. Body text should be readable at 14–16px. Supporting text should use muted slate tones.
 
-**Fonts are vendored, not fetched.** The three families — Plus Jakarta Sans (`--font-sans`), IBM Plex Sans Arabic (`--font-arabic`), JetBrains Mono (`--font-mono`) — are committed as `.woff2` files under `app/fonts/` and loaded through `next/font/local` in `app/layout.tsx`. This is deliberate: `next/font/google` downloads fonts at **build time**, which breaks offline / air-gapped production builds. Never switch back to `next/font/google`. To refresh or add a weight, edit and re-run `node scripts/vendor-fonts.mjs`, then commit the new files. Plus Jakarta Sans and JetBrains Mono are variable (one file, `weight: '400 800'` / `'400 700'`); IBM Plex Sans Arabic is static (one file per weight, 400–700). Only the `latin` subset is vendored for the Latin families and `arabic` for the Arabic family — keep new strings within those scripts.
+**Current active font stack:** system fonts from `app/globals.css` (`system-ui`, `Segoe UI`, `Noto Sans Arabic`/Arabic UI fallbacks, and system mono). Do not change the active font during UI-polish sprints unless the full app is re-QA'd on mobile and desktop, because font changes affect table width, Arabic wrapping, input height, and POS checkout spacing. Vendored fonts may exist under `app/fonts/` for future experimentation, but they are not activated in `app/layout.tsx` in this release.
 
 ## 5. Spacing system
 

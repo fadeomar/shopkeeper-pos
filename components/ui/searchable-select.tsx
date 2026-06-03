@@ -52,6 +52,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import clsx from "clsx";
+import { lockBodyScroll } from "@/lib/utils/body-scroll-lock";
 import { Check, ChevronDown, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -329,11 +330,7 @@ export function SearchableSelect({
   // need this — it's a transient overlay.
   useEffect(() => {
     if (!open || !isMobile) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
+    return lockBodyScroll();
   }, [open, isMobile]);
 
   // Keep the highlighted row visible when scrolling via keyboard.

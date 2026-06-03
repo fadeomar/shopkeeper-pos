@@ -48,6 +48,8 @@ export {
   ChevronRight,
   ArrowLeft,
   ArrowRight,
+  ArrowDownToLine,
+  ArrowUpFromLine,
   RotateCcw,
   // Status / state
   CircleCheck,
