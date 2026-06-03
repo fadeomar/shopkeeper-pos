@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { getServiceErrorMessage } from "@/lib/errors/get-error-message";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
@@ -311,26 +312,42 @@ export function SupplierLedgerWorkspace() {
         title={t("suppliers.title")}
         description={t("suppliers.subtitle")}
         actions={
-          <Button type="button" onClick={() => setSearch("")}>
-            {t("suppliers.showAll")}
-          </Button>
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+            <Link
+              href={"/purchases/new" as never}
+              className="inline-flex min-h-[42px] items-center justify-center rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-hover"
+            >
+              {t("suppliers.addSupplier")}
+            </Link>
+            <Button type="button" variant="secondary" onClick={() => setSearch("")}>
+              {t("suppliers.showAll")}
+            </Button>
+          </div>
         }
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
         <StatCard
+          filled
+          tone="warning"
           label={t("suppliers.totalPurchases")}
           value={formatCurrency(totals.totalPurchases, currency)}
         />
         <StatCard
+          filled
+          tone="positive"
           label={t("suppliers.totalPaid")}
           value={formatCurrency(totals.payments, currency)}
         />
         <StatCard
+          filled
+          tone={totals.balanceOwed > MONEY_EPSILON ? "danger" : "positive"}
           label={t("suppliers.totalBalanceOwed")}
           value={formatCurrency(totals.balanceOwed, currency)}
         />
         <StatCard
+          filled
+          tone="neutral"
           label={t("suppliers.suppliersWithDebt")}
           value={String(totals.suppliersWithDebt)}
         />

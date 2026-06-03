@@ -63,10 +63,10 @@
   --radius-2xl: 1.25rem;
   --radius-3xl: 1.5rem;
 
-  /* Font stacks — system fonts only in the distributed zip. */
-  --app-font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans Arabic', 'Arabic UI Text', sans-serif;
-  --app-font-arabic: 'Noto Sans Arabic', 'Arabic UI Text', 'Segoe UI', Tahoma, sans-serif;
-  --app-font-mono: SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  /* Font stacks — local, vendored fonts first so the PWA remains offline-safe. */
+  --app-font-sans: var(--font-plus-jakarta-sans), system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans Arabic', 'Arabic UI Text', sans-serif;
+  --app-font-arabic: var(--font-ibm-plex-sans-arabic), 'Noto Sans Arabic', 'Arabic UI Text', 'Segoe UI', Tahoma, sans-serif;
+  --app-font-mono: var(--font-jetbrains-mono), SFMono-Regular, Consolas, 'Liberation Mono', monospace;
 
   /* Touch targets — generous, never below 44px for primary actions */
   --tap-compact: 2.25rem;          /* 36px - secondary chips */
@@ -146,6 +146,55 @@
     background: var(--color-app);
     color: var(--color-text);
     overscroll-behavior-y: none;
+  }
+
+  /* Softer, app-shaped scrollbars. This removes the heavy native bars that
+     looked detached from the POS design on desktop while keeping mobile
+     behavior native and light. */
+  html {
+    scrollbar-gutter: stable;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--color-border-strong) 78%, var(--color-brand) 22%) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    min-height: 40px;
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-border-strong) 78%, var(--color-brand) 22%);
+    background-clip: content-box;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--color-brand) 45%, var(--color-border-strong));
+    background-clip: content-box;
+  }
+
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  @media (max-width: 639px) {
+    *::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+
+    *::-webkit-scrollbar-thumb {
+      border-width: 2px;
+    }
   }
 
   a { color: inherit; text-decoration: none; }

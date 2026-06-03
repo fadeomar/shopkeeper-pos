@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import Link from "next/link";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db/schema";
@@ -149,6 +149,30 @@ function PartyRows({
         </div>
       ))}
     </div>
+  );
+}
+
+
+function ReportPanel({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description?: string;
+  children: ReactNode;
+}) {
+  return (
+    <Card className="overflow-hidden bg-surface shadow-xs" padding="none">
+      <div className="border-b border-border-subtle bg-surface-soft/45 px-5 py-4">
+        <div className="mb-3 h-1 w-10 rounded-full bg-brand/35" aria-hidden />
+        <h3 className="text-base font-semibold text-fg">{title}</h3>
+        {description && (
+          <p className="mt-1 text-sm leading-6 text-fg-muted">{description}</p>
+        )}
+      </div>
+      <div className="px-5 py-4">{children}</div>
+    </Card>
   );
 }
 
@@ -328,12 +352,12 @@ export function ReportsWorkspace() {
         title={t("reports.title")}
         description={t("reports.subtitle")}
         actions={
-          <>
+          <div className="grid w-full grid-cols-2 gap-2 sm:w-auto sm:flex sm:flex-wrap sm:justify-end">
             <Link
               // typed-routes hasn't been regenerated yet for the new /reports/z page;
               // the route exists at app/reports/z/page.tsx so the cast is safe.
               href={"/reports/z" as never}
-              className="inline-flex min-h-[42px] items-center justify-center rounded-xl bg-success px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-success/90"
+              className="inline-flex min-h-[42px] items-center justify-center rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-hover"
             >
               {t("reports.openZReport")}
             </Link>
@@ -342,17 +366,17 @@ export function ReportsWorkspace() {
             </Button>
             <Link
               href="/bills"
-              className="inline-flex min-h-[42px] items-center justify-center rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-200"
+              className="inline-flex min-h-[42px] items-center justify-center rounded-xl bg-surface-soft px-4 py-2.5 text-sm font-semibold text-fg-secondary transition-colors hover:bg-surface-muted"
             >
               {t("reports.openBills")}
             </Link>
             <Link
               href="/inventory"
-              className="inline-flex min-h-[42px] items-center justify-center rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-hover"
+              className="inline-flex min-h-[42px] items-center justify-center rounded-xl bg-brand-soft px-4 py-2.5 text-sm font-semibold text-brand transition-colors hover:bg-brand-soft/80"
             >
               {t("reports.openInventory")}
             </Link>
-          </>
+          </div>
         }
       />
 
@@ -530,11 +554,8 @@ export function ReportsWorkspace() {
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <h3 className="text-base font-semibold text-slate-900">
-            {t("reports.paymentBreakdown")}
-          </h3>
-          <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+        <ReportPanel title={t("reports.paymentBreakdown")}>
+          <div className="grid grid-cols-2 gap-3 text-sm">
             <StatCard
               filled
               tone="positive"
@@ -569,100 +590,86 @@ export function ReportsWorkspace() {
             {summary.voidedBills} · {t("common.returned")}{" "}
             {summary.returnedBills}
           </p>
-        </Card>
+        </ReportPanel>
 
-        <Card>
-          <h3 className="text-base font-semibold text-slate-900">
-            {t("reports.purchasePaymentBreakdown")}
-          </h3>
-          <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+        <ReportPanel title={t("reports.purchasePaymentBreakdown")}>
+          <div className="grid grid-cols-2 gap-3 text-sm">
             <StatCard filled tone="warning" label={t("common.cash")} value={formatCurrency(purchaseSummary.cashPaidOut, currency)} />
             <StatCard filled tone="info" label={t("common.card")} value={formatCurrency(purchaseSummary.cardPaidOut, currency)} />
             <StatCard filled tone="neutral" label={t("common.credit")} value={formatCurrency(purchaseSummary.debtAccrued, currency)} />
             <StatCard filled tone="danger" label={t("reports.supplierPayments")} value={formatCurrency(purchaseSummary.supplierPayments, currency)} />
           </div>
-        </Card>
+        </ReportPanel>
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <h3 className="text-base font-semibold text-slate-900">
-            {t("reports.salesTrend")}
-          </h3>
-          <p className="mt-1 text-sm text-slate-500">
-            {t("reports.salesTrendDesc")}
-          </p>
-          <div className="mt-4">
-            <TrendBars rows={trendRows} currency={currency} />
-          </div>
-        </Card>
+        <ReportPanel
+          title={t("reports.salesTrend")}
+          description={t("reports.salesTrendDesc")}
+        >
+          <TrendBars rows={trendRows} currency={currency} />
+        </ReportPanel>
       </section>
 
 
 
       <section className="grid gap-4 xl:grid-cols-3">
-        <Card>
-          <h3 className="text-base font-semibold text-slate-900">{t("reports.categorySales")}</h3>
-          <p className="mt-1 text-sm text-slate-500">{t("reports.categorySalesDesc")}</p>
+        <ReportPanel
+          title={t("reports.categorySales")}
+          description={t("reports.categorySalesDesc")}
+        >
           <CategoryRows rows={categorySales} currency={currency} emptyText={t("reports.noProductSales")} showProfit={canViewProfit} />
-        </Card>
-        <Card>
-          <h3 className="text-base font-semibold text-slate-900">{t("reports.topCustomers")}</h3>
-          <p className="mt-1 text-sm text-slate-500">{t("reports.topCustomersDesc")}</p>
+        </ReportPanel>
+        <ReportPanel
+          title={t("reports.topCustomers")}
+          description={t("reports.topCustomersDesc")}
+        >
           <PartyRows rows={topCustomers} currency={currency} emptyText={t("reports.noCustomersInPeriod")} dueLabel={t("reports.creditDue")} />
-        </Card>
-        <Card>
-          <h3 className="text-base font-semibold text-slate-900">{t("reports.topSuppliers")}</h3>
-          <p className="mt-1 text-sm text-slate-500">{t("reports.topSuppliersDesc")}</p>
+        </ReportPanel>
+        <ReportPanel
+          title={t("reports.topSuppliers")}
+          description={t("reports.topSuppliersDesc")}
+        >
           <PartyRows rows={topSuppliers} currency={currency} emptyText={t("reports.noSuppliersInPeriod")} dueLabel={t("reports.amountDue")} />
-        </Card>
+        </ReportPanel>
       </section>
 
       <section className="grid gap-4 xl:grid-cols-3">
-        <Card>
-          <h3 className="text-base font-semibold text-slate-900">
-            {t("reports.topSellingProducts")}
-          </h3>
-          <p className="mt-1 text-sm text-slate-500">
-            {t("reports.topSellingProductsDesc")}
-          </p>
+        <ReportPanel
+          title={t("reports.topSellingProducts")}
+          description={t("reports.topSellingProductsDesc")}
+        >
           <ProductRows
             rows={topProducts}
             currency={currency}
             emptyText={t("reports.noProductSales")}
             showProfit={canViewProfit}
           />
-        </Card>
+        </ReportPanel>
         {canViewProfit && (
-          <Card>
-            <h3 className="text-base font-semibold text-slate-900">
-              {t("reports.highestProfitProducts")}
-            </h3>
-            <p className="mt-1 text-sm text-slate-500">
-              {t("reports.highestProfitProductsDesc")}
-            </p>
+          <ReportPanel
+            title={t("reports.highestProfitProducts")}
+            description={t("reports.highestProfitProductsDesc")}
+          >
             <ProductRows
               rows={highestProfitProducts}
               currency={currency}
               emptyText={t("reports.noProductSales")}
               showProfit={canViewProfit}
             />
-          </Card>
+          </ReportPanel>
         )}
-        <Card>
-          <h3 className="text-base font-semibold text-slate-900">
-            {t("reports.lowStockSoldProducts")}
-          </h3>
-          <p className="mt-1 text-sm text-slate-500">
-            {t("reports.lowStockSoldProductsDesc")}
-          </p>
+        <ReportPanel
+          title={t("reports.lowStockSoldProducts")}
+          description={t("reports.lowStockSoldProductsDesc")}
+        >
           <ProductRows
             rows={lowStockSoldProducts}
             currency={currency}
             emptyText={t("reports.noLowStockSold")}
             showProfit={canViewProfit}
           />
-        </Card>
+        </ReportPanel>
       </section>
     </PageShell>
   );

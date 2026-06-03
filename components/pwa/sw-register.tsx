@@ -415,8 +415,8 @@ export function ServiceWorkerRegister() {
       <span
         className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
           online
-            ? "bg-green-900/50 text-green-300"
-            : "bg-red-900/50 text-red-300"
+            ? "bg-success/15 text-success"
+            : "bg-danger/15 text-danger"
         }`}
       >
         {online ? t("pwa.online") : t("pwa.offline")}
@@ -443,9 +443,9 @@ export function ServiceWorkerRegister() {
       {pendingCount > 0 && (
         <span
           title={t("sync.waitingCloud")}
-          className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-900/40 text-blue-300"
+          className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-info/15 text-info"
         >
-          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+          <span className="w-1.5 h-1.5 rounded-full bg-info animate-pulse" />
           {t("sync.pendingBadge", { count: pendingCount })}
         </span>
       )}
@@ -454,9 +454,9 @@ export function ServiceWorkerRegister() {
         <button
           type="button"
           onClick={handleUpdate}
-          className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 transition-colors"
+          className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-warning/15 text-warning hover:bg-warning/25 transition-colors"
         >
-          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+          <span className="w-1.5 h-1.5 rounded-full bg-warning animate-pulse" />
           {t("pwa.updateAvailable")} - {t("pwa.reload")}
         </button>
       )}

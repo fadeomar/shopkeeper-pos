@@ -288,9 +288,9 @@ export function MobileBottomNav() {
                 onClick={() => setMoreOpen(false)}
                 aria-label={t("common.close")}
                 className={clsx(
-                  "rounded-xl p-2 text-slate-400 transition-colors",
-                  "hover:bg-white/10 hover:text-white",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40",
+                  "rounded-xl bg-danger-soft/15 p-2 text-danger-soft transition-colors",
+                  "hover:bg-danger-soft/25 hover:text-white",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger-soft/60",
                 )}
               >
                 <X size={18} aria-hidden />

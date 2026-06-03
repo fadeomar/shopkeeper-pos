@@ -413,7 +413,7 @@ export function SearchableSelect({
                 setQuery("");
                 inputRef.current?.focus();
               }}
-              className="absolute end-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-fg-muted hover:bg-surface-soft"
+              className="absolute end-2 top-1/2 -translate-y-1/2 rounded-md bg-danger-soft/50 p-1 text-danger/75 transition-colors hover:bg-danger-soft hover:text-danger"
             >
               <X size={14} aria-hidden />
             </button>

@@ -19,12 +19,12 @@ const VALUE_TONE: Record<Tone, string> = {
 // Soft tinted surface + matching border, used only when `filled` is set.
 // Keeps the colour flow consistent with the app's semantic tokens.
 const FILL_SURFACE: Record<Tone, string> = {
-  neutral: 'bg-surface-soft border-border-default',
-  positive: 'bg-success-soft border-success/25',
-  warning: 'bg-warning-soft border-warning/25',
-  danger: 'bg-danger-soft border-danger/25',
-  brand: 'bg-brand-soft border-brand/25',
-  info: 'bg-info-soft border-info/25',
+  neutral: 'bg-surface-soft/55 border-border-default',
+  positive: 'bg-success-soft/45 border-success/20',
+  warning: 'bg-warning-soft/45 border-warning/20',
+  danger: 'bg-danger-soft/45 border-danger/20',
+  brand: 'bg-brand-soft/45 border-brand/20',
+  info: 'bg-info-soft/45 border-info/20',
 };
 
 const FILL_HOVER: Record<Tone, string> = {

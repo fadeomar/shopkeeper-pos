@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import localFont from 'next/font/local';
 import './globals.css';
 import { ServiceWorkerRegister } from '@/components/pwa/sw-register';
 import { ToastProvider } from '@/components/ui/toast';
@@ -7,6 +8,31 @@ import { LocaleProvider } from '@/components/providers/locale-context';
 import { AuthProvider } from '@/components/providers/auth-context';
 import { SyncProvider } from '@/components/providers/sync-provider';
 import { AuthenticatedShell } from '@/components/auth/authenticated-shell';
+
+const plusJakartaSans = localFont({
+  src: './fonts/PlusJakartaSans-latin.woff2',
+  variable: '--font-plus-jakarta-sans',
+  weight: '400 800',
+  display: 'swap',
+});
+
+const ibmPlexSansArabic = localFont({
+  src: [
+    { path: './fonts/IBMPlexSansArabic-arabic-400.woff2', weight: '400', style: 'normal' },
+    { path: './fonts/IBMPlexSansArabic-arabic-500.woff2', weight: '500', style: 'normal' },
+    { path: './fonts/IBMPlexSansArabic-arabic-600.woff2', weight: '600', style: 'normal' },
+    { path: './fonts/IBMPlexSansArabic-arabic-700.woff2', weight: '700', style: 'normal' },
+  ],
+  variable: '--font-ibm-plex-sans-arabic',
+  display: 'swap',
+});
+
+const jetBrainsMono = localFont({
+  src: './fonts/JetBrainsMono-latin.woff2',
+  variable: '--font-jetbrains-mono',
+  weight: '400 700',
+  display: 'swap',
+});
 
 const APP_NAME = 'Asas POS';
 const APP_DESCRIPTION =
@@ -65,7 +91,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <script dangerouslySetInnerHTML={{ __html: `(function(){try{var l=localStorage.getItem('shopkeeper-pos-locale');if(l==='ar'){var d=document.documentElement;d.lang='ar';d.dir='rtl';}}catch(e){}})()` }} />
       </head>
-      <body className="bg-app min-h-screen text-fg" suppressHydrationWarning>
+      <body
+        className={`${plusJakartaSans.variable} ${ibmPlexSansArabic.variable} ${jetBrainsMono.variable} bg-app min-h-screen text-fg`}
+        suppressHydrationWarning
+      >
         <LocaleProvider>
           <SettingsProvider>
             <ToastProvider>

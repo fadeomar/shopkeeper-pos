@@ -163,9 +163,9 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                 onClick={() => dismiss(toast.id)}
                 aria-label={t("common.close")}
                 className={clsx(
-                  "mt-0.5 shrink-0 rounded-lg p-1 text-fg-muted transition-colors",
-                  "hover:bg-surface-soft hover:text-fg",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
+                  "mt-0.5 shrink-0 rounded-lg bg-danger-soft/50 p-1 text-danger/75 transition-colors",
+                  "hover:bg-danger-soft hover:text-danger",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/25",
                 )}
               >
                 <X size={14} aria-hidden />

@@ -315,26 +315,42 @@ export function CustomerLedgerWorkspace() {
         title={t("customers.title")}
         description={t("customers.subtitle")}
         actions={
-          <Button type="button" onClick={() => setSearch("")}>
-            {t("customers.showAll")}
-          </Button>
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+            <Link
+              href={"/billing" as never}
+              className="inline-flex min-h-[42px] items-center justify-center rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-hover"
+            >
+              {t("customers.addCustomer")}
+            </Link>
+            <Button type="button" variant="secondary" onClick={() => setSearch("")}>
+              {t("customers.showAll")}
+            </Button>
+          </div>
         }
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
         <StatCard
+          filled
+          tone="brand"
           label={t("customers.totalCreditSales")}
           value={formatCurrency(totals.creditSales, currency)}
         />
         <StatCard
+          filled
+          tone="positive"
           label={t("customers.totalPaid")}
           value={formatCurrency(totals.payments, currency)}
         />
         <StatCard
+          filled
+          tone={totals.balanceDue > MONEY_EPSILON ? "danger" : "positive"}
           label={t("customers.totalBalanceDue")}
           value={formatCurrency(totals.balanceDue, currency)}
         />
         <StatCard
+          filled
+          tone="neutral"
           label={t("customers.customersWithDebt")}
           value={String(totals.customersWithDebt)}
         />

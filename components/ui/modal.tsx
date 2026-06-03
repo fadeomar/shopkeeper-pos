@@ -314,11 +314,11 @@ export function Modal({
             aria-label={t("common.close")}
             className={clsx(
               "shrink-0 inline-flex items-center justify-center rounded-xl",
-              "text-fg-muted hover:text-fg hover:bg-surface-soft active:bg-surface-muted",
+              "bg-danger-soft/60 text-danger/75 hover:bg-danger-soft hover:text-danger active:bg-danger-soft/80",
               "transition-colors",
               // 44px tap target on mobile, slightly smaller on desktop.
               "h-11 w-11 sm:h-9 sm:w-9",
-              "focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-brand)_22%,transparent)]",
+              "focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-danger)_24%,transparent)]",
             )}
           >
             <X size={20} aria-hidden />

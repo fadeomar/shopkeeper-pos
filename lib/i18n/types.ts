@@ -453,6 +453,7 @@ export interface TranslationDict {
     title: string;
     subtitle: string;
     showAll: string;
+    addCustomer: string;
     totalCreditSales: string;
     totalPaid: string;
     totalBalanceDue: string;
@@ -641,11 +642,14 @@ export interface TranslationDict {
     tax: string;
     expectedPaid: string;
     actualPaid: string;
+    paidNow: string;
     notes: string;
     subtotal: string;
     total: string;
     totalProfit: string;
     change: string;
+    changeDueBack: string;
+    changeHelper: string;
     paidBelowTotal: string;
     creditCustomerRequired: string;
     amountDue: string;
@@ -1081,10 +1085,14 @@ export interface TranslationDict {
     tax: string;
     paid: string;
     change: string;
+    changeDueBack: string;
+    changeHelper: string;
     amountDue: string;
+    amountDueHelper: string;
     notes: string;
     paymentMethod: string;
     actualPaid: string;
+    paidNow: string;
     recordedBy: string;
     recordedByHelper: string;
     mixedSplit: string;
@@ -1167,6 +1175,7 @@ export interface TranslationDict {
     noSuppliersDesc: string;
     view: string;
     showAll: string;
+    addSupplier: string;
     searchPlaceholder: string;
     supplierDetails: string;
     supplierDetailsDesc: string;
