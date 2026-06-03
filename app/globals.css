@@ -151,7 +151,18 @@
     color: var(--color-text);
     overflow-x: hidden;
     overflow-y: auto;
-    overscroll-behavior-y: none;
+    overscroll-behavior-y: auto;
+  }
+
+  /* Safety net: when the scroll-lock attribute is not present, the page must
+     always be wheel/touchpad scrollable even if an old modal left inline
+     overflow styles behind after an HMR update, route change, or crash. */
+  html:not([data-asas-scroll-locked]) {
+    overflow-y: auto !important;
+  }
+
+  body:not([data-asas-scroll-locked]) {
+    overflow-y: auto !important;
   }
 
   /* Softer, app-shaped scrollbars. This removes the heavy native bars that

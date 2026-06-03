@@ -34,7 +34,11 @@ import { SafeSignOutButton } from "@/components/auth/safe-sign-out-button";
 import { ConflictResolverModal } from "@/components/sync/conflict-resolver-modal";
 import { MobileBottomNav } from "@/components/mobile-bottom-nav";
 import { PublicShell } from "@/components/auth/public-shell";
-import { lockBodyScroll, resetBodyScrollLock } from "@/lib/utils/body-scroll-lock";
+import {
+  lockBodyScroll,
+  resetBodyScrollLock,
+  resetBodyScrollLockIfStale,
+} from "@/lib/utils/body-scroll-lock";
 
 // Routes reachable WITHOUT authentication. Prefix-matched, allowlist-only: only
 // these paths bypass the auth gate; every other route keeps its existing
@@ -58,6 +62,53 @@ export function AuthenticatedShell({
   useEffect(() => {
     resetBodyScrollLock();
   }, [pathname]);
+
+  // UI safety guard: if any modal/sheet leaves the document locked after it
+  // closes, restore scroll immediately. This protects checkout pages where
+  // reaching the finalize buttons is business-critical on laptop touchpads and
+  // mobile browsers.
+  useEffect(() => {
+    resetBodyScrollLockIfStale();
+
+    const handleUserScrollAttempt = () => {
+      resetBodyScrollLockIfStale();
+    };
+
+    const observer = new MutationObserver(() => {
+      resetBodyScrollLockIfStale();
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: [
+        "aria-modal",
+        "aria-hidden",
+        "class",
+        "hidden",
+        "style",
+      ],
+    });
+
+    window.addEventListener("wheel", handleUserScrollAttempt, {
+      capture: true,
+      passive: true,
+    });
+    window.addEventListener("touchstart", handleUserScrollAttempt, {
+      capture: true,
+      passive: true,
+    });
+
+    const interval = window.setInterval(resetBodyScrollLockIfStale, 1000);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("wheel", handleUserScrollAttempt, true);
+      window.removeEventListener("touchstart", handleUserScrollAttempt, true);
+      window.clearInterval(interval);
+    };
+  }, []);
 
   // Public allowlist takes precedence over the auth gate so /guide is reachable
   // when logged out. Checked before status so it never flashes the login screen.
@@ -107,9 +158,7 @@ function AdminShell({ children }: { children: React.ReactNode }) {
           <AppSidebarBrand />
         </div>
         <div className="flex lg:hidden items-center gap-3 px-4 py-3 border-b border-white/10">
-          <span className="font-bold text-base tracking-tight">
-            Asas POS
-          </span>
+          <span className="font-bold text-base tracking-tight">Asas POS</span>
           <span className="text-xs text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full">
             Admin
           </span>
