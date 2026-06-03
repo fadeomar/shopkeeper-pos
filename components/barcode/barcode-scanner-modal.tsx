@@ -4,7 +4,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { IScannerControls } from '@zxing/browser';
 import { normalizeBarcode, isValidBarcode, NATIVE_RETAIL_BARCODE_FORMATS } from '@/lib/utils/barcode';
 import { Button } from '@/components/ui/button';
+import { X } from '@/components/ui/icons';
 import { useLocale } from '@/components/providers/locale-context';
+import { lockBodyScroll } from '@/lib/utils/body-scroll-lock';
 
 const SAME_BARCODE_COOLDOWN_MS = 2000;
 
@@ -193,9 +195,13 @@ export function BarcodeScannerModal({
 
   useEffect(() => {
     if (!open) return;
+    const unlockBodyScroll = lockBodyScroll();
     function handleKey(e: KeyboardEvent) { if (e.key === 'Escape') onCloseRef.current(); }
     window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
+    return () => {
+      unlockBodyScroll();
+      window.removeEventListener('keydown', handleKey);
+    };
   }, [open]);
 
   async function toggleTorch() {
@@ -224,23 +230,28 @@ export function BarcodeScannerModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs"
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-900/50 p-4 backdrop-blur-xs"
       role="dialog" aria-modal="true" aria-label={title}
       onClick={() => onCloseRef.current()}
     >
       <div
-        className="w-full max-w-sm bg-white rounded-2xl border border-slate-200 shadow-2xl"
+        className="w-full max-w-sm max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-2xl border border-border-default bg-surface shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-start justify-between gap-4 px-5 py-4 border-b border-slate-100">
+        <div className="flex items-start justify-between gap-4 border-b border-border-subtle px-5 py-4">
           <div>
-            <h3 className="text-base font-semibold text-slate-900">{title ?? t('scanner.close')}</h3>
-            {description && <p className="text-sm text-slate-500 mt-0.5">{description}</p>}
+            <h3 className="text-base font-semibold text-fg">{title ?? t('scanner.close')}</h3>
+            {description && <p className="mt-0.5 text-sm text-fg-muted">{description}</p>}
           </div>
-          <Button type="button" variant="ghost" size="sm" onClick={() => onCloseRef.current()}>
-            {t('scanner.close')}
-          </Button>
+          <button
+            type="button"
+            onClick={() => onCloseRef.current()}
+            aria-label={t('scanner.close')}
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-danger-soft/60 text-danger/75 transition-colors hover:bg-danger-soft hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/25"
+          >
+            <X size={18} aria-hidden />
+          </button>
         </div>
 
         {/* Body */}
@@ -263,7 +274,7 @@ export function BarcodeScannerModal({
 
         {/* Footer */}
         {(hasTorch || continuous) && (
-          <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-slate-100">
+          <div className="flex items-center justify-end gap-2 border-t border-border-subtle px-5 py-4">
             {hasTorch && (
               <Button type="button" variant="secondary" size="sm" onClick={toggleTorch}>
                 {torchOn ? t('scanner.torchOff') : t('scanner.torchOn')}

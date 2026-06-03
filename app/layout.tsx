@@ -65,7 +65,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <script dangerouslySetInnerHTML={{ __html: `(function(){try{var l=localStorage.getItem('shopkeeper-pos-locale');if(l==='ar'){var d=document.documentElement;d.lang='ar';d.dir='rtl';}}catch(e){}})()` }} />
       </head>
-      <body className="bg-app min-h-screen text-fg" suppressHydrationWarning>
+      <body className="bg-app min-h-dvh text-fg" suppressHydrationWarning>
         <LocaleProvider>
           <SettingsProvider>
             <ToastProvider>

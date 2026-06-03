@@ -31,6 +31,7 @@ export {
   Settings,
   // Actions
   Plus,
+  Play,
   Minus,
   X,
   Check,

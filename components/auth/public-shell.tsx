@@ -20,7 +20,7 @@ export function PublicShell({ children }: { children: React.ReactNode }) {
   const { t, locale, setLocale } = useLocale();
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
+    <div className="min-h-dvh bg-slate-50 text-slate-900">
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur">
         <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 py-3">
           <Link

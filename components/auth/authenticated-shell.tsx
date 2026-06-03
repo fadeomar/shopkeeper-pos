@@ -34,7 +34,7 @@ import { SafeSignOutButton } from "@/components/auth/safe-sign-out-button";
 import { ConflictResolverModal } from "@/components/sync/conflict-resolver-modal";
 import { MobileBottomNav } from "@/components/mobile-bottom-nav";
 import { PublicShell } from "@/components/auth/public-shell";
-import { resetBodyScrollLock } from "@/lib/utils/body-scroll-lock";
+import { lockBodyScroll, resetBodyScrollLock } from "@/lib/utils/body-scroll-lock";
 
 // Routes reachable WITHOUT authentication. Prefix-matched, allowlist-only: only
 // these paths bypass the auth gate; every other route keeps its existing
@@ -93,7 +93,7 @@ function AdminShell({ children }: { children: React.ReactNode }) {
   if (!pathname.startsWith("/admin")) return <LoadingScreen />;
 
   return (
-    <div className="min-h-screen grid grid-cols-1 lg:grid-cols-[260px_1fr] bg-slate-50">
+    <div className="min-h-dvh grid grid-cols-1 lg:grid-cols-[260px_1fr] bg-slate-50">
       {/* Skip-to-content: visually hidden until focused by keyboard users */}
       <a
         href="#main-content"
@@ -102,7 +102,7 @@ function AdminShell({ children }: { children: React.ReactNode }) {
         {t("nav.skipToContent")}
       </a>
 
-      <aside className="bg-slate-900 text-white flex flex-col lg:h-screen lg:min-h-0 lg:sticky lg:top-0 lg:overflow-hidden">
+      <aside className="bg-slate-900 text-white flex flex-col lg:h-dvh lg:min-h-0 lg:sticky lg:top-0 lg:overflow-hidden">
         <div className="hidden lg:block px-5 pt-6 pb-4">
           <AppSidebarBrand />
         </div>
@@ -369,7 +369,7 @@ function CashierShell({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      <div className="min-h-screen grid grid-cols-1 lg:grid-cols-[260px_1fr] bg-slate-50">
+      <div className="min-h-dvh grid grid-cols-1 lg:grid-cols-[260px_1fr] bg-slate-50">
         {/* Skip-to-content: visually hidden until focused by keyboard users */}
         <a
           href="#main-content"
@@ -378,7 +378,7 @@ function CashierShell({ children }: { children: React.ReactNode }) {
           {t("nav.skipToContent")}
         </a>
 
-        <aside className="bg-slate-900 text-white flex flex-col lg:h-screen lg:min-h-0 lg:sticky lg:top-0 lg:overflow-hidden">
+        <aside className="bg-slate-900 text-white flex flex-col lg:h-dvh lg:min-h-0 lg:sticky lg:top-0 lg:overflow-hidden">
           {/* Desktop: logo at top of the sidebar */}
           <div className="hidden lg:block px-5 pt-6 pb-4">
             <AppSidebarBrand />
@@ -493,16 +493,18 @@ function RestoreModal({
     day: "numeric",
   });
 
+  useEffect(() => lockBodyScroll(), []);
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4"
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-900/50 px-4 py-4 backdrop-blur-sm"
       role="presentation"
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="relative w-full max-w-sm bg-white rounded-2xl shadow-xl p-6"
+        className="relative max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto rounded-2xl border border-border-default bg-surface p-6 shadow-xl"
       >
         <button
           type="button"
@@ -613,7 +615,7 @@ function Stat({ value, label }: { value: number; label: string }) {
 function LoadingScreen() {
   const { t } = useLocale();
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50">
+    <div className="min-h-dvh flex items-center justify-center bg-slate-50">
       <div className="p-8 bg-white rounded-2xl shadow-sm border border-slate-200 text-center">
         <div className="w-8 h-8 border-2 border-brand border-t-transparent rounded-full animate-spin mx-auto mb-4" />
         <p className="text-sm text-slate-500">{t("auth.appLoading")}</p>
@@ -638,7 +640,7 @@ function PendingScreen({ onLogout }: { onLogout: () => void }) {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
+    <div className="min-h-dvh flex items-center justify-center bg-slate-50 px-4">
       <div className="max-w-sm w-full bg-white rounded-2xl shadow-sm border border-slate-200 p-8 text-center">
         <div className="w-12 h-12 bg-warning-soft rounded-full flex items-center justify-center mx-auto mb-4">
           <svg
@@ -705,7 +707,7 @@ function InactiveScreen({ onLogout }: { onLogout: () => void }) {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
+    <div className="min-h-dvh flex items-center justify-center bg-slate-50 px-4">
       <div className="max-w-sm w-full bg-white rounded-2xl shadow-sm border border-slate-200 p-8 text-center">
         <div className="w-12 h-12 bg-danger-soft rounded-full flex items-center justify-center mx-auto mb-4">
           <svg
@@ -795,7 +797,7 @@ function LoginForm({ onShowSignUp }: { onShowSignUp: () => void }) {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
+    <div className="min-h-dvh flex items-center justify-center bg-slate-50 px-4">
       <div className="max-w-sm w-full">
         <AppLogo />
         <Card padding="lg">
@@ -885,7 +887,7 @@ function SignUpForm({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
+    <div className="min-h-dvh flex items-center justify-center bg-slate-50 px-4">
       <div className="max-w-sm w-full">
         <AppLogo subtitle={t("auth.requestAccess")} />
         <Card padding="lg">
