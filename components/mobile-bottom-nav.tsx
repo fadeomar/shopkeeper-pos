@@ -24,6 +24,7 @@ import { useState, useEffect, useId, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
+import { lockBodyScroll } from "@/lib/utils/body-scroll-lock";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
   ShoppingCart,
@@ -101,11 +102,7 @@ export function MobileBottomNav() {
   // Prevent background page from scrolling while the sheet is open.
   useEffect(() => {
     if (!moreOpen) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
+    return lockBodyScroll();
   }, [moreOpen]);
 
   // Focus management for the sheet: focus the first control on open, trap Tab

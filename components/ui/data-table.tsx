@@ -136,7 +136,7 @@ export function DataTable<TData>({
       )}
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-full text-sm">
+        <table className="w-full min-w-[720px] text-sm md:min-w-full">
           <thead className="bg-slate-50">
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id} className="border-b border-slate-200">

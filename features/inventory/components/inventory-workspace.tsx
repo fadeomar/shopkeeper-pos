@@ -11,7 +11,7 @@ import { RecordSyncBadge } from "@/components/sync/record-sync-badge";
 import { countProductStock } from "@/lib/services/inventory-service";
 import { formatCurrency } from "@/lib/utils/money";
 import { Card } from "@/components/ui/card";
-import { FitText } from "@/components/ui/fit-text";
+import { StatCard } from "@/components/ui/stat-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { QuantityStepper } from "@/components/pos/quantity-stepper";
@@ -266,20 +266,28 @@ export function InventoryWorkspace() {
         }
       />
 
-      <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
+          filled
+          tone={lowStockProducts.length > 0 ? "warning" : "neutral"}
           label={t("inventory.lowStock")}
           value={lowStockProducts.length}
         />
         <StatCard
+          filled
+          tone={outOfStockProducts.length > 0 ? "danger" : "neutral"}
           label={t("inventory.outOfStock")}
           value={outOfStockProducts.length}
         />
         <StatCard
+          filled
+          tone={expiringProducts.length > 0 ? "warning" : "neutral"}
           label={t("inventory.expiringSoon")}
           value={expiringProducts.length}
         />
         <StatCard
+          filled
+          tone="money"
           label={t("inventory.stockCostValue")}
           value={formatCurrency(stockValue, currency)}
           helper={formatCurrency(retailValue, currency)}
@@ -431,30 +439,6 @@ export function InventoryWorkspace() {
   );
 }
 
-function StatCard({
-  label,
-  value,
-  helper,
-}: {
-  label: string;
-  value: string | number;
-  helper?: string;
-}) {
-  return (
-    <Card className="flex flex-col gap-1.5">
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-        {label}
-      </p>
-      <FitText
-        value={String(value)}
-        size="2xl"
-        className="font-bold text-slate-900"
-      />
-      {helper && <p className="text-xs text-slate-400">{helper}</p>}
-    </Card>
-  );
-}
-
 function InventoryListCard({
   title,
   emptyText,
@@ -471,22 +455,31 @@ function InventoryListCard({
   renderMeta?: (product: Product) => string;
 }) {
   return (
-    <Card className="flex min-h-[260px] flex-col gap-3">
-      <h3 className="text-base font-semibold text-slate-900">{title}</h3>
+    <Card className="flex min-h-[260px] flex-col gap-3 bg-surface shadow-xs">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-base font-semibold text-fg">{title}</h3>
+        {products.length > 0 && (
+          <span className="rounded-full bg-surface-soft px-2.5 py-1 text-xs font-semibold text-fg-muted">
+            {products.length}
+          </span>
+        )}
+      </div>
       {products.length === 0 && (
-        <p className="py-6 text-sm text-slate-400">{emptyText}</p>
+        <p className="rounded-xl border border-dashed border-border-default bg-surface-soft/45 px-3 py-6 text-center text-sm text-fg-muted">
+          {emptyText}
+        </p>
       )}
-      <div className="flex flex-col divide-y divide-slate-100">
+      <div className="flex flex-col divide-y divide-border-subtle">
         {products.slice(0, 8).map((product) => (
           <div
             key={product.id}
             className="flex items-center justify-between gap-3 py-3"
           >
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-slate-800">
+              <p className="truncate text-sm font-semibold text-fg">
                 {product.name}
               </p>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-fg-muted">
                 {renderMeta
                   ? renderMeta(product)
                   : `${product.quantityInStock} / min ${product.minimumStockAlert}`}
@@ -504,7 +497,7 @@ function InventoryListCard({
         ))}
       </div>
       {products.length > 8 && (
-        <p className="text-xs text-slate-400">+{products.length - 8} more</p>
+        <p className="text-xs text-fg-muted">+{products.length - 8} more</p>
       )}
     </Card>
   );

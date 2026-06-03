@@ -31,6 +31,7 @@ export {
   Settings,
   // Actions
   Plus,
+  Play,
   Minus,
   X,
   Check,
@@ -48,6 +49,8 @@ export {
   ChevronRight,
   ArrowLeft,
   ArrowRight,
+  ArrowDownToLine,
+  ArrowUpFromLine,
   RotateCcw,
   // Status / state
   CircleCheck,

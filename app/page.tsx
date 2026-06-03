@@ -10,13 +10,20 @@ import { formatCurrency } from "@/lib/utils/money";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
-import { FitText } from "@/components/ui/fit-text";
+import { PageHeader } from "@/components/ui/page-header";
 import { PageShell } from "@/components/ui/page-shell";
+import { StatCard, type StatTone } from "@/components/ui/stat-card";
 import { useToast } from "@/components/ui/toast";
 import { useLocale } from "@/components/providers/locale-context";
 import { getBillNetTotal } from "@/features/bills/utils/bill-summary";
 import { getSupplierLedger } from "@/lib/services/supplier-ledger-service";
-import { ArrowDownLeft, ArrowUpRight, Plus, Play } from "lucide-react";
+import {
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  LayoutDashboard,
+  Plus,
+  Play,
+} from "@/components/ui/icons";
 
 export default function DashboardPage() {
   const { t } = useLocale();
@@ -58,83 +65,69 @@ export default function DashboardPage() {
     );
   }
 
-  const stats = [
-    { label: t("dashboard.liveProducts"), value: liveProducts.length },
-    { label: t("dashboard.lowStock"), value: lowStockCount },
+  const stats: Array<{ label: string; value: string | number; tone: StatTone }> = [
+    { label: t("dashboard.liveProducts"), value: liveProducts.length, tone: "brand" },
+    {
+      label: t("dashboard.lowStock"),
+      value: lowStockCount,
+      tone: lowStockCount > 0 ? "warning" : "neutral",
+    },
     {
       label: t("dashboard.totalSales"),
       value: formatCurrency(totalSales, currency),
+      tone: "positive",
     },
     {
       label: t("dashboard.inventoryCost"),
       value: formatCurrency(totalInventoryValue, currency),
+      tone: "money",
     },
     {
       label: t("dashboard.owedToSuppliers"),
       value: formatCurrency(owedToSuppliers, currency),
+      tone: owedToSuppliers > 0 ? "warning" : "neutral",
     },
   ];
 
   return (
     <PageShell>
       <div className="flex flex-col gap-5">
-        {/* Page header */}
-        <section className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h2 className="text-xl font-bold text-slate-900">
-              {settings?.storeName ?? t("sidebar.subtitle")}
-            </h2>
-            <p className="mt-1 text-sm text-slate-500 max-w-xl">
-              {t("dashboard.tagline")}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {process.env.NODE_ENV === "development" && (
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={initializeDemo}
-              >
-                {t("dashboard.initDemo")}
-              </Button>
-            )}
-            <Link
-              href="/billing"
-              // Mirrors Button variant="primary" size="md" so the visual
-              // language stays consistent. The leading Plus icon makes
-              // the "create" semantics explicit at a glance — matters
-              // more on the dashboard where this is the primary CTA.
-              className={clsx(
-                "inline-flex items-center justify-center gap-2 font-semibold rounded-xl",
-                "px-4 py-2.5 text-sm min-h-[42px]",
-                "bg-brand text-white hover:bg-brand-hover transition-colors",
-                "focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-brand)_22%,transparent)]",
+        <PageHeader
+          title={settings?.storeName ?? t("sidebar.subtitle")}
+          description={t("dashboard.tagline")}
+          icon={<LayoutDashboard size={24} aria-hidden />}
+          actions={
+            <>
+              {process.env.NODE_ENV === "development" && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={initializeDemo}
+                >
+                  {t("dashboard.initDemo")}
+                </Button>
               )}
-            >
-              <Plus size={16} strokeWidth={2.5} aria-hidden />
-              {t("dashboard.createBill")}
-            </Link>
-          </div>
-        </section>
+              <Link
+                href="/billing"
+                className={clsx(
+                  "inline-flex min-h-[42px] items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold",
+                  "bg-brand text-white transition-colors hover:bg-brand-hover",
+                  "focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-brand)_22%,transparent)]",
+                )}
+              >
+                <Plus size={16} strokeWidth={2.5} aria-hidden />
+                {t("dashboard.createBill")}
+              </Link>
+            </>
+          }
+        />
 
         {/* Stats grid — one card per row on mobile so long currency
             values have the full content width to breathe. Step up at
             sm/lg/xl breakpoints. */}
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-          {stats.map(({ label, value }) => (
-            <Card key={label} className="flex flex-col gap-1.5">
-              <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">
-                {label}
-              </p>
-              {/* FitText scales down for unusually long values
-                  (≥ $1M+) but the one-per-row mobile layout means
-                  ordinary values render at full text-2xl. */}
-              <FitText
-                value={String(value)}
-                size="2xl"
-                className="font-bold text-slate-900"
-              />
-            </Card>
+        <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          {stats.map(({ label, value, tone }) => (
+            <StatCard key={label} label={label} value={value} tone={tone} filled />
           ))}
         </section>
 
@@ -190,9 +183,9 @@ export default function DashboardPage() {
                   key={mv.id}
                   className="flex items-center gap-3 py-3"
                 >
-                  {/* Directional icon — green up-right arrow for stock
-                      coming in, red down-left for stock going out. Reads
-                      faster than the +/- sign alone at small sizes. */}
+                  {/* Directional icon — green for stock entering the shop,
+                      red for stock leaving the shop. Icons avoid relying on
+                      RTL-sensitive diagonal arrows. */}
                   <span
                     aria-hidden
                     className={clsx(
@@ -203,9 +196,9 @@ export default function DashboardPage() {
                     )}
                   >
                     {isIncrease ? (
-                      <ArrowUpRight size={16} strokeWidth={2.5} />
+                      <ArrowDownToLine size={16} strokeWidth={2.5} />
                     ) : (
-                      <ArrowDownLeft size={16} strokeWidth={2.5} />
+                      <ArrowUpFromLine size={16} strokeWidth={2.5} />
                     )}
                   </span>
                   <div className="min-w-0 flex-1">

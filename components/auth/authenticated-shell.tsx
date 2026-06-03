@@ -34,6 +34,11 @@ import { SafeSignOutButton } from "@/components/auth/safe-sign-out-button";
 import { ConflictResolverModal } from "@/components/sync/conflict-resolver-modal";
 import { MobileBottomNav } from "@/components/mobile-bottom-nav";
 import { PublicShell } from "@/components/auth/public-shell";
+import {
+  lockBodyScroll,
+  resetBodyScrollLock,
+  resetBodyScrollLockIfStale,
+} from "@/lib/utils/body-scroll-lock";
 
 // Routes reachable WITHOUT authentication. Prefix-matched, allowlist-only: only
 // these paths bypass the auth gate; every other route keeps its existing
@@ -53,6 +58,57 @@ export function AuthenticatedShell({
 }) {
   const { status, user, logout } = useAuth();
   const pathname = usePathname();
+
+  useEffect(() => {
+    resetBodyScrollLock();
+  }, [pathname]);
+
+  // UI safety guard: if any modal/sheet leaves the document locked after it
+  // closes, restore scroll immediately. This protects checkout pages where
+  // reaching the finalize buttons is business-critical on laptop touchpads and
+  // mobile browsers.
+  useEffect(() => {
+    resetBodyScrollLockIfStale();
+
+    const handleUserScrollAttempt = () => {
+      resetBodyScrollLockIfStale();
+    };
+
+    const observer = new MutationObserver(() => {
+      resetBodyScrollLockIfStale();
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: [
+        "aria-modal",
+        "aria-hidden",
+        "class",
+        "hidden",
+        "style",
+      ],
+    });
+
+    window.addEventListener("wheel", handleUserScrollAttempt, {
+      capture: true,
+      passive: true,
+    });
+    window.addEventListener("touchstart", handleUserScrollAttempt, {
+      capture: true,
+      passive: true,
+    });
+
+    const interval = window.setInterval(resetBodyScrollLockIfStale, 1000);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("wheel", handleUserScrollAttempt, true);
+      window.removeEventListener("touchstart", handleUserScrollAttempt, true);
+      window.clearInterval(interval);
+    };
+  }, []);
 
   // Public allowlist takes precedence over the auth gate so /guide is reachable
   // when logged out. Checked before status so it never flashes the login screen.
@@ -88,7 +144,7 @@ function AdminShell({ children }: { children: React.ReactNode }) {
   if (!pathname.startsWith("/admin")) return <LoadingScreen />;
 
   return (
-    <div className="min-h-screen grid grid-cols-1 lg:grid-cols-[260px_1fr] bg-slate-50">
+    <div className="min-h-dvh bg-slate-50 lg:ps-[260px]">
       {/* Skip-to-content: visually hidden until focused by keyboard users */}
       <a
         href="#main-content"
@@ -97,14 +153,12 @@ function AdminShell({ children }: { children: React.ReactNode }) {
         {t("nav.skipToContent")}
       </a>
 
-      <aside className="bg-slate-900 text-white flex flex-col lg:h-screen lg:min-h-0 lg:sticky lg:top-0 lg:overflow-hidden">
+      <aside className="bg-slate-900 text-white flex flex-col lg:fixed lg:inset-y-0 lg:start-0 lg:z-40 lg:h-dvh lg:w-[260px] lg:min-h-0 lg:overflow-hidden">
         <div className="hidden lg:block px-5 pt-6 pb-4">
           <AppSidebarBrand />
         </div>
         <div className="flex lg:hidden items-center gap-3 px-4 py-3 border-b border-white/10">
-          <span className="font-bold text-base tracking-tight">
-            Asas POS
-          </span>
+          <span className="font-bold text-base tracking-tight">Asas POS</span>
           <span className="text-xs text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full">
             Admin
           </span>
@@ -364,7 +418,7 @@ function CashierShell({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      <div className="min-h-screen grid grid-cols-1 lg:grid-cols-[260px_1fr] bg-slate-50">
+      <div className="min-h-dvh bg-slate-50 lg:ps-[260px]">
         {/* Skip-to-content: visually hidden until focused by keyboard users */}
         <a
           href="#main-content"
@@ -373,7 +427,7 @@ function CashierShell({ children }: { children: React.ReactNode }) {
           {t("nav.skipToContent")}
         </a>
 
-        <aside className="bg-slate-900 text-white flex flex-col lg:h-screen lg:min-h-0 lg:sticky lg:top-0 lg:overflow-hidden">
+        <aside className="bg-slate-900 text-white flex flex-col lg:fixed lg:inset-y-0 lg:start-0 lg:z-40 lg:h-dvh lg:w-[260px] lg:min-h-0 lg:overflow-hidden">
           {/* Desktop: logo at top of the sidebar */}
           <div className="hidden lg:block px-5 pt-6 pb-4">
             <AppSidebarBrand />
@@ -488,16 +542,18 @@ function RestoreModal({
     day: "numeric",
   });
 
+  useEffect(() => lockBodyScroll(), []);
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4"
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-900/50 px-4 py-4 backdrop-blur-sm"
       role="presentation"
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="relative w-full max-w-sm bg-white rounded-2xl shadow-xl p-6"
+        className="relative max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto rounded-2xl border border-border-default bg-surface p-6 shadow-xl"
       >
         <button
           type="button"
@@ -608,7 +664,7 @@ function Stat({ value, label }: { value: number; label: string }) {
 function LoadingScreen() {
   const { t } = useLocale();
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50">
+    <div className="min-h-dvh flex items-center justify-center bg-slate-50">
       <div className="p-8 bg-white rounded-2xl shadow-sm border border-slate-200 text-center">
         <div className="w-8 h-8 border-2 border-brand border-t-transparent rounded-full animate-spin mx-auto mb-4" />
         <p className="text-sm text-slate-500">{t("auth.appLoading")}</p>
@@ -633,7 +689,7 @@ function PendingScreen({ onLogout }: { onLogout: () => void }) {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
+    <div className="min-h-dvh flex items-center justify-center bg-slate-50 px-4">
       <div className="max-w-sm w-full bg-white rounded-2xl shadow-sm border border-slate-200 p-8 text-center">
         <div className="w-12 h-12 bg-warning-soft rounded-full flex items-center justify-center mx-auto mb-4">
           <svg
@@ -700,7 +756,7 @@ function InactiveScreen({ onLogout }: { onLogout: () => void }) {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
+    <div className="min-h-dvh flex items-center justify-center bg-slate-50 px-4">
       <div className="max-w-sm w-full bg-white rounded-2xl shadow-sm border border-slate-200 p-8 text-center">
         <div className="w-12 h-12 bg-danger-soft rounded-full flex items-center justify-center mx-auto mb-4">
           <svg
@@ -790,7 +846,7 @@ function LoginForm({ onShowSignUp }: { onShowSignUp: () => void }) {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
+    <div className="min-h-dvh flex items-center justify-center bg-slate-50 px-4">
       <div className="max-w-sm w-full">
         <AppLogo />
         <Card padding="lg">
@@ -880,7 +936,7 @@ function SignUpForm({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
+    <div className="min-h-dvh flex items-center justify-center bg-slate-50 px-4">
       <div className="max-w-sm w-full">
         <AppLogo subtitle={t("auth.requestAccess")} />
         <Card padding="lg">

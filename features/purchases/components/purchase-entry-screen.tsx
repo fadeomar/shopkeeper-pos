@@ -828,7 +828,7 @@ export function PurchaseEntryScreen() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_400px] gap-4 xl:gap-5 items-start">
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_400px] gap-4 xl:gap-5 items-start pb-28 lg:pb-0">
         <div className="flex flex-col gap-4">
           {/* Build purchase panel */}
           <Card className="flex flex-col gap-4" padding="sm">
@@ -1043,7 +1043,7 @@ export function PurchaseEntryScreen() {
         </div>
 
         {/* Summary panel */}
-        <div className="xl:sticky xl:top-6">
+        <div className="xl:sticky xl:top-6 xl:max-h-[calc(100dvh-3rem)] xl:overflow-y-auto xl:pe-1">
           <Card className="flex flex-col gap-4" padding="sm">
               <h3 className="text-base font-semibold text-slate-800">
                 {t("purchases.finalizePurchase")}
