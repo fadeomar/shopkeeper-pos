@@ -144,7 +144,7 @@ function AdminShell({ children }: { children: React.ReactNode }) {
   if (!pathname.startsWith("/admin")) return <LoadingScreen />;
 
   return (
-    <div className="min-h-dvh grid grid-cols-1 lg:grid-cols-[260px_1fr] bg-slate-50">
+    <div className="min-h-dvh bg-slate-50 lg:ps-[260px]">
       {/* Skip-to-content: visually hidden until focused by keyboard users */}
       <a
         href="#main-content"
@@ -153,7 +153,7 @@ function AdminShell({ children }: { children: React.ReactNode }) {
         {t("nav.skipToContent")}
       </a>
 
-      <aside className="bg-slate-900 text-white flex flex-col lg:h-dvh lg:min-h-0 lg:sticky lg:top-0 lg:overflow-hidden">
+      <aside className="bg-slate-900 text-white flex flex-col lg:fixed lg:inset-y-0 lg:start-0 lg:z-40 lg:h-dvh lg:w-[260px] lg:min-h-0 lg:overflow-hidden">
         <div className="hidden lg:block px-5 pt-6 pb-4">
           <AppSidebarBrand />
         </div>
@@ -418,7 +418,7 @@ function CashierShell({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      <div className="min-h-dvh grid grid-cols-1 lg:grid-cols-[260px_1fr] bg-slate-50">
+      <div className="min-h-dvh bg-slate-50 lg:ps-[260px]">
         {/* Skip-to-content: visually hidden until focused by keyboard users */}
         <a
           href="#main-content"
@@ -427,7 +427,7 @@ function CashierShell({ children }: { children: React.ReactNode }) {
           {t("nav.skipToContent")}
         </a>
 
-        <aside className="bg-slate-900 text-white flex flex-col lg:h-dvh lg:min-h-0 lg:sticky lg:top-0 lg:overflow-hidden">
+        <aside className="bg-slate-900 text-white flex flex-col lg:fixed lg:inset-y-0 lg:start-0 lg:z-40 lg:h-dvh lg:w-[260px] lg:min-h-0 lg:overflow-hidden">
           {/* Desktop: logo at top of the sidebar */}
           <div className="hidden lg:block px-5 pt-6 pb-4">
             <AppSidebarBrand />
