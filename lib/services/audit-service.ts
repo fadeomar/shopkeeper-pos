@@ -77,6 +77,8 @@ export interface AuditFilters {
   action?: AuditAction;
   entityId?: string;
   actorUid?: string;
+  /** Matches either actorUid or actorName. Useful for older/offline records that only have a display name. */
+  actor?: string;
   shiftId?: string;
   from?: string;
   to?: string;
@@ -114,6 +116,14 @@ export async function listAuditEvents(filters: AuditFilters = {}, limit = 500): 
   if (filters.action) rows = rows.filter((row) => row.action === filters.action);
   if (filters.entityId) rows = rows.filter((row) => row.entityId === filters.entityId);
   if (filters.actorUid) rows = rows.filter((row) => row.actorUid === filters.actorUid);
+  if (filters.actor) {
+    const actor = filters.actor.trim().toLowerCase();
+    rows = rows.filter((row) =>
+      [row.actorUid, row.actorName]
+        .filter(Boolean)
+        .some((value) => String(value).trim().toLowerCase() === actor),
+    );
+  }
   if (filters.shiftId) rows = rows.filter((row) => row.shiftId === filters.shiftId);
   if (filters.from) rows = rows.filter((row) => row.createdAt >= filters.from!);
   if (filters.to) rows = rows.filter((row) => row.createdAt <= filters.to!);

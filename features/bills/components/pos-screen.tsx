@@ -200,16 +200,18 @@ function SuccessPanel({
         </span>
       </div>
 
-      <div className="rounded-xl bg-success-soft border border-success-soft px-4 py-3">
+      <div className="rounded-xl border border-success/20 bg-success-soft px-4 py-3">
         <SummaryRow
           label={t("billing.total")}
           value={formatCurrency(bill.totalAmount, currency)}
           highlight
         />
-        <SummaryRow
-          label={t("billing.change")}
-          value={formatCurrency(bill.changeAmount, currency)}
-        />
+        {bill.changeAmount > 0.001 && (
+          <SummaryRow
+            label={t("billing.changeDueBack")}
+            value={formatCurrency(bill.changeAmount, currency)}
+          />
+        )}
         {amountDue > 0 && (
           <SummaryRow
             label={t("billing.amountDue")}
@@ -928,8 +930,9 @@ export function PosScreen() {
 
       {/* Mobile-first layout, desktop keeps two columns */}
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_400px] gap-4 xl:gap-5 items-start">
-        {/* ── Build bill panel ─────────────────────────────────────────── */}
-        <Card className="flex flex-col gap-4" padding="sm">
+        <div className="flex flex-col gap-4">
+          {/* ── Build bill panel ─────────────────────────────────────────── */}
+          <Card className="flex flex-col gap-4" padding="sm">
           <div className="flex items-center justify-between gap-3">
             <h3 className="text-base font-semibold text-slate-800">
               {t("billing.buildBill")}
@@ -1032,7 +1035,7 @@ export function PosScreen() {
                 {draftItems.map((item) => (
                   <div
                     key={item.productId}
-                    className="touch-card rounded-2xl border border-slate-200 bg-white p-3 shadow-xs"
+                    className="touch-card rounded-2xl border border-border-default bg-surface p-3 shadow-xs"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -1124,11 +1127,9 @@ export function PosScreen() {
               </div>
             </>
           )}
-        </Card>
+          </Card>
 
-        {/* ── Bill summary panel ───────────────────────────────────────── */}
-        <div className="xl:sticky xl:top-6">
-          {lastFinalized ? (
+          {lastFinalized && (
             <SuccessPanel
               bill={lastFinalized.bill}
               items={lastFinalized.items}
@@ -1139,8 +1140,12 @@ export function PosScreen() {
                 setTimeout(() => barcodeInputRef.current?.focus(), 0);
               }}
             />
-          ) : (
-            <Card className="flex flex-col gap-4" padding="sm">
+          )}
+        </div>
+
+        {/* ── Bill summary panel ───────────────────────────────────────── */}
+        <div className="xl:sticky xl:top-6">
+          <Card className="flex flex-col gap-4" padding="sm">
               <h3 className="text-base font-semibold text-slate-800">
                 {t("billing.billSummary")}
               </h3>
@@ -1247,7 +1252,13 @@ export function PosScreen() {
                 </div>
 
                 {watchedPaymentMethod === "card" ? null : (
-                  <FormField label={t("billing.actualPaid")}>
+                  <FormField
+                    label={
+                      isCreditSale
+                        ? t("billing.paidNow")
+                        : t("billing.actualPaid")
+                    }
+                  >
                     <div className="flex flex-col gap-2">
                       <div className="flex gap-2">
                         <MoneyInput
@@ -1285,7 +1296,7 @@ export function PosScreen() {
                           <button
                             type="button"
                             onClick={() => setIsPaidAmountManuallyEdited(false)}
-                            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                            className="rounded-lg border border-border-default bg-surface px-2.5 py-1 text-xs font-semibold text-fg-muted hover:bg-surface-soft hover:border-border-strong transition-colors"
                           >
                             {t("billing.exact")}
                           </button>
@@ -1304,7 +1315,7 @@ export function PosScreen() {
                                     shouldValidate: true,
                                   });
                                 }}
-                                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 tabular-nums hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                                className="rounded-lg border border-border-default bg-surface px-2.5 py-1 text-xs font-semibold text-fg-secondary tabular-nums hover:bg-surface-soft hover:border-border-strong transition-colors"
                               >
                                 {formatCurrency(amount, currency)}
                               </button>
@@ -1321,7 +1332,7 @@ export function PosScreen() {
                 </FormField>
 
                 {/* Totals card */}
-                <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3">
+                <div className="rounded-xl border border-border-default bg-surface-soft/60 px-4 py-3">
                   <SummaryRow
                     label={t("billing.subtotal")}
                     value={formatCurrency(billSummary.subtotal, currency)}
@@ -1331,15 +1342,19 @@ export function PosScreen() {
                     value={formatCurrency(billSummary.totalAmount, currency)}
                     highlight
                   />
-                  <SummaryRow
-                    label={t("billing.change")}
-                    value={formatCurrency(
-                      Math.max(0, actualChangeAmount),
-                      currency,
-                    )}
-                    highlight
-                  />
-                  {isCreditSale && amountDue > 0 && (
+                  {actualChangeAmount > 0.001 && (
+                    <>
+                      <SummaryRow
+                        label={t("billing.changeDueBack")}
+                        value={formatCurrency(actualChangeAmount, currency)}
+                        highlight
+                      />
+                      <p className="pt-2 text-xs text-fg-muted">
+                        {t("billing.changeHelper")}
+                      </p>
+                    </>
+                  )}
+                  {isCreditSale && amountDue > 0.001 && (
                     <SummaryRow
                       label={t("billing.amountDue")}
                       value={formatCurrency(amountDue, currency)}
@@ -1403,8 +1418,7 @@ export function PosScreen() {
                   </Button>
                 </div>
               </form>
-            </Card>
-          )}
+          </Card>
         </div>
       </div>
 
@@ -1471,7 +1485,11 @@ export function PosScreen() {
           </>
         }
       >
-        <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3">
+        <div className="rounded-xl border border-border-default bg-surface-soft/60 px-4 py-3">
+          <SummaryRow
+            label={t("billing.customerName")}
+            value={watchedCustomerName || watchedCustomerPhone || t("common.walkin")}
+          />
           <SummaryRow
             label={t("billing.items")}
             value={String(draftItems.length)}
@@ -1485,12 +1503,14 @@ export function PosScreen() {
             label={t("billing.paid")}
             value={formatCurrency(actualPaidAmount, currency)}
           />
-          <SummaryRow
-            label={t("billing.change")}
-            value={formatCurrency(Math.max(0, actualChangeAmount), currency)}
-            highlight
-          />
-          {isCreditSale && amountDue > 0 && (
+          {actualChangeAmount > 0.001 && (
+            <SummaryRow
+              label={t("billing.changeDueBack")}
+              value={formatCurrency(actualChangeAmount, currency)}
+              highlight
+            />
+          )}
+          {isCreditSale && amountDue > 0.001 && (
             <SummaryRow
               label={t("billing.amountDue")}
               value={formatCurrency(amountDue, currency)}
@@ -1535,13 +1555,17 @@ export function PosScreen() {
           {/* Customer list */}
           {(() => {
             const needle = customerSearch.trim().toLowerCase();
+            const phoneNeedle = normalizePhone(customerSearch);
             const filtered = (customers ?? [])
-              .filter(
-                (c) =>
-                  !needle ||
-                  c.name.toLowerCase().includes(needle) ||
-                  c.normalizedPhone?.includes(normalizePhone(customerSearch)),
-              )
+              .filter((c) => {
+                if (!needle && !phoneNeedle) return true;
+                const nameMatches = c.name.toLowerCase().includes(needle);
+                const phoneMatches = Boolean(
+                  phoneNeedle &&
+                    ((c.normalizedPhone ?? normalizePhone(c.phone)).includes(phoneNeedle)),
+                );
+                return nameMatches || phoneMatches;
+              })
               .slice(0, 20);
 
             if (filtered.length === 0) {

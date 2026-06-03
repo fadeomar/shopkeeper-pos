@@ -71,3 +71,11 @@
 ## 12. Final commands
 - npm run typecheck
 - npm run build
+
+## Sprint 4 statement QA addendum
+
+- Open Customers, choose a customer, open Customer statement, change From/To dates, print, and export CSV.
+- Open Suppliers, choose a supplier, open Supplier statement, change From/To dates, print, and export CSV.
+- Test statements while offline; they should use local ledger data only.
+- Verify Arabic mode: statement titles, date fields, debit/credit/balance labels, print layout, and CSV text are readable.
+- Verify old records without phone, note, invoice number, or invoice date still open and print safely.

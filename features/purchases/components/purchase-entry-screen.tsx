@@ -162,6 +162,12 @@ function SuccessPanel({
           label={t("purchases.paid")}
           value={formatCurrency(purchase.paidAmount, currency)}
         />
+        {purchase.changeAmount > 0.001 && (
+          <SummaryRow
+            label={t("purchases.changeDueBack")}
+            value={formatCurrency(purchase.changeAmount, currency)}
+          />
+        )}
         {amountDue > 0 && (
           <SummaryRow
             label={t("purchases.amountDue")}
@@ -174,7 +180,7 @@ function SuccessPanel({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <Link
           href={"/purchases" as never}
-          className="inline-flex h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          className="inline-flex h-10 items-center justify-center rounded-xl border border-border-default bg-surface px-4 text-sm font-medium text-fg-secondary hover:bg-surface-soft"
         >
           {t("purchases.historyTitle")}
         </Link>
@@ -462,10 +468,16 @@ export function PurchaseEntryScreen() {
     selectedProductForLine &&
       Math.abs(newLineCost - selectedProductForLine.buyPrice) > 0.001,
   );
+  const selectedLineEstimatedMargin = selectedProductForLine
+    ? selectedProductForLine.sellPrice - newLineCost
+    : 0;
+  const selectedLineMarginPercent = selectedProductForLine?.sellPrice
+    ? (selectedLineEstimatedMargin / selectedProductForLine.sellPrice) * 100
+    : 0;
   const selectedLineLowMargin = Boolean(
     selectedProductForLine &&
       selectedProductForLine.sellPrice > 0 &&
-      newLineCost >= selectedProductForLine.sellPrice,
+      selectedLineMarginPercent <= 10,
   );
 
   const purchaseSummary = useMemo(
@@ -706,6 +718,7 @@ export function PurchaseEntryScreen() {
       clearDraft();
       setConfirmOpen(false);
       setLastFinalized({ purchase, items: purchaseItems });
+      push(t("purchases.purchaseCreated", { purchaseNumber: purchase.purchaseNumber }));
     } catch (error) {
       push(
         getServiceErrorMessage(error, t, t("purchases.purchaseFailed")),
@@ -816,8 +829,9 @@ export function PurchaseEntryScreen() {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_400px] gap-4 xl:gap-5 items-start">
-        {/* Build purchase panel */}
-        <Card className="flex flex-col gap-4" padding="sm">
+        <div className="flex flex-col gap-4">
+          {/* Build purchase panel */}
+          <Card className="flex flex-col gap-4" padding="sm">
           <div className="flex items-center justify-between gap-3">
             <h3 className="text-base font-semibold text-slate-800">
               {t("purchases.title")}
@@ -879,18 +893,27 @@ export function PurchaseEntryScreen() {
 
           {(selectedLineCostDiffers || selectedLineLowMargin) && selectedProductForLine && (
             <div className="rounded-xl border border-warning/30 bg-warning-soft px-4 py-3 text-sm text-warning">
+              <p className="font-semibold text-slate-900">
+                {t("purchases.purchaseCostChanged")}
+              </p>
+              <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-700 sm:grid-cols-4">
+                <span>{t("purchases.currentCost")}: <strong dir="ltr">{formatCurrency(selectedProductForLine.buyPrice, currency)}</strong></span>
+                <span>{t("purchases.newCost")}: <strong dir="ltr">{formatCurrency(newLineCost, currency)}</strong></span>
+                <span>{t("purchases.sellPrice")}: <strong dir="ltr">{formatCurrency(selectedProductForLine.sellPrice, currency)}</strong></span>
+                <span>{t("purchases.estimatedMargin")}: <strong dir="ltr">{formatCurrency(selectedLineEstimatedMargin, currency)} ({selectedLineMarginPercent.toFixed(1)}%)</strong></span>
+              </div>
               {selectedLineCostDiffers && (
-                <p className="font-medium">{t("purchases.buyPriceWillUpdate")}</p>
+                <p className="mt-2 text-xs font-medium">{t("purchases.buyPriceWillUpdateDetailed")}</p>
               )}
               {selectedLineLowMargin && (
-                <p className="mt-1 text-xs font-semibold">
+                <p className="mt-1 text-xs font-semibold text-danger">
                   {t("purchases.reviewSellPrice")}
                 </p>
               )}
             </div>
           )}
 
-          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+          <div className="rounded-xl border border-dashed border-border-default bg-surface-soft/55 px-4 py-3 text-sm text-fg-muted">
             <p>{t("purchases.productMissingNote")}</p>
             <Button
               type="button"
@@ -920,7 +943,7 @@ export function PurchaseEntryScreen() {
                 {draftItems.map((item) => (
                   <div
                     key={item.productId}
-                    className="rounded-2xl border border-slate-200 bg-white p-3 shadow-xs"
+                    className="rounded-2xl border border-border-default bg-surface p-3 shadow-xs"
                   >
                     {/* Header: name + remove */}
                     <div className="flex items-start justify-between gap-2 mb-3">
@@ -1006,11 +1029,9 @@ export function PurchaseEntryScreen() {
               </div>
             </>
           )}
-        </Card>
+          </Card>
 
-        {/* Summary panel */}
-        <div className="xl:sticky xl:top-6">
-          {lastFinalized ? (
+          {lastFinalized && (
             <SuccessPanel
               purchase={lastFinalized.purchase}
               items={lastFinalized.items}
@@ -1018,8 +1039,12 @@ export function PurchaseEntryScreen() {
               currency={currency}
               onDismiss={() => setLastFinalized(null)}
             />
-          ) : (
-            <Card className="flex flex-col gap-4" padding="sm">
+          )}
+        </div>
+
+        {/* Summary panel */}
+        <div className="xl:sticky xl:top-6">
+          <Card className="flex flex-col gap-4" padding="sm">
               <h3 className="text-base font-semibold text-slate-800">
                 {t("purchases.finalizePurchase")}
               </h3>
@@ -1095,7 +1120,7 @@ export function PurchaseEntryScreen() {
                   )}
                 </div>
 
-                <details className="group rounded-xl border border-slate-200 bg-white px-3 py-2">
+                <details className="group rounded-xl border border-border-default bg-surface px-3 py-2">
                   <summary className="cursor-pointer list-none text-sm font-semibold text-slate-700">
                     {t("purchases.invoiceDetails")}
                     <span className="ms-2 text-xs font-normal text-slate-400">
@@ -1164,7 +1189,13 @@ export function PurchaseEntryScreen() {
                 </div>
 
                 {watchedPaymentMethod === "card" ? null : (
-                  <FormField label={t("purchases.actualPaid")}>
+                  <FormField
+                    label={
+                      isCreditPurchase
+                        ? t("purchases.paidNow")
+                        : t("purchases.actualPaid")
+                    }
+                  >
                     <div className="flex gap-2">
                       <MoneyInput
                         value={
@@ -1202,7 +1233,7 @@ export function PurchaseEntryScreen() {
                   <Input {...form.register("notes")} />
                 </FormField>
 
-                <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3">
+                <div className="rounded-xl border border-border-default bg-surface-soft/60 px-4 py-3">
                   <SummaryRow
                     label={t("purchases.subtotal")}
                     value={formatCurrency(purchaseSummary.subtotal, currency)}
@@ -1215,19 +1246,28 @@ export function PurchaseEntryScreen() {
                     )}
                     highlight
                   />
-                  <SummaryRow
-                    label={t("purchases.change")}
-                    value={formatCurrency(
-                      Math.max(0, actualChangeAmount),
-                      currency,
-                    )}
-                  />
-                  {isCreditPurchase && amountDue > 0 && (
-                    <SummaryRow
-                      label={t("purchases.amountDue")}
-                      value={formatCurrency(amountDue, currency)}
-                      highlight
-                    />
+                  {actualChangeAmount > 0.001 && (
+                    <>
+                      <SummaryRow
+                        label={t("purchases.changeDueBack")}
+                        value={formatCurrency(actualChangeAmount, currency)}
+                      />
+                      <p className="pt-2 text-xs text-fg-muted">
+                        {t("purchases.changeHelper")}
+                      </p>
+                    </>
+                  )}
+                  {isCreditPurchase && amountDue > 0.001 && (
+                    <>
+                      <SummaryRow
+                        label={t("purchases.amountDue")}
+                        value={formatCurrency(amountDue, currency)}
+                        highlight
+                      />
+                      <p className="pt-2 text-xs text-fg-muted">
+                        {t("purchases.amountDueHelper")}
+                      </p>
+                    </>
                   )}
                 </div>
 
@@ -1275,8 +1315,7 @@ export function PurchaseEntryScreen() {
                   </Button>
                 </div>
               </form>
-            </Card>
-          )}
+          </Card>
         </div>
       </div>
 
@@ -1334,7 +1373,11 @@ export function PurchaseEntryScreen() {
           </>
         }
       >
-        <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3">
+        <div className="rounded-xl border border-border-default bg-surface-soft/60 px-4 py-3">
+          <SummaryRow
+            label={t("purchases.supplier")}
+            value={watchedSupplierName || watchedSupplierPhone || t("purchases.walkInSupplier")}
+          />
           <SummaryRow
             label={t("purchases.items")}
             value={String(draftItems.length)}
@@ -1348,7 +1391,13 @@ export function PurchaseEntryScreen() {
             label={t("purchases.paid")}
             value={formatCurrency(actualPaidAmount, currency)}
           />
-          {amountDue > 0 && (
+          {actualChangeAmount > 0.001 && (
+            <SummaryRow
+              label={t("purchases.changeDueBack")}
+              value={formatCurrency(actualChangeAmount, currency)}
+            />
+          )}
+          {amountDue > 0.001 && (
             <SummaryRow
               label={t("purchases.amountDue")}
               value={formatCurrency(amountDue, currency)}
@@ -1393,13 +1442,17 @@ export function PurchaseEntryScreen() {
           {/* Supplier list */}
           {(() => {
             const needle = supplierSearch.trim().toLowerCase();
+            const phoneNeedle = normalizePhone(supplierSearch);
             const filtered = (suppliers ?? [])
-              .filter(
-                (s) =>
-                  !needle ||
-                  s.name.toLowerCase().includes(needle) ||
-                  s.normalizedPhone?.includes(normalizePhone(supplierSearch)),
-              )
+              .filter((s) => {
+                if (!needle && !phoneNeedle) return true;
+                const nameMatches = s.name.toLowerCase().includes(needle);
+                const phoneMatches = Boolean(
+                  phoneNeedle &&
+                    ((s.normalizedPhone ?? normalizePhone(s.phone)).includes(phoneNeedle)),
+                );
+                return nameMatches || phoneMatches;
+              })
               .slice(0, 20);
 
             if (filtered.length === 0) {

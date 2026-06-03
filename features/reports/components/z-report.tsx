@@ -18,6 +18,7 @@ import { formatDateTime, localDateKey } from "@/lib/utils/date";
 import {
   filterBillsForReport,
   filterByDateRange,
+  filterExpensesForReport,
   summarizeReportBills,
   summarizeReportCashMovements,
   summarizeReportExpenses,
@@ -130,7 +131,7 @@ export function ZReport() {
     const filteredPurchases = filterByDateRange(purchases, filters);
     const filteredCustomerPayments = inRange(customerPayments);
     const filteredSupplierPayments = inRange(supplierPayments);
-    const filteredExpenses = inRange(expenses);
+    const filteredExpenses = filterExpensesForReport(expenses, filters);
     const filteredCashMovements = inRange(cashMovements);
     const shiftsInRange = shifts.filter((s) => {
       const opened = new Date(s.openedAt);
@@ -228,6 +229,15 @@ export function ZReport() {
     filters,
   ]);
 
+  const periodLabel = range === "custom"
+    ? `${customFrom || "…"} – ${customTo || "…"}`
+    : range === "today"
+      ? t("reports.zRangeToday")
+      : range === "week"
+        ? t("reports.zRangeThisWeek")
+        : t("reports.thisMonth");
+
+
   return (
     <PageShell>
       <PageHeader
@@ -291,7 +301,28 @@ export function ZReport() {
         </div>
       </Card>
 
-      <div className="grid gap-3 lg:grid-cols-2">
+      <div id="receipt-print-area" className="space-y-3">
+        <Card className="text-center print:border-0 print:shadow-none">
+          <h2 className="text-base font-bold text-slate-900">
+            {settings?.storeName || "Asas POS"}
+          </h2>
+          {settings?.businessPhone && (
+            <p className="text-xs text-slate-500" dir="ltr">
+              {settings.businessPhone}
+            </p>
+          )}
+          {settings?.businessAddress && (
+            <p className="text-xs text-slate-500">{settings.businessAddress}</p>
+          )}
+          <p className="mt-2 text-xs font-semibold text-slate-600">
+            {t("reports.zReportTitle")} · {periodLabel}
+          </p>
+          <p className="text-xs text-slate-400">
+            {t("reports.zEndOfDay")}: {formatDateTime(new Date().toISOString())}
+          </p>
+        </Card>
+
+        <div className="grid gap-3 lg:grid-cols-2">
         <Section title={t("reports.zSalesHeader")}>
           <Row
             label={t("reports.zSalesNetRevenue")}
@@ -459,11 +490,12 @@ export function ZReport() {
             highlight
           />
         </Section>
-      </div>
+        </div>
 
-      <p className="text-xs text-slate-400">
-        {t("reports.zEndOfDay")}: {formatDateTime(new Date().toISOString())}
-      </p>
+        <p className="text-center text-xs text-slate-400">
+          {t("reports.zEndOfDay")}: {formatDateTime(new Date().toISOString())}
+        </p>
+      </div>
     </PageShell>
   );
 }

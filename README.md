@@ -1,4 +1,4 @@
-# Shopkeeper POS - Offline First Supermarket / POS / Inventory App
+# Asas POS - Offline First Supermarket / POS / Inventory App
 
 A production-minded frontend-first supermarket and inventory management starter built with Next.js App Router, TypeScript, IndexedDB, and a custom PWA setup.
 
@@ -38,6 +38,17 @@ Then open `http://localhost:3000`.
 
 Normal `npm run dev` intentionally disables the service worker so stale dev
 chunks do not get stuck in the browser.
+
+## PWA shortcut name note
+
+The manifest display name is **Asas POS** and the short name is **Asas**.
+Some Android/Chrome installs may keep an older launcher shortcut label until the
+installed PWA metadata is refreshed. If a phone still shows the old shortcut
+name, uninstall the old app shortcut and install it again after opening the
+latest version.
+
+Arabic operator note: إذا بقي اسم الاختصار القديم على الهاتف، احذف اختصار
+التطبيق وثبّت التطبيق من جديد بعد فتح آخر نسخة.
 
 ## Offline / PWA testing
 

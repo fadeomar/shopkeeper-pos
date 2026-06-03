@@ -1252,3 +1252,13 @@ All code items from the review series are now addressed. The only outstanding
 work is the human-run verification in PRODUCTION_QA.md (offline multi-device
 sync test, Firestore rules emulator, CI build) + optional `pos-screen.tsx` split
 (maintainability, explicitly post-QA).
+
+## Sprint 4 implementation notes
+
+- Added customer and supplier account statement surfaces inside the ledger detail modals.
+- Statements are local/offline-first: they are calculated from existing bills, purchases, customer payments, and supplier payments already stored in IndexedDB.
+- Statement calculations use opening balance before the selected period, in-period debits/credits, and ending balance.
+- Customer statements treat bill totals as sales/debits and cash/card paid at sale plus later customer payments as credits.
+- Supplier statements treat purchase totals as purchase/debits and cash/card paid at purchase plus later supplier payments as credits.
+- Statement print uses the shared receipt print target (`#receipt-print-area`) and CSV exports respect the selected statement period.
+- Old records remain safe: missing invoice numbers, phones, notes, invoice dates, and optional sync fields render as fallbacks rather than throwing.

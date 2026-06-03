@@ -7,6 +7,7 @@ import { db } from "@/lib/db/schema";
 import { settingsRepo } from "@/lib/db/repositories";
 import { formatDateTime } from "@/lib/utils/date";
 import { formatCurrency } from "@/lib/utils/money";
+import { downloadCSV } from "@/lib/utils/export-csv";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Card } from "@/components/ui/card";
 import { FitText } from "@/components/ui/fit-text";
@@ -152,6 +153,28 @@ export function BillsTable() {
   useEffect(() => {
     setMobilePage(0);
   }, [query, dateFilter, paymentFilter, statusFilter, cashierFilter, customFrom, customTo]);
+
+  function exportBillsCsv() {
+    const stamp = new Date().toISOString().slice(0, 10);
+    downloadCSV(
+      filteredBills,
+      [
+        { header: t("bills.billNumber"), value: (row) => row.billNumber },
+        { header: t("bills.dateTime"), value: (row) => row.createdAt },
+        { header: t("bills.customer"), value: (row) => row.customerName || t("common.walkin") },
+        { header: t("bills.cashier"), value: (row) => row.cashierName ?? "" },
+        { header: t("bills.itemCount"), value: (row) => row.itemCount },
+        { header: t("bills.payment"), value: (row) => t(`common.${row.paymentMethod}`) },
+        { header: t("bills.status"), value: (row) => t(`common.${row.status}`) },
+        { header: t("bills.total"), value: (row) => getBillNetTotal(row) },
+        ...(canViewProfit
+          ? [{ header: t("bills.profit"), value: (row: Bill) => getBillNetProfit(row) }]
+          : []),
+        { header: t("sync.status"), value: (row) => row.syncStatus ?? "synced" },
+      ],
+      `asas-bills-${stamp}.csv`,
+    );
+  }
 
   if (!bills)
     return (
@@ -370,21 +393,31 @@ export function BillsTable() {
             searchPlaceholder={t("common.search")}
             options={cashierFilterOptions}
           />
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => {
-              setQuery("");
-              setDateFilter("today");
-              setPaymentFilter("all");
-              setStatusFilter("all");
-              setCashierFilter("all");
-              setCustomFrom("");
-              setCustomTo("");
-            }}
-          >
-            {t("common.reset")}
-          </Button>
+          <div className="flex flex-col gap-2 sm:flex-row xl:flex-col">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setQuery("");
+                setDateFilter("today");
+                setPaymentFilter("all");
+                setStatusFilter("all");
+                setCashierFilter("all");
+                setCustomFrom("");
+                setCustomTo("");
+              }}
+            >
+              {t("common.reset")}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={exportBillsCsv}
+              disabled={filteredBills.length === 0}
+            >
+              {t("reports.exportCsv")}
+            </Button>
+          </div>
         </div>
         {dateFilter === "custom" && (
           <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">

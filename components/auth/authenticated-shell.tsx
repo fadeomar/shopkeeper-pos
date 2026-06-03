@@ -504,7 +504,7 @@ function RestoreModal({
           aria-label={t("auth.closeRestorePrompt")}
           onClick={onSkip}
           disabled={restoring}
-          className="absolute end-3 top-3 rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 disabled:opacity-40"
+          className="absolute end-3 top-3 rounded-full bg-danger-soft/50 p-2 text-danger/75 transition-colors hover:bg-danger-soft hover:text-danger disabled:opacity-40"
         >
           <svg
             className="h-4 w-4"

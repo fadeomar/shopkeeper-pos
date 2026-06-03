@@ -15,6 +15,8 @@ import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useLocale } from "@/components/providers/locale-context";
 import { formatDateTime } from "@/lib/utils/date";
+import { downloadCSV } from "@/lib/utils/export-csv";
+import { Button } from "@/components/ui/button";
 
 const CATEGORIES: AuditCategory[] = [
   'product','inventory','bill','purchase','customer','supplier','settings','shift','cash','expense','user','sync',
@@ -38,14 +40,14 @@ const CATEGORY_BADGE_TONE: Record<AuditCategory, string> = {
   product: 'bg-info-soft text-info ring-info/30',
   inventory: 'bg-warning-soft text-warning ring-warning/30',
   bill: 'bg-success-soft text-success ring-success/30',
-  purchase: 'bg-violet-50 text-violet-700 ring-violet-200',
-  customer: 'bg-sky-50 text-sky-700 ring-sky-200',
-  supplier: 'bg-fuchsia-50 text-fuchsia-700 ring-fuchsia-200',
-  settings: 'bg-slate-50 text-slate-700 ring-slate-200',
-  shift: 'bg-indigo-50 text-indigo-700 ring-indigo-200',
-  cash: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  expense: 'bg-orange-50 text-orange-700 ring-orange-200',
-  user: 'bg-rose-50 text-rose-700 ring-rose-200',
+  purchase: 'bg-warning-soft text-warning ring-warning/30',
+  customer: 'bg-brand-soft text-brand ring-brand/25',
+  supplier: 'bg-money-soft text-money ring-money/25',
+  settings: 'bg-surface-soft text-fg-secondary ring-border-strong/50',
+  shift: 'bg-info-soft text-info ring-info/25',
+  cash: 'bg-success-soft text-success ring-success/30',
+  expense: 'bg-danger-soft text-danger ring-danger/25',
+  user: 'bg-danger-soft text-danger ring-danger/25',
   sync: 'bg-warning-soft text-warning ring-warning/20',
 };
 
@@ -55,6 +57,9 @@ export function AuditWorkspace() {
 
   const [category, setCategory] = useState<AuditCategory | ''>('');
   const [action, setAction] = useState<AuditAction | ''>('');
+  const [actor, setActor] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   const [search, setSearch] = useState('');
 
   // useLiveQuery re-runs the listAuditEvents call whenever auditEvents changes
@@ -65,15 +70,55 @@ export function AuditWorkspace() {
       listAuditEvents({
         category: category || undefined,
         action: action || undefined,
+        actor: actor || undefined,
+        from: fromDate ? new Date(`${fromDate}T00:00:00`).toISOString() : undefined,
+        to: toDate ? new Date(`${toDate}T23:59:59.999`).toISOString() : undefined,
         search: search || undefined,
       }),
-    [category, action, search],
+    [category, action, actor, fromDate, toDate, search],
+    [] as AuditEvent[],
+  );
+
+  const allEventsForActors = useLiveQuery(
+    () => db.auditEvents.toArray(),
+    [],
     [] as AuditEvent[],
   );
 
   // Whole-table count so the empty state distinguishes "no events ever" from
   // "no events match the current filter".
   const totalCount = useLiveQuery(() => db.auditEvents.count(), [], 0);
+
+
+  const actorOptions = useMemo(() => {
+    const actors = new Map<string, string>();
+    for (const event of allEventsForActors) {
+      const value = event.actorUid || event.actorName;
+      if (!value) continue;
+      const label = event.actorName || event.actorUid || value;
+      actors.set(value, label);
+    }
+    return Array.from(actors.entries())
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [allEventsForActors]);
+
+  function exportAuditCsv() {
+    const stamp = new Date().toISOString().slice(0, 10);
+    downloadCSV(
+      events,
+      [
+        { header: t('audit.colTime'), value: (row) => row.createdAt },
+        { header: t('audit.colCategory'), value: (row) => t(categoryKey(row.category)) },
+        { header: t('audit.colAction'), value: (row) => t(actionKey(row.action)) },
+        { header: t('audit.colEntity'), value: (row) => row.entityLabel ?? row.entityId ?? '' },
+        { header: t('audit.colSummary'), value: (row) => row.summary ?? '' },
+        { header: t('audit.colReason'), value: (row) => row.reason ?? '' },
+        { header: t('audit.colActor'), value: (row) => row.actorName ?? row.actorUid ?? '' },
+      ],
+      `asas-audit-${stamp}.csv`,
+    );
+  }
 
   const columns = useMemo<ColumnDef<AuditEvent, unknown>[]>(
     () => [
@@ -148,11 +193,19 @@ export function AuditWorkspace() {
 
   return (
     <PageShell>
-      <PageHeader title={t('audit.title')} description={t('audit.subtitle')} />
+      <PageHeader
+        title={t('audit.title')}
+        description={t('audit.subtitle')}
+        actions={
+          <Button type="button" variant="secondary" onClick={exportAuditCsv} disabled={events.length === 0}>
+            {t('reports.exportCsv')}
+          </Button>
+        }
+      />
 
       <Card>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600 sm:w-48">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
             {t('audit.filterCategory')}
             <SearchableSelect
               value={category || null}
@@ -164,7 +217,7 @@ export function AuditWorkspace() {
               ]}
             />
           </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600 sm:w-48">
+          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
             {t('audit.filterAction')}
             <SearchableSelect
               value={action || null}
@@ -176,7 +229,25 @@ export function AuditWorkspace() {
               ]}
             />
           </label>
-          <label className="flex flex-1 flex-col gap-1 text-xs font-medium text-slate-600">
+          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+            {t('audit.filterActor')}
+            <SearchableSelect
+              value={actor || null}
+              onValueChange={(v) => setActor(v ?? '')}
+              clearable
+              placeholder={t('audit.filterAllActors')}
+              options={actorOptions}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+            {t('audit.fromDate')}
+            <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+            {t('audit.toDate')}
+            <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
             {t('audit.filterSearch')}
             <Input
               value={search}
@@ -184,6 +255,13 @@ export function AuditWorkspace() {
               placeholder={t('audit.filterSearch')}
             />
           </label>
+          <button
+            type="button"
+            onClick={() => { setCategory(''); setAction(''); setActor(''); setFromDate(''); setToDate(''); setSearch(''); }}
+            className="min-h-[42px] self-end rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            {t('common.reset')}
+          </button>
         </div>
       </Card>
 
