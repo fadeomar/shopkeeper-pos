@@ -49,6 +49,8 @@ import { QuantityStepper } from "@/components/pos/quantity-stepper";
 import { QuickProductModal } from "./quick-product-modal";
 import { ReceiptView } from "./receipt-view";
 import { normalizeBarcode } from "@/lib/utils/barcode";
+import { createId } from "@/lib/utils/id";
+import { isMiscLine, MISC_ITEM_BARCODE } from "@/lib/utils/misc-items";
 import { useAuth } from "@/components/providers/auth-context";
 import { usePermissions } from "@/lib/hooks/use-permissions";
 import { useOnlineStatus } from "@/lib/hooks/use-online-status";
@@ -314,6 +316,10 @@ export function PosScreen() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [miscOpen, setMiscOpen] = useState(false);
+  const [miscDescription, setMiscDescription] = useState("");
+  const [miscPrice, setMiscPrice] = useState("");
+  const [miscQuantity, setMiscQuantity] = useState("1");
   const [customerSheetOpen, setCustomerSheetOpen] = useState(false);
   const [customerSearch, setCustomerSearch] = useState("");
   const [missingBarcode, setMissingBarcode] = useState("");
@@ -646,7 +652,8 @@ export function PosScreen() {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.defaultPrevented) return;
-      if (confirmOpen || scannerOpen || quickAddOpen || lastFinalized) return;
+      if (confirmOpen || scannerOpen || quickAddOpen || miscOpen || lastFinalized)
+        return;
       if (!(e.ctrlKey || e.metaKey) || e.key !== "Enter") return;
       if (!canFinalize) return;
       e.preventDefault();
@@ -658,6 +665,7 @@ export function PosScreen() {
     confirmOpen,
     scannerOpen,
     quickAddOpen,
+    miscOpen,
     lastFinalized,
     canFinalize,
     form,
@@ -752,6 +760,53 @@ export function PosScreen() {
     }
   }
 
+  function resetMiscForm() {
+    setMiscDescription("");
+    setMiscPrice("");
+    setMiscQuantity("1");
+  }
+
+  function addMiscLine(priceOverride?: number) {
+    const price = Math.max(0, Number(priceOverride ?? miscPrice) || 0);
+    const quantity = Math.max(1, Math.trunc(Number(miscQuantity) || 1));
+    const description = miscDescription.trim();
+
+    if (price <= 0) {
+      push(t("billing.miscPriceRequired"), "error");
+      return;
+    }
+
+    if (lastFinalized) setLastFinalized(null);
+
+    const name = description
+      ? `${t("billing.miscItem")} - ${description}`
+      : t("billing.miscItem");
+    const newItem: BillDraftItem = {
+      productId: createId("misc"),
+      itemKind: "misc",
+      miscDescription: description || undefined,
+      barcode: MISC_ITEM_BARCODE,
+      name,
+      category: t("billing.miscCategory"),
+      availableStock: Number.MAX_SAFE_INTEGER,
+      quantity,
+      // Cost is intentionally equal to sell price so product-profit reports do
+      // not invent profit for a sale whose real cost was not recorded.
+      unitBuyPrice: price,
+      unitSellPrice: price,
+    };
+
+    setDraftItems((cur) => [...cur, newItem]);
+    push(
+      t("billing.miscItemAdded", {
+        total: formatCurrency(calculateLineSubtotal(quantity, price), currency),
+      }),
+    );
+    setMiscOpen(false);
+    resetMiscForm();
+    setTimeout(() => barcodeInputRef.current?.focus(), 0);
+  }
+
   function updateQuantity(productId: string, quantity: number) {
     // Number(""), Number("abc"), Number(".") all yield NaN/non-integer values.
     // Coerce to a safe whole number before clamping so the draft never enters
@@ -760,11 +815,27 @@ export function PosScreen() {
     setDraftItems((cur) =>
       cur.map((i) => {
         if (i.productId !== productId) return i;
+        // Misc lines have no real stock cap (sentinel availableStock), so they
+        // are never clamped down to a stock count.
+        const maxQuantity = isMiscLine(i)
+          ? Number.MAX_SAFE_INTEGER
+          : i.availableStock;
         return {
           ...i,
-          quantity: Math.max(1, Math.min(safeQuantity, i.availableStock)),
+          quantity: Math.max(1, Math.min(safeQuantity, maxQuantity)),
         };
       }),
+    );
+  }
+
+  function updateMiscSellPrice(productId: string, price: number) {
+    const safePrice = Number.isFinite(price) ? Math.max(0, price) : 0;
+    setDraftItems((cur) =>
+      cur.map((i) =>
+        i.productId === productId && isMiscLine(i)
+          ? { ...i, unitBuyPrice: safePrice, unitSellPrice: safePrice }
+          : i,
+      ),
     );
   }
 
@@ -832,7 +903,9 @@ export function PosScreen() {
       header: t("billing.stock"),
       cell: ({ row }) => (
         <span className="tabular-nums text-slate-500">
-          {row.original.availableStock}
+          {isMiscLine(row.original)
+            ? t("billing.nonStock")
+            : row.original.availableStock}
         </span>
       ),
     },
@@ -846,7 +919,7 @@ export function PosScreen() {
             value={item.quantity}
             onChange={(v) => updateQuantity(item.productId, v)}
             min={1}
-            max={item.availableStock}
+            max={isMiscLine(item) ? undefined : item.availableStock}
             className="w-[160px]"
           />
         );
@@ -855,11 +928,25 @@ export function PosScreen() {
     {
       accessorKey: "unitSellPrice",
       header: t("billing.sell"),
-      cell: ({ row }) => (
-        <span className="tabular-nums text-slate-700" dir="ltr">
-          {formatCurrency(row.original.unitSellPrice, currency)}
-        </span>
-      ),
+      cell: ({ row }) =>
+        isMiscLine(row.original) ? (
+          <MoneyInput
+            value={row.original.unitSellPrice}
+            onValueChange={(v) =>
+              updateMiscSellPrice(row.original.productId, v)
+            }
+            currency={currency}
+            min={0}
+            onKeyDown={dismissKeyboardOnEnter}
+            inputSize="sm"
+            className="w-32"
+            fullWidth={false}
+          />
+        ) : (
+          <span className="tabular-nums text-slate-700" dir="ltr">
+            {formatCurrency(row.original.unitSellPrice, currency)}
+          </span>
+        ),
     },
     {
       id: "subtotal",
@@ -1006,22 +1093,32 @@ export function PosScreen() {
 
           {/* Product select row — picking a product adds it to the bill
               immediately (no separate "Add item" tap). The selection resets to
-              the placeholder so the same product can be picked again. */}
-          <SearchableSelect
-            value=""
-            onValueChange={(value) => {
-              if (!value) return;
-              const product = products?.find((p) => p.id === value);
-              // Dropdown selection must not refocus the barcode input — on
-              // mobile that re-opens the keyboard and interrupts checkout.
-              if (product) appendProduct(product, { focusBarcode: false });
-            }}
-            options={productOptions}
-            placeholder={t("billing.selectProduct")}
-            searchPlaceholder={t("products.searchPlaceholder")}
-            emptyMessage={t("common.noResults")}
-            disabled={!products?.length}
-          />
+              the placeholder so the same product can be picked again. The misc
+              button lets the cashier add an ad-hoc open-price line. */}
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">
+            <SearchableSelect
+              value=""
+              onValueChange={(value) => {
+                if (!value) return;
+                const product = products?.find((p) => p.id === value);
+                // Dropdown selection must not refocus the barcode input — on
+                // mobile that re-opens the keyboard and interrupts checkout.
+                if (product) appendProduct(product, { focusBarcode: false });
+              }}
+              options={productOptions}
+              placeholder={t("billing.selectProduct")}
+              searchPlaceholder={t("products.searchPlaceholder")}
+              emptyMessage={t("common.noResults")}
+              disabled={!products?.length}
+            />
+            <Button
+              type="button"
+              variant="soft"
+              onClick={() => setMiscOpen(true)}
+            >
+              {t("billing.addMiscItem")}
+            </Button>
+          </div>
 
           {/* Items */}
           {draftItems.length === 0 ? (
@@ -1043,7 +1140,9 @@ export function PosScreen() {
                           {item.name}
                         </p>
                         <p className="text-xs text-slate-500 font-mono truncate">
-                          {item.barcode}
+                          {isMiscLine(item)
+                            ? item.miscDescription || t("billing.miscQuickSale")
+                            : item.barcode}
                         </p>
                       </div>
                       <Button
@@ -1063,17 +1162,34 @@ export function PosScreen() {
                       <div className="rounded-xl bg-slate-50 p-2">
                         <p className="text-slate-500">{t("billing.stock")}</p>
                         <p className="font-bold text-slate-800 tabular-nums">
-                          {item.availableStock}
+                          {isMiscLine(item)
+                            ? t("billing.nonStock")
+                            : item.availableStock}
                         </p>
                       </div>
                       <div className="rounded-xl bg-slate-50 p-2">
                         <p className="text-slate-500">{t("billing.sell")}</p>
-                        <p
-                          className="font-bold text-slate-800 tabular-nums"
-                          dir="ltr"
-                        >
-                          {formatCurrency(item.unitSellPrice, currency)}
-                        </p>
+                        {isMiscLine(item) ? (
+                          <MoneyInput
+                            value={item.unitSellPrice}
+                            onValueChange={(v) =>
+                              updateMiscSellPrice(item.productId, v)
+                            }
+                            currency={currency}
+                            min={0}
+                            onKeyDown={dismissKeyboardOnEnter}
+                            inputSize="sm"
+                            className="mt-1"
+                            fullWidth
+                          />
+                        ) : (
+                          <p
+                            className="font-bold text-slate-800 tabular-nums"
+                            dir="ltr"
+                          >
+                            {formatCurrency(item.unitSellPrice, currency)}
+                          </p>
+                        )}
                       </div>
                       <div className="rounded-xl bg-slate-50 p-2">
                         <p className="text-slate-500">
@@ -1102,7 +1218,7 @@ export function PosScreen() {
                         onValueChange={(v) => updateQuantity(item.productId, v)}
                         precision="integer"
                         min={1}
-                        max={item.availableStock}
+                        max={isMiscLine(item) ? undefined : item.availableStock}
                         showStepper
                         align="center"
                         onKeyDown={dismissKeyboardOnEnter}
@@ -1517,6 +1633,81 @@ export function PosScreen() {
               highlight
             />
           )}
+        </div>
+      </Modal>
+
+      {/* ── Misc item modal ──────────────────────────────────────────────── */}
+      <Modal
+        open={miscOpen}
+        title={t("billing.addMiscItem")}
+        description={t("billing.miscItemDesc")}
+        onClose={() => {
+          setMiscOpen(false);
+          resetMiscForm();
+        }}
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setMiscOpen(false);
+                resetMiscForm();
+              }}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button type="button" onClick={() => addMiscLine()}>
+              {t("billing.addMiscToBill")}
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-3">
+          <FormField label={t("billing.miscDescription")}>
+            <Input
+              value={miscDescription}
+              onChange={(e) => setMiscDescription(e.target.value)}
+              placeholder={t("billing.miscDescriptionPlaceholder")}
+            />
+          </FormField>
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label={t("billing.miscQuantity")}>
+              <NumberField
+                value={Number(miscQuantity) || 1}
+                onValueChange={(v) => setMiscQuantity(String(v))}
+                precision="integer"
+                min={1}
+                showStepper
+                align="center"
+                onKeyDown={dismissKeyboardOnEnter}
+              />
+            </FormField>
+            <FormField label={t("billing.miscPrice")}>
+              <MoneyInput
+                value={miscPrice === "" ? "" : Number(miscPrice)}
+                onValueChange={(v) => setMiscPrice(String(v))}
+                currency={currency}
+                min={0}
+                onKeyDown={dismissKeyboardOnEnter}
+              />
+            </FormField>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {[1, 2, 5, 10].map((amount) => (
+              <button
+                key={amount}
+                type="button"
+                onClick={() => setMiscPrice(String(amount))}
+                className="rounded-lg border border-border-default bg-surface px-3 py-1.5 text-xs font-semibold text-fg-secondary tabular-nums hover:bg-surface-soft hover:border-border-strong transition-colors"
+              >
+                {formatCurrency(amount, currency)}
+              </button>
+            ))}
+          </div>
+          <p className="rounded-xl border border-warning/30 bg-warning-soft px-3 py-2 text-xs text-warning">
+            {t("billing.miscProfitNote")}
+          </p>
         </div>
       </Modal>
 

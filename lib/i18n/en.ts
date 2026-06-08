@@ -537,6 +537,9 @@ export const en: TranslationDict = {
   },
 
   reports: {
+    miscSales: "Misc sales",
+    miscSalesHelper: "{{count}} non-stock item(s)",
+    profitExcludesMisc: "Misc profit is excluded unless a real cost is recorded.",
     title: "Reports",
     subtitle:
       "Understand sales, profit, payments, top products, and low-stock items from the data already saved in the app.",
@@ -651,6 +654,20 @@ export const en: TranslationDict = {
   },
 
   billing: {
+    addMiscItem: "Misc item",
+    addMiscToBill: "Add to bill",
+    miscItem: "Misc",
+    miscItemDesc: "For small or unregistered items without barcode or stock tracking.",
+    miscDescription: "Description",
+    miscDescriptionPlaceholder: "Example: gum, lighter, kids sweets",
+    miscQuantity: "Quantity",
+    miscPrice: "Price",
+    miscPriceRequired: "Enter a misc item price before adding.",
+    miscCategory: "Misc",
+    miscQuickSale: "Quick sale without barcode",
+    miscItemAdded: "Misc item added: {{total}}",
+    miscProfitNote: "Misc items count as sales, but do not add product profit because their real cost is not recorded.",
+    nonStock: "No stock",
     title: "Create bill",
     subtitle:
       "POS workflow using live products for selection, then storing immutable bill snapshots when finalized.",
@@ -1116,6 +1133,16 @@ export const en: TranslationDict = {
     badgeSyncedLocally: "Synced locally",
   },
   purchases: {
+    addMiscPurchase: "Misc purchase",
+    addMiscToPurchase: "Add to purchase",
+    miscPurchaseItem: "Misc purchase",
+    miscPurchaseDesc: "Record a general purchase that does not increase a specific product stock.",
+    miscDescription: "Description",
+    miscDescriptionPlaceholder: "Example: mixed kids sweets box, lighters",
+    miscCostRequired: "Enter a misc purchase cost before adding.",
+    miscCategory: "Misc",
+    miscPurchaseNote: "Misc purchases count as purchase cost but do not change product stock.",
+    nonStock: "No stock",
     newPurchase: "New purchase",
     productMissingNote:
       "Product not found? Add it here without leaving this purchase.",

@@ -8,6 +8,7 @@ import { db } from "@/lib/db/schema";
 import { settingsRepo } from "@/lib/db/repositories";
 import { formatCurrency } from "@/lib/utils/money";
 import { formatDateTime } from "@/lib/utils/date";
+import { isMiscLine } from "@/lib/utils/misc-items";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { DataTable, useDataTableLabels } from "@/components/ui/data-table";
@@ -106,7 +107,12 @@ export function PurchaseDetail({ purchaseId }: { purchaseId: string }) {
     {
       id: "stockImpact",
       header: t("purchases.stockImpact"),
-      cell: ({ row }) => <span className="font-semibold text-success">+{row.original.quantityPurchased}</span>,
+      cell: ({ row }) =>
+        isMiscLine(row.original) ? (
+          <span className="text-slate-400">—</span>
+        ) : (
+          <span className="font-semibold text-success">+{row.original.quantityPurchased}</span>
+        ),
     },
   ];
 

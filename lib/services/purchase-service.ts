@@ -8,6 +8,7 @@ import { nowIso } from "@/lib/utils/date";
 import { MONEY_EPSILON, addMoney, allocateMoney, roundMoney, subtractMoney } from "@/lib/utils/money";
 import { createId, createPurchaseNumber } from "@/lib/utils/id";
 import { buildSyncQueueItem, getSyncQueueId } from "@/lib/services/sync-queue-service";
+import { isMiscLine } from "@/lib/utils/misc-items";
 import type { BillSplit } from "@/lib/utils/bill-split";
 import type {
   PaymentMethod,
@@ -34,6 +35,20 @@ function validatePurchaseLine(line: PurchaseDraftItem, product: Product) {
   }
   if (!Number.isFinite(line.unitCost) || line.unitCost < 0) {
     throw new AppError(AppErrorCode.PRODUCT_UNIT_COST_NEGATIVE, { name: product.name });
+  }
+}
+
+/**
+ * Validate an ad-hoc متفرقات (misc) purchase line. Misc purchase lines have
+ * no product behind them — they're a general purchase cost — so they only
+ * need a positive whole quantity and a non-negative cost.
+ */
+function validateMiscPurchaseLine(line: PurchaseDraftItem) {
+  if (!Number.isInteger(line.quantity) || line.quantity <= 0) {
+    throw new AppError(AppErrorCode.PRODUCT_QTY_POSITIVE_WHOLE, { name: line.name });
+  }
+  if (!Number.isFinite(line.unitCost) || line.unitCost < 0) {
+    throw new AppError(AppErrorCode.PRODUCT_UNIT_COST_NEGATIVE, { name: line.name });
   }
 }
 
@@ -177,14 +192,21 @@ export async function createFinalizedPurchase(input: {
       assertPaymentMethodEnabled(settings, input.form.paymentMethod);
       const taxAmount = effectiveTaxAmount(settings, input.form.taxAmount);
 
-      const productIds = input.items.map((item) => item.productId);
-      const liveProducts = await db.products.bulkGet(productIds);
+      // Only real product lines hit inventory; misc (متفرقات) purchase lines
+      // are a general cost with no product to look up or restock.
+      const stockItems = input.items.filter((item) => !isMiscLine(item));
+      const productIds = Array.from(new Set(stockItems.map((item) => item.productId)));
+      const liveProducts = productIds.length > 0 ? await db.products.bulkGet(productIds) : [];
       if (liveProducts.some((product) => !product)) {
         throw new AppError(AppErrorCode.PRODUCTS_MISSING);
       }
       const products = liveProducts as Product[];
 
       for (const line of input.items) {
+        if (isMiscLine(line)) {
+          validateMiscPurchaseLine(line);
+          continue;
+        }
         const product = products.find((p) => p.id === line.productId);
         if (!product) throw new AppError(AppErrorCode.LINE_PRODUCT_NOT_FOUND, { name: line.name });
         validatePurchaseLine(line, product);
@@ -243,6 +265,8 @@ export async function createFinalizedPurchase(input: {
         barcodeAtPurchase: item.barcode,
         productNameAtPurchase: item.name,
         categoryAtPurchase: item.category,
+        itemKind: isMiscLine(item) ? "misc" : "product",
+        miscDescription: item.miscDescription,
         quantityPurchased: item.quantity,
         unitCostAtPurchase: item.unitCost,
         lineSubtotal: calculateLineSubtotal(item.quantity, item.unitCost),
@@ -298,7 +322,7 @@ export async function createFinalizedPurchase(input: {
         };
       });
 
-      const stockMovements: StockMovement[] = input.items.map((item) => ({
+      const stockMovements: StockMovement[] = stockItems.map((item) => ({
         id: createId("move"),
         productId: item.productId,
         movementType: "purchase",
@@ -478,7 +502,9 @@ export async function voidPurchase(input: {
 
       const stockMovements: StockMovement[] = items.flatMap((item) => {
         const qty = getRemainingPurchaseItemQuantity(item);
-        if (qty <= 0) return [];
+        // Misc (متفرقات) purchase lines never added stock, so voiding them
+        // removes nothing — only real product lines reverse.
+        if (isMiscLine(item) || qty <= 0) return [];
         return [
           {
             id: createId("move"),
@@ -587,10 +613,17 @@ export async function returnPurchaseItem(input: {
         throw new AppError(AppErrorCode.RETURN_EXCEEDS_QTY);
       }
 
-      const product = await db.products.get(item.originalProductId);
-      if (!product) throw new AppError(AppErrorCode.PRODUCT_NOT_FOUND);
-      if (product.quantityInStock < quantity) {
-        throw new AppError(AppErrorCode.PURCHASE_RETURN_INSUFFICIENT_STOCK);
+      // Misc (متفرقات) purchase lines have no product — a misc return adjusts
+      // the purchase totals but touches no stock.
+      const isMiscReturn = isMiscLine(item);
+      const product = isMiscReturn
+        ? undefined
+        : await db.products.get(item.originalProductId);
+      if (!isMiscReturn) {
+        if (!product) throw new AppError(AppErrorCode.PRODUCT_NOT_FOUND);
+        if (product.quantityInStock < quantity) {
+          throw new AppError(AppErrorCode.PURCHASE_RETURN_INSUFFICIENT_STOCK);
+        }
       }
       auditPurchaseNumber = purchase.purchaseNumber;
       auditProductName = item.productNameAtPurchase;
@@ -624,26 +657,28 @@ export async function returnPurchaseItem(input: {
         ? purchase.totalAmount
         : roundMoney(calculatedReturnedAmount);
 
-      const stockMovement: StockMovement = {
-        id: createId("move"),
-        productId: item.originalProductId,
-        movementType: "adjustment",
-        quantityChange: -quantity,
-        referenceType: "purchase",
-        referenceId: purchase.id,
-        note: `Return to supplier ${purchase.purchaseNumber} / ${item.productNameAtPurchase}: ${reason}`,
-        createdAt: now,
-        syncStatus: "pending",
-      };
-
-      await db.products.put({
-        ...product,
-        quantityInStock: product.quantityInStock - quantity,
-        lastUpdated: now,
-        syncStatus: "pending",
-        lastSyncError: undefined,
-      });
-      await db.stockMovements.add(stockMovement);
+      let stockMovement: StockMovement | null = null;
+      if (!isMiscReturn && product) {
+        stockMovement = {
+          id: createId("move"),
+          productId: item.originalProductId,
+          movementType: "adjustment",
+          quantityChange: -quantity,
+          referenceType: "purchase",
+          referenceId: purchase.id,
+          note: `Return to supplier ${purchase.purchaseNumber} / ${item.productNameAtPurchase}: ${reason}`,
+          createdAt: now,
+          syncStatus: "pending",
+        };
+        await db.products.put({
+          ...product,
+          quantityInStock: product.quantityInStock - quantity,
+          lastUpdated: now,
+          syncStatus: "pending",
+          lastSyncError: undefined,
+        });
+        await db.stockMovements.add(stockMovement);
+      }
       await db.purchases.update(purchase.id, {
         status: allReturned ? "returned" : "partially_returned",
         returnedAmount: nextReturnedAmount,
@@ -657,18 +692,23 @@ export async function returnPurchaseItem(input: {
         lastSyncError: undefined,
       });
 
-      await db.syncQueue.bulkPut([
+      const returnSyncJobs = [
         buildSyncQueueItem({
           entity: "purchase",
           entityId: purchase.id,
           operation: "update",
         }),
-        buildSyncQueueItem({
-          entity: "stockMovement",
-          entityId: stockMovement.id,
-          operation: "create",
-        }),
-      ]);
+      ];
+      if (stockMovement) {
+        returnSyncJobs.push(
+          buildSyncQueueItem({
+            entity: "stockMovement",
+            entityId: stockMovement.id,
+            operation: "create",
+          }),
+        );
+      }
+      await db.syncQueue.bulkPut(returnSyncJobs);
     },
   );
   requestSync();

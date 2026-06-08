@@ -296,6 +296,21 @@ export function ReportsWorkspace() {
     () => summarizeProductSales(filteredBills, billItems ?? [], products ?? []),
     [filteredBills, billItems, products],
   );
+  // Aggregate the متفرقات (misc) rows into a single revenue/quantity figure
+  // for the headline stat card.
+  const miscSalesSummary = useMemo(
+    () =>
+      productSales
+        .filter((row) => row.isMisc)
+        .reduce(
+          (acc, row) => ({
+            quantity: acc.quantity + row.quantity,
+            revenue: acc.revenue + row.revenue,
+          }),
+          { quantity: 0, revenue: 0 },
+        ),
+    [productSales],
+  );
   const categorySales = useMemo(() => summarizeCategorySales(productSales).slice(0, 8), [productSales]);
   const topCustomers = useMemo(() => summarizeCustomerSales(filteredBills).slice(0, 8), [filteredBills]);
   const topSuppliers = useMemo(() => summarizeSupplierPurchases(filteredPurchases).slice(0, 8), [filteredPurchases]);
@@ -436,10 +451,12 @@ export function ReportsWorkspace() {
         </div>
       </Card>
 
-      {/* Money-in: 5 cards spread across the row on desktop (lg:grid-cols-5)
-          so the 5th card no longer wraps onto an orphan row; on small screens
-          the trailing odd card stretches full-width instead of sitting alone. */}
-      <section className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+      {/* Money-in cards. The profit card is permission-gated (canViewProfit),
+          so the desktop column count adapts: 6 cards when profit shows, 5 when
+          it's hidden — either way the row fills evenly with no orphan. */}
+      <section
+        className={`grid grid-cols-2 gap-4 ${canViewProfit ? "lg:grid-cols-6" : "lg:grid-cols-5"}`}
+      >
         <StatCard
           filled
           tone="brand"
@@ -453,6 +470,7 @@ export function ReportsWorkspace() {
             tone="positive"
             label={t("reports.totalProfit")}
             value={formatCurrency(summary.profit, currency)}
+            helper={t("reports.profitExcludesMisc")}
           />
         )}
         <StatCard
@@ -477,6 +495,13 @@ export function ReportsWorkspace() {
           label={t("reports.customerPaymentsCashIn")}
           value={formatCurrency(customerPaymentsCashIn, currency)}
           href="/customers"
+        />
+        <StatCard
+          filled
+          tone="neutral"
+          label={t("reports.miscSales")}
+          value={formatCurrency(miscSalesSummary.revenue, currency)}
+          helper={t("reports.miscSalesHelper", { count: String(miscSalesSummary.quantity) })}
         />
       </section>
 

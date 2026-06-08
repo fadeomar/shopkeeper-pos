@@ -16,6 +16,7 @@ import { createBillNumber, createId } from "@/lib/utils/id";
 import { buildSyncQueueItem, getSyncQueueId } from "@/lib/services/sync-queue-service";
 import { assertPaymentMethodEnabled, effectiveTaxAmount } from "@/lib/services/settings-policy";
 import { assertPermission } from "@/lib/services/permission-service";
+import { isMiscLine } from "@/lib/utils/misc-items";
 import type {
   Bill,
   BillDraftItem,
@@ -51,9 +52,25 @@ function validateDraftLine(
   }
 }
 
+/**
+ * Validate an ad-hoc متفرقات (misc) line. Misc lines carry no product, so
+ * they only need a positive whole quantity and a positive price entered at
+ * sale time. Defense-in-depth behind the POS UI's own checks.
+ */
+function validateMiscDraftLine(line: BillDraftItem) {
+  if (!Number.isInteger(line.quantity))
+    throw new AppError(AppErrorCode.PRODUCT_QTY_WHOLE, { name: line.name });
+  if (line.quantity <= 0)
+    throw new AppError(AppErrorCode.PRODUCT_QTY_POSITIVE, { name: line.name });
+  if (!Number.isFinite(line.unitSellPrice) || line.unitSellPrice <= 0)
+    throw new AppError(AppErrorCode.PAYMENT_AMOUNT_INVALID);
+}
+
 function getRequestedQuantities(items: BillDraftItem[]): Map<string, number> {
   const requested = new Map<string, number>();
   for (const item of items) {
+    // Misc lines have no real product; skip so they never affect stock checks.
+    if (isMiscLine(item)) continue;
     requested.set(item.productId, (requested.get(item.productId) ?? 0) + item.quantity);
   }
   return requested;
@@ -146,7 +163,9 @@ export async function createFinalizedBill(input: {
   const totalAmountPreview = calculateBillTotals(
     input.items.map((item) => ({
       quantity: item.quantity,
-      unitBuyPrice: item.unitBuyPrice,
+      // Misc lines have no recorded cost — treat buy = sell so they carry
+      // zero margin in the totals (profit is excluded for misc).
+      unitBuyPrice: isMiscLine(item) ? item.unitSellPrice : item.unitBuyPrice,
       unitSellPrice: item.unitSellPrice,
     })),
     input.form.discountAmount,
@@ -205,8 +224,11 @@ export async function createFinalizedBill(input: {
       // amount; "none"/"inclusive" force 0 regardless of what the form sent.
       const taxAmount = effectiveTaxAmount(settings, input.form.taxAmount);
 
-      const productIds = input.items.map((item) => item.productId);
-      const liveProducts = await db.products.bulkGet(productIds);
+      // Only real product lines hit inventory; misc (متفرقات) lines have no
+      // product to look up, track, or decrement.
+      const stockItems = input.items.filter((item) => !isMiscLine(item));
+      const productIds = Array.from(new Set(stockItems.map((item) => item.productId)));
+      const liveProducts = productIds.length > 0 ? await db.products.bulkGet(productIds) : [];
 
       if (liveProducts.some((product) => !product)) {
         throw new AppError(AppErrorCode.PRODUCTS_MISSING);
@@ -220,6 +242,10 @@ export async function createFinalizedBill(input: {
 
       const requestedQuantities = getRequestedQuantities(input.items);
       for (const line of input.items) {
+        if (isMiscLine(line)) {
+          validateMiscDraftLine(line);
+          continue;
+        }
         const product = products.find(
           (candidate) => candidate.id === line.productId,
         );
@@ -234,22 +260,30 @@ export async function createFinalizedBill(input: {
         barcodeAtSale: item.barcode,
         productNameAtSale: item.name,
         categoryAtSale: item.category,
+        itemKind: isMiscLine(item) ? "misc" : "product",
+        miscDescription: item.miscDescription,
         quantitySold: item.quantity,
-        unitBuyPriceAtSale: item.unitBuyPrice,
+        // Misc lines record buy = sell (no real cost) so profit nets to zero.
+        unitBuyPriceAtSale: isMiscLine(item) ? item.unitSellPrice : item.unitBuyPrice,
         unitSellPriceAtSale: item.unitSellPrice,
         lineSubtotal: calculateLineSubtotal(item.quantity, item.unitSellPrice),
-        lineProfit: calculateLineProfit(
-          item.quantity,
-          item.unitBuyPrice,
-          item.unitSellPrice,
-        ),
+        lineProfit: isMiscLine(item)
+          ? 0
+          : calculateLineProfit(
+              item.quantity,
+              item.unitBuyPrice,
+              item.unitSellPrice,
+            ),
         createdAt,
       }));
 
       const totals = calculateBillTotals(
         input.items.map((item) => ({
           quantity: item.quantity,
-          unitBuyPrice: item.unitBuyPrice,
+          // Misc lines carry no recorded cost — buy = sell so totalProfit
+          // nets to zero, matching the per-line lineProfit (kept consistent
+          // with the preview above rather than relying on the UI invariant).
+          unitBuyPrice: isMiscLine(item) ? item.unitSellPrice : item.unitBuyPrice,
           unitSellPrice: item.unitSellPrice,
         })),
         input.form.discountAmount,
@@ -348,7 +382,7 @@ export async function createFinalizedBill(input: {
         };
       });
 
-      const stockMovements: StockMovement[] = input.items.map((item) => ({
+      const stockMovements: StockMovement[] = stockItems.map((item) => ({
         id: createId("move"),
         productId: item.productId,
         movementType: "sale",
@@ -512,7 +546,9 @@ export async function voidBill(input: {
 
       const stockMovements: StockMovement[] = items.flatMap((item) => {
         const quantityToRestore = getRemainingItemQuantity(item);
-        if (quantityToRestore <= 0) return [];
+        // Misc (متفرقات) lines never touched stock, so voiding them restores
+        // nothing — only real product lines produce a reversal movement.
+        if (isMiscLine(item) || quantityToRestore <= 0) return [];
         return [
           {
             id: createId("move"),
@@ -614,8 +650,13 @@ export async function returnBillItem(input: {
       if (quantity > remainingQuantity)
         throw new AppError(AppErrorCode.RETURN_EXCEEDS_QTY);
 
-      const product = await db.products.get(item.originalProductId);
-      if (!product) throw new AppError(AppErrorCode.PRODUCT_NOT_FOUND);
+      // Misc (متفرقات) lines have no product behind them — a misc return
+      // adjusts the bill's financial totals but never restores stock.
+      const isMiscReturn = isMiscLine(item);
+      const product = isMiscReturn
+        ? undefined
+        : await db.products.get(item.originalProductId);
+      if (!isMiscReturn && !product) throw new AppError(AppErrorCode.PRODUCT_NOT_FOUND);
       auditBillNumber = bill.billNumber;
       auditProductName = item.productNameAtSale;
       auditShiftId = bill.shiftId;
@@ -645,26 +686,28 @@ export async function returnBillItem(input: {
       const nextReturnedAmount = allReturned ? bill.totalAmount : roundMoney(calculatedReturnedAmount);
       const nextReturnedProfit = allReturned ? bill.totalProfit : roundMoney(calculatedReturnedProfit);
 
-      const stockMovement: StockMovement = {
-        id: createId("move"),
-        productId: item.originalProductId,
-        movementType: "return",
-        quantityChange: quantity,
-        referenceType: "bill",
-        referenceId: bill.id,
-        note: `Return ${bill.billNumber} / ${item.productNameAtSale}: ${reason}`,
-        createdAt: now,
-        syncStatus: "pending",
-      };
-
-      await db.products.put({
-        ...product,
-        quantityInStock: product.quantityInStock + quantity,
-        lastUpdated: now,
-        syncStatus: "pending",
-        lastSyncError: undefined,
-      });
-      await db.stockMovements.add(stockMovement);
+      let stockMovement: StockMovement | null = null;
+      if (!isMiscReturn && product) {
+        stockMovement = {
+          id: createId("move"),
+          productId: item.originalProductId,
+          movementType: "return",
+          quantityChange: quantity,
+          referenceType: "bill",
+          referenceId: bill.id,
+          note: `Return ${bill.billNumber} / ${item.productNameAtSale}: ${reason}`,
+          createdAt: now,
+          syncStatus: "pending",
+        };
+        await db.products.put({
+          ...product,
+          quantityInStock: product.quantityInStock + quantity,
+          lastUpdated: now,
+          syncStatus: "pending",
+          lastSyncError: undefined,
+        });
+        await db.stockMovements.add(stockMovement);
+      }
       await db.bills.update(bill.id, {
         status: allReturned ? "returned" : "partially_returned",
         returnedAmount: nextReturnedAmount,
@@ -679,18 +722,23 @@ export async function returnBillItem(input: {
         lastSyncError: undefined,
       });
 
-      await db.syncQueue.bulkPut([
+      const returnSyncJobs = [
         buildSyncQueueItem({
           entity: "bill",
           entityId: bill.id,
           operation: "update",
         }),
-        buildSyncQueueItem({
-          entity: "stockMovement",
-          entityId: stockMovement.id,
-          operation: "create",
-        }),
-      ]);
+      ];
+      if (stockMovement) {
+        returnSyncJobs.push(
+          buildSyncQueueItem({
+            entity: "stockMovement",
+            entityId: stockMovement.id,
+            operation: "create",
+          }),
+        );
+      }
+      await db.syncQueue.bulkPut(returnSyncJobs);
     },
   );
   requestSync();

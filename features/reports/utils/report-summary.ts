@@ -4,6 +4,7 @@ import { calculateBillItemNetContribution, calculateLineProfit, calculateLineSub
 import { roundMoney } from '@/lib/utils/money';
 import { localDateKey } from '@/lib/utils/date';
 import { netSplitField, normalizeBillSplit } from '@/lib/utils/bill-split';
+import { isMiscLine } from '@/lib/utils/misc-items';
 
 export type ReportRange = 'today' | 'week' | 'month' | 'all' | 'custom';
 
@@ -23,6 +24,9 @@ export interface ProductSalesRow {
   profit: number;
   currentStock?: number;
   minimumStockAlert?: number;
+  // True for the aggregated متفرقات row — all misc lines collapse into one row
+  // and contribute no profit (their real cost isn't recorded).
+  isMisc?: boolean;
 }
 
 
@@ -261,23 +265,27 @@ export function summarizeProductSales(
       ? calculateBillItemNetContribution(bill, lineAmount, lineProfit)
       : { revenue: lineAmount, profit: lineProfit };
 
-    const key = item.originalProductId || item.barcodeAtSale || item.id;
-    const product = productById.get(item.originalProductId);
+    // All متفرقات lines collapse into a single "misc" row; real products key
+    // by their own id. Misc rows carry no product, no barcode, and no profit.
+    const isMisc = isMiscLine(item);
+    const key = isMisc ? 'misc' : item.originalProductId || item.barcodeAtSale || item.id;
+    const product = isMisc ? undefined : productById.get(item.originalProductId);
     const existing = rows.get(key) ?? {
       key,
-      name: item.productNameAtSale,
-      barcode: item.barcodeAtSale,
+      name: isMisc ? item.productNameAtSale.split(' - ')[0] : item.productNameAtSale,
+      barcode: isMisc ? '—' : item.barcodeAtSale,
       category: item.categoryAtSale,
       quantity: 0,
       revenue: 0,
       profit: 0,
       currentStock: product?.quantityInStock,
       minimumStockAlert: product?.minimumStockAlert,
+      isMisc,
     };
 
     existing.quantity += netQuantity;
     existing.revenue = roundMoney(existing.revenue + net.revenue);
-    existing.profit = roundMoney(existing.profit + net.profit);
+    existing.profit = roundMoney(existing.profit + (isMisc ? 0 : net.profit));
     existing.currentStock = product?.quantityInStock ?? existing.currentStock;
     existing.minimumStockAlert = product?.minimumStockAlert ?? existing.minimumStockAlert;
     rows.set(key, existing);

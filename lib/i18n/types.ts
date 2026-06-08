@@ -511,6 +511,9 @@ export interface TranslationDict {
   };
 
   reports: {
+    miscSales: string;
+    miscSalesHelper: string;
+    profitExcludesMisc: string;
     title: string;
     subtitle: string;
     openBills: string;
@@ -618,6 +621,20 @@ export interface TranslationDict {
     zEndOfDay: string;
   };
   billing: {
+    addMiscItem: string;
+    addMiscToBill: string;
+    miscItem: string;
+    miscItemDesc: string;
+    miscDescription: string;
+    miscDescriptionPlaceholder: string;
+    miscQuantity: string;
+    miscPrice: string;
+    miscPriceRequired: string;
+    miscCategory: string;
+    miscQuickSale: string;
+    miscItemAdded: string;
+    miscProfitNote: string;
+    nonStock: string;
     title: string;
     subtitle: string;
     buildBill: string;
@@ -1036,6 +1053,16 @@ export interface TranslationDict {
     badgeSyncedLocally: string;
   };
   purchases: {
+    addMiscPurchase: string;
+    addMiscToPurchase: string;
+    miscPurchaseItem: string;
+    miscPurchaseDesc: string;
+    miscDescription: string;
+    miscDescriptionPlaceholder: string;
+    miscCostRequired: string;
+    miscCategory: string;
+    miscPurchaseNote: string;
+    nonStock: string;
     productMissingNote: string;
     addProductInProducts: string;
     addMissingProduct: string;

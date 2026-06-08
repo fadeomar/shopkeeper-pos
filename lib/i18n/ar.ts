@@ -530,6 +530,9 @@ export const ar: TranslationDict = {
   },
 
   reports: {
+    miscSales: "مبيعات المتفرقات",
+    miscSalesHelper: "{{count}} قطعة بدون مخزون",
+    profitExcludesMisc: "ربح المتفرقات لا يُحتسب بدون تكلفة حقيقية مسجلة.",
     title: "التقارير",
     subtitle:
       "افهم المبيعات والربح وطرق الدفع وأفضل المنتجات والمنتجات منخفضة المخزون من البيانات المحفوظة في التطبيق.",
@@ -643,6 +646,20 @@ export const ar: TranslationDict = {
   },
 
   billing: {
+    addMiscItem: "متفرقات",
+    addMiscToBill: "إضافة للفاتورة",
+    miscItem: "متفرقات",
+    miscItemDesc: "للأصناف الصغيرة أو غير المسجلة بدون باركود أو متابعة مخزون.",
+    miscDescription: "الوصف",
+    miscDescriptionPlaceholder: "مثال: علكة، قداحة، حلويات أطفال",
+    miscQuantity: "الكمية",
+    miscPrice: "السعر",
+    miscPriceRequired: "أدخل سعر المتفرقات قبل الإضافة.",
+    miscCategory: "متفرقات",
+    miscQuickSale: "بيع سريع بدون باركود",
+    miscItemAdded: "تمت إضافة المتفرقات بقيمة {{total}}",
+    miscProfitNote: "المتفرقات تُحسب ضمن المبيعات، لكن لا تضيف ربحاً للمنتجات لأن التكلفة الحقيقية غير مسجلة.",
+    nonStock: "بدون مخزون",
     title: "إنشاء فاتورة",
     subtitle:
       "نظام المبيعات يستخدم المنتجات الحية للاختيار، ثم يحفظ لقطات ثابتة عند الإنهاء.",
@@ -1105,6 +1122,16 @@ export const ar: TranslationDict = {
     badgeSyncedLocally: "تمت المزامنة محلياً",
   },
   purchases: {
+    addMiscPurchase: "شراء متفرقات",
+    addMiscToPurchase: "إضافة للشراء",
+    miscPurchaseItem: "شراء متفرقات",
+    miscPurchaseDesc: "سجّل مشتريات عامة لا تزيد مخزون منتج محدد.",
+    miscDescription: "الوصف",
+    miscDescriptionPlaceholder: "مثال: كرتونة حلويات متنوعة، ولاعات",
+    miscCostRequired: "أدخل تكلفة المتفرقات قبل الإضافة.",
+    miscCategory: "متفرقات",
+    miscPurchaseNote: "شراء المتفرقات يدخل في تكلفة المشتريات ولا يغير مخزون المنتجات.",
+    nonStock: "بدون مخزون",
     productMissingNote:
       "لم تجد المنتج؟ أضفه هنا بدون مغادرة فاتورة الشراء.",
     addProductInProducts: "إضافة منتج جديد",

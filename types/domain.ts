@@ -260,6 +260,14 @@ export interface Bill {
   lastSyncError?: string;
 }
 
+/**
+ * Whether a bill/purchase line is a real catalogued product or a "misc"
+ * (متفرقات) ad-hoc line — a small unregistered item the cashier prices at
+ * sale time. Misc lines have no barcode, don't touch stock, and don't
+ * contribute product profit (their real cost isn't recorded).
+ */
+export type LineItemKind = 'product' | 'misc';
+
 export interface BillItem {
   id: string;
   billId: string;
@@ -267,6 +275,9 @@ export interface BillItem {
   barcodeAtSale: string;
   productNameAtSale: string;
   categoryAtSale: string;
+  // 'misc' for ad-hoc متفرقات lines; defaults to 'product' when absent.
+  itemKind?: LineItemKind;
+  miscDescription?: string;
   quantitySold: number;
   unitBuyPriceAtSale: number;
   unitSellPriceAtSale: number;
@@ -393,6 +404,9 @@ export interface PurchaseItem {
   barcodeAtPurchase: string;
   productNameAtPurchase: string;
   categoryAtPurchase: string;
+  // 'misc' for ad-hoc متفرقات purchase lines; defaults to 'product' when absent.
+  itemKind?: LineItemKind;
+  miscDescription?: string;
   quantityPurchased: number;
   unitCostAtPurchase: number;
   lineSubtotal: number;
@@ -673,6 +687,9 @@ export interface PurchaseDraftItem {
   barcode: string;
   name: string;
   category: string;
+  // 'misc' for ad-hoc متفرقات purchase lines; defaults to 'product' when absent.
+  itemKind?: LineItemKind;
+  miscDescription?: string;
   // No availableStock check on the buy side — we're adding inventory.
   // Existing stock is shown read-only in the UI just for context.
   currentStock: number;
@@ -704,6 +721,9 @@ export interface BillDraftItem {
   barcode: string;
   name: string;
   category: string;
+  // 'misc' for ad-hoc متفرقات lines; defaults to 'product' when absent.
+  itemKind?: LineItemKind;
+  miscDescription?: string;
   availableStock: number;
   quantity: number;
   unitBuyPrice: number;

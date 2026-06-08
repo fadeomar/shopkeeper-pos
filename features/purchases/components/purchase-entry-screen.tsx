@@ -42,6 +42,8 @@ import { useToast } from "@/components/ui/toast";
 import { BarcodeScannerModal } from "@/components/barcode/barcode-scanner-modal";
 import { PurchaseQuickProductModal } from "@/features/purchases/components/purchase-quick-product-modal";
 import { normalizeBarcode } from "@/lib/utils/barcode";
+import { createId } from "@/lib/utils/id";
+import { isMiscLine, MISC_ITEM_BARCODE } from "@/lib/utils/misc-items";
 import { useLocale } from "@/components/providers/locale-context";
 import { Card } from "@/components/ui/card";
 import type {
@@ -231,6 +233,10 @@ export function PurchaseEntryScreen() {
   const consumedInventoryPrefillId = useRef<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [miscOpen, setMiscOpen] = useState(false);
+  const [miscDescription, setMiscDescription] = useState("");
+  const [miscCost, setMiscCost] = useState("");
+  const [miscQuantity, setMiscQuantity] = useState("1");
   const [isPaidAmountManuallyEdited, setIsPaidAmountManuallyEdited] =
     useState(false);
   const [lastFinalized, setLastFinalized] = useState<{
@@ -636,6 +642,46 @@ export function PurchaseEntryScreen() {
     setNewLineQty(1);
   }
 
+  function resetMiscForm() {
+    setMiscDescription("");
+    setMiscCost("");
+    setMiscQuantity("1");
+  }
+
+  function addMiscPurchaseLine() {
+    const cost = Math.max(0, Number(miscCost) || 0);
+    const quantity = Math.max(1, Math.trunc(Number(miscQuantity) || 1));
+    const description = miscDescription.trim();
+
+    if (cost <= 0) {
+      push(t("purchases.miscCostRequired"), "error");
+      return;
+    }
+
+    const name = description
+      ? `${t("purchases.miscPurchaseItem")} - ${description}`
+      : t("purchases.miscPurchaseItem");
+
+    setDraftItems((cur) => [
+      ...cur,
+      {
+        productId: createId("misc"),
+        itemKind: "misc",
+        miscDescription: description || undefined,
+        barcode: MISC_ITEM_BARCODE,
+        name,
+        category: t("purchases.miscCategory"),
+        currentStock: 0,
+        quantity,
+        unitCost: cost,
+        unitSellPriceBefore: 0,
+      },
+    ]);
+    setMiscOpen(false);
+    resetMiscForm();
+    if (lastFinalized) setLastFinalized(null);
+  }
+
   function handleScanForPurchase(barcode: string) {
     const bc = normalizeBarcode(barcode);
     const product = products?.find((p) => normalizeBarcode(p.barcode) === bc);
@@ -740,7 +786,9 @@ export function PurchaseEntryScreen() {
       header: t("purchases.currentStock"),
       cell: ({ row }) => (
         <span className="tabular-nums text-slate-500">
-          {row.original.currentStock}
+          {isMiscLine(row.original)
+            ? t("purchases.nonStock")
+            : row.original.currentStock}
         </span>
       ),
     },
@@ -844,7 +892,7 @@ export function PurchaseEntryScreen() {
           </div>
 
           {/* Product + qty + cost entry */}
-          <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto_auto_auto] gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto_auto_auto_auto] gap-2">
             <SearchableSelect
               value={productId}
               onValueChange={(value) => setProductId(value ?? "")}
@@ -888,6 +936,13 @@ export function PurchaseEntryScreen() {
               onClick={() => setScannerOpen(true)}
             >
               {t("common.scan")}
+            </Button>
+            <Button
+              type="button"
+              variant="soft"
+              onClick={() => setMiscOpen(true)}
+            >
+              {t("purchases.addMiscPurchase")}
             </Button>
           </div>
 
@@ -952,7 +1007,10 @@ export function PurchaseEntryScreen() {
                           {item.name}
                         </p>
                         <p className="text-xs text-slate-500 mt-0.5">
-                          {t("purchases.currentStock")}: {item.currentStock}
+                          {t("purchases.currentStock")}:{" "}
+                          {isMiscLine(item)
+                            ? t("purchases.nonStock")
+                            : item.currentStock}
                         </p>
                       </div>
                       <button
@@ -1318,6 +1376,66 @@ export function PurchaseEntryScreen() {
           </Card>
         </div>
       </div>
+
+      {/* ── Misc purchase modal ──────────────────────────────────────────── */}
+      <Modal
+        open={miscOpen}
+        title={t("purchases.addMiscPurchase")}
+        description={t("purchases.miscPurchaseDesc")}
+        onClose={() => {
+          setMiscOpen(false);
+          resetMiscForm();
+        }}
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setMiscOpen(false);
+                resetMiscForm();
+              }}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button type="button" onClick={addMiscPurchaseLine}>
+              {t("purchases.addMiscToPurchase")}
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-3">
+          <FormField label={t("purchases.miscDescription")}>
+            <Input
+              value={miscDescription}
+              onChange={(e) => setMiscDescription(e.target.value)}
+              placeholder={t("purchases.miscDescriptionPlaceholder")}
+            />
+          </FormField>
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label={t("purchases.qty")}>
+              <QuantityStepper
+                value={Number(miscQuantity) || 1}
+                onChange={(v) => setMiscQuantity(String(v))}
+                min={1}
+                className="w-full"
+              />
+            </FormField>
+            <FormField label={t("purchases.cost")}>
+              <MoneyInput
+                value={miscCost === "" ? "" : Number(miscCost)}
+                onValueChange={(v) => setMiscCost(String(v))}
+                currency={currency}
+                min={0}
+                onKeyDown={dismissKeyboardOnEnter}
+              />
+            </FormField>
+          </div>
+          <p className="rounded-xl border border-warning/30 bg-warning-soft px-3 py-2 text-xs text-warning">
+            {t("purchases.miscPurchaseNote")}
+          </p>
+        </div>
+      </Modal>
 
       <BarcodeScannerModal
         open={scannerOpen}
