@@ -39,6 +39,18 @@ Then open `http://localhost:3000`.
 Normal `npm run dev` intentionally disables the service worker so stale dev
 chunks do not get stuck in the browser.
 
+## Firebase Admin server environment
+
+The public `NEXT_PUBLIC_FIREBASE_*` values are enough for client-side sign-in and Firestore reads/writes allowed by the security rules, but server-only admin actions need Firebase Admin credentials. The admin user detail page uses `/api/admin/reset-link` to generate password reset links, so the deployment and local `.env.local` must include:
+
+```bash
+FIREBASE_ADMIN_PROJECT_ID=your-firebase-project-id
+FIREBASE_ADMIN_CLIENT_EMAIL=firebase-adminsdk-xxxxx@your-project.iam.gserviceaccount.com
+FIREBASE_ADMIN_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+```
+
+If the hosting dashboard has trouble with multiline private keys, base64-encode the full private key and set `FIREBASE_ADMIN_PRIVATE_KEY_BASE64` instead of `FIREBASE_ADMIN_PRIVATE_KEY`. When credentials are missing, `/api/admin/reset-link` returns 503 (not 500). Never commit real Firebase Admin credentials.
+
 ## PWA shortcut name note
 
 The manifest display name is **Asas POS** and the short name is **Asas**.
