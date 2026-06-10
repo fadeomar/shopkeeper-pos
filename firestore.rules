@@ -4,10 +4,10 @@ rules_version = '2';
 //
 // Threat model:
 //   - A signed-in cashier must not read or write any other shop's data.
-//   - A self-registered user must land in role='cashier', inactive, pending
-//     approval — they cannot promote themselves to admin or skip approval.
+//   - A self-registered trial user must land in role='cashier', active,
+//     subscriptionStatus='trial' — they cannot promote themselves to admin.
 //   - Only an existing active admin may approve users or change their role.
-//   - Inactive or pending users cannot write POS data.
+//   - Inactive, pending, expired, or suspended users cannot write POS data.
 //   - POS data lives under /users/{uid}/{collection} and is per-user only.
 //
 // Deploy: `firebase deploy --only firestore:rules` from this repo.
@@ -49,20 +49,35 @@ service cloud.firestore {
         && (!('pendingApproval' in userDoc(uid)) || userDoc(uid).pendingApproval == false);
     }
 
+    function subscriptionCanWrite(uid) {
+      return !('subscriptionStatus' in userDoc(uid))
+        || (
+          (userDoc(uid).subscriptionStatus == 'active'
+            || userDoc(uid).subscriptionStatus == 'trial')
+          && (!('subscriptionEndAtTimestamp' in userDoc(uid))
+              || userDoc(uid).subscriptionEndAtTimestamp >= request.time)
+        );
+    }
+
     function isActiveOwner(uid) {
-      return isOwner(uid) && ownerIsActive(uid);
+      return isOwner(uid) && ownerIsActive(uid) && subscriptionCanWrite(uid);
     }
 
     function isSelfRegistrationShape(uid) {
-      // The registration flow (auth-service.registerUser) creates the auth
-      // user via a secondary Firebase app and then writes /users/{uid} BEFORE
-      // signing into the main auth — so the create lands as an unauthenticated
-      // request from Firestore's perspective. We accept that path only when
-      // the shape is exactly the pending-approval cashier signature.
+      // The self-service trial flow (auth-service.registerUser) creates the
+      // auth user via a secondary Firebase app and then writes /users/{uid}
+      // BEFORE signing into the main auth — so the create lands as an
+      // unauthenticated request from Firestore's perspective. We accept that
+      // path only when the shape is exactly an active cashier trial account.
       return request.resource.data.uid == uid
         && request.resource.data.role == 'cashier'
-        && request.resource.data.isActive == false
-        && request.resource.data.pendingApproval == true;
+        && request.resource.data.isActive == true
+        && request.resource.data.pendingApproval == false
+        && request.resource.data.accountType == 'trial'
+        && request.resource.data.subscriptionStatus == 'trial'
+        && request.resource.data.subscriptionEndAtTimestamp is timestamp
+        && request.resource.data.subscriptionEndAtTimestamp >= request.time
+        && request.resource.data.subscriptionEndAtTimestamp <= request.time + duration.value(15, 'd');
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -75,8 +90,8 @@ service cloud.firestore {
       allow read: if isOwner(uid) || isActiveAdmin();
 
       // Two creation paths:
-      //   - Self-registration: unauthenticated write, but the shape must
-      //     match isSelfRegistrationShape (cashier, inactive, pending).
+      //   - Self-service trial registration: unauthenticated write, but the
+      //     shape must match isSelfRegistrationShape (cashier, active trial).
       //   - Admin-created: an active admin creates a profile for another user
       //     (createAppUser uses a secondary auth app, so the setDoc happens
       //     under the admin's session for a different target uid).
@@ -86,11 +101,19 @@ service cloud.firestore {
       //   - Active admin can update any field.
       //   - Owner can update their own non-privileged fields (e.g. name,
       //     phone). They must not change role, isActive, pendingApproval,
-      //     uid, createdAt, or email — those are admin- or system-controlled.
+      //     uid, createdAt, email, or ANY subscription/account field — those
+      //     are admin- or system-controlled. Without the subscription block a
+      //     trial user could grant themselves a far-future 'active' status and
+      //     bypass the entire subscription gate.
       allow update: if isActiveAdmin() || (
         isOwner(uid)
         && !request.resource.data.diff(resource.data).affectedKeys()
-              .hasAny(['role', 'isActive', 'pendingApproval', 'uid', 'createdAt', 'email'])
+              .hasAny([
+                'role', 'isActive', 'pendingApproval', 'uid', 'createdAt', 'email',
+                'accountType', 'subscriptionStatus', 'subscriptionStartAt',
+                'subscriptionEndAt', 'subscriptionEndAtMs', 'subscriptionEndAtTimestamp',
+                'lastRenewedAt', 'renewalCount', 'subscriptionNote', 'contactedAt',
+              ])
       );
 
       // Profile deletion is intentionally not exposed from the client.
@@ -106,11 +129,24 @@ service cloud.firestore {
         // Owner reads their own data; admins can read for support.
         allow read: if isOwner(uid) || isActiveAdmin();
 
-        // Only the owner can write, and only while active + approved.
-        // Inactive / pending users are silently blocked at this layer.
+        // Only the owner can write, and only while active + approved + subscribed.
+        // Inactive / pending / expired / suspended users are blocked at this layer.
         // Admins do not get write permission here — admin support is
         // read-only on POS data (except settings, handled below).
         allow write: if isActiveOwner(uid);
+      }
+
+
+
+      // ───────────────────────────────────────────────────────────────
+      // /users/{uid}/subscriptionRenewals/{docId} — admin audit trail
+      // Admins create one row when they renew manually. Users may read their
+      // own renewal history, but only admins may append to it.
+      // ───────────────────────────────────────────────────────────────
+      match /subscriptionRenewals/{docId} {
+        allow read: if isOwner(uid) || isActiveAdmin();
+        allow create: if isActiveAdmin();
+        allow update, delete: if false;
       }
 
       // ───────────────────────────────────────────────────────────────

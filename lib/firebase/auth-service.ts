@@ -13,10 +13,14 @@ import {
   updateDoc,
   collection,
   getDocs,
+  addDoc,
+  serverTimestamp,
+  Timestamp,
 } from 'firebase/firestore';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { auth, firestore, firebaseApp } from './config';
 import type { AppUser, UserRole } from '@/types/domain';
+import { addCalendarMonths, buildInitialPaidSubscription, buildTrialSubscription, getSubscriptionAccessState, toSubscriptionMs } from '@/lib/services/subscription-service';
 
 export function signIn(email: string, password: string) {
   return signInWithEmailAndPassword(auth, email, password);
@@ -75,15 +79,17 @@ export async function registerUser(
     // orphaned Firebase Auth user so the same email can be retried immediately
     // instead of getting "email already in use" forever.
     try {
+      const now = new Date();
       await setDoc(doc(firestore, 'users', uid), {
         uid,
         email,
         name,
         ...(phone ? { phone } : {}),
         role: 'cashier',
-        isActive: false,
-        pendingApproval: true,
-        createdAt: new Date().toISOString(),
+        isActive: true,
+        pendingApproval: false,
+        ...buildTrialSubscription(now),
+        createdAt: now.toISOString(),
       } satisfies AppUser);
     } catch (firestoreError) {
       try { await cred.user.delete(); } catch { /* best-effort — ignore if already gone */ }
@@ -125,9 +131,63 @@ export async function createAppUser(
       role,
       isActive: true,
       pendingApproval: false,
+      ...buildInitialPaidSubscription(new Date(now), 1),
       createdAt: now,
     } satisfies AppUser);
   } finally {
     await deleteApp(tempApp);
   }
+}
+
+
+export async function renewUserSubscription(uid: string, months = 1): Promise<AppUser> {
+  const ref = doc(firestore, 'users', uid);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error('User not found');
+  const user = snap.data() as AppUser;
+  const now = new Date();
+  const existingEndMs = toSubscriptionMs(user.subscriptionEndAt, user.subscriptionEndAtMs);
+  const isCurrentlyUsable = getSubscriptionAccessState(user) === 'active' || getSubscriptionAccessState(user) === 'trial';
+  const base = isCurrentlyUsable && existingEndMs && existingEndMs > now.getTime()
+    ? new Date(existingEndMs)
+    : now;
+  const nextEnd = addCalendarMonths(base, months);
+  const next: Partial<AppUser> = {
+    accountType: 'standard',
+    subscriptionStatus: 'active',
+    subscriptionStartAt: user.subscriptionStartAt ?? now.toISOString(),
+    subscriptionEndAt: nextEnd.toISOString(),
+    subscriptionEndAtMs: nextEnd.getTime(),
+    subscriptionEndAtTimestamp: Timestamp.fromDate(nextEnd),
+    lastRenewedAt: now.toISOString(),
+    renewalCount: (user.renewalCount ?? 0) + 1,
+    isActive: true,
+    pendingApproval: false,
+  };
+  await updateDoc(ref, next);
+  await addDoc(collection(firestore, `users/${uid}/subscriptionRenewals`), {
+    uid,
+    monthsAdded: months,
+    oldEndAt: user.subscriptionEndAt ?? null,
+    newEndAt: next.subscriptionEndAt,
+    previousStatus: user.subscriptionStatus ?? null,
+    createdAt: now.toISOString(),
+    createdAtServer: serverTimestamp(),
+  });
+  return { ...user, ...next } as AppUser;
+}
+
+export async function suspendUserSubscription(uid: string, note?: string): Promise<void> {
+  const now = new Date().toISOString();
+  await updateDoc(doc(firestore, 'users', uid), {
+    subscriptionStatus: 'suspended',
+    subscriptionNote: note ?? 'Suspended by admin',
+    lastRenewedAt: now,
+  } satisfies Partial<AppUser>);
+}
+
+export async function markUserContacted(uid: string): Promise<void> {
+  await updateDoc(doc(firestore, 'users', uid), {
+    contactedAt: new Date().toISOString(),
+  } satisfies Partial<AppUser>);
 }

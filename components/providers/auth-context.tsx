@@ -7,8 +7,9 @@ import { getActiveUid, getLocalDataSummary, prepareRuntimeDbForUid, setActiveUid
 import { useToast } from '@/components/ui/toast';
 import { useLocale } from '@/components/providers/locale-context';
 import type { AuthCacheEntry } from '@/types/domain';
+import { getSubscriptionAccessState } from '@/lib/services/subscription-service';
 
-export type AuthStatus = 'loading' | 'unauthenticated' | 'pending' | 'inactive' | 'authenticated';
+export type AuthStatus = 'loading' | 'unauthenticated' | 'pending' | 'inactive' | 'subscription_expired' | 'authenticated';
 
 interface AuthContextValue {
   status: AuthStatus;
@@ -23,9 +24,11 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 function resolveStatus(user: AuthCacheEntry): Exclude<AuthStatus, 'loading' | 'unauthenticated'> {
-  if (user.isActive) return 'authenticated';
   if (user.pendingApproval ?? false) return 'pending';
-  return 'inactive';
+  if (!user.isActive) return 'inactive';
+  const accessState = getSubscriptionAccessState(user);
+  if (accessState === 'expired' || accessState === 'suspended') return 'subscription_expired';
+  return 'authenticated';
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {

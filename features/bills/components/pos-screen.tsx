@@ -20,15 +20,18 @@ import {
 } from "@/lib/utils/calculations";
 import { formatCurrency } from "@/lib/utils/money";
 import { createFinalizedBill } from "@/lib/services/billing-service";
+import { nowIso } from "@/lib/utils/date";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   CircleCheck,
   Cloud,
   CloudUpload,
+  Phone,
   ReceiptText,
   Search,
   ShoppingCart,
+  UserPlus,
   Users,
   X,
 } from "lucide-react";
@@ -322,6 +325,9 @@ export function PosScreen() {
   const [miscQuantity, setMiscQuantity] = useState("1");
   const [customerSheetOpen, setCustomerSheetOpen] = useState(false);
   const [customerSearch, setCustomerSearch] = useState("");
+  const [manualCustomerName, setManualCustomerName] = useState("");
+  const [manualCustomerPhone, setManualCustomerPhone] = useState("");
+  const [isSavingCustomer, setIsSavingCustomer] = useState(false);
   const [missingBarcode, setMissingBarcode] = useState("");
   const [isPaidAmountManuallyEdited, setIsPaidAmountManuallyEdited] =
     useState(false);
@@ -369,8 +375,8 @@ export function PosScreen() {
   });
 
   useEffect(() => {
-    barcodeInputRef.current?.focus();
-  }, []);
+    if (!scannerOpen) barcodeInputRef.current?.focus();
+  }, [scannerOpen]);
 
   useEffect(() => {
     if (!settings) return;
@@ -492,6 +498,60 @@ export function PosScreen() {
   const watchedTaxAmount = Number(form.watch("taxAmount") || 0);
   const watchedPaidAmount = Number(form.watch("paidAmount") || 0);
   const watchedNotes = form.watch("notes");
+
+  useEffect(() => {
+    if (!customerSheetOpen) return;
+    const searchValue = customerSearch.trim();
+    const searchLooksLikePhone = Boolean(normalizePhone(searchValue));
+    setManualCustomerName(watchedCustomerName?.trim() || (searchLooksLikePhone ? "" : searchValue));
+    setManualCustomerPhone(watchedCustomerPhone?.trim() || (searchLooksLikePhone ? searchValue : ""));
+    // Only seed the manual form when the sheet opens; after that, the fields are user-controlled.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerSheetOpen]);
+
+  async function saveManualCustomer() {
+    const name = manualCustomerName.trim();
+    const phone = manualCustomerPhone.trim();
+    if (!name && !phone) {
+      push(t("billing.customerRequired"), "error");
+      return;
+    }
+
+    setIsSavingCustomer(true);
+    try {
+      const normalizedPhone = normalizePhone(phone);
+      const existing = normalizedPhone
+        ? await customerRepo.findByNormalizedPhone(normalizedPhone)
+        : undefined;
+      const now = nowIso();
+      const customer: Customer = {
+        id: existing?.id ?? createId("cust"),
+        name: name || existing?.name || t("billing.customerName"),
+        phone: phone || undefined,
+        normalizedPhone: normalizedPhone || undefined,
+        notes: existing?.notes,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+        syncStatus: "pending",
+      };
+
+      await customerRepo.save(customer);
+      selectCustomer(customer);
+      setCustomerSheetOpen(false);
+      setCustomerSearch("");
+      setManualCustomerName("");
+      setManualCustomerPhone("");
+      push({
+        title: existing ? t("billing.customerUpdated") : t("billing.customerSaved"),
+        description: t("billing.customerSelected"),
+        tone: "success",
+      });
+    } catch (error) {
+      push(getServiceErrorMessage(error, t, t("billing.customerSaveFailed")), "error");
+    } finally {
+      setIsSavingCustomer(false);
+    }
+  }
 
   useEffect(() => {
     if (!draftKey) return;
@@ -746,7 +806,7 @@ export function PosScreen() {
       promptQuickAddProduct(bc);
       return;
     }
-    appendProduct(product);
+    appendProduct(product, { focusBarcode: false });
   }
 
   function handleQuickProductCreated(product: Product) {
@@ -986,6 +1046,10 @@ export function PosScreen() {
     },
   ];
 
+  const canSaveManualCustomer = Boolean(
+    manualCustomerName.trim() || manualCustomerPhone.trim(),
+  );
+
   if (!products) {
     return (
       <Card>
@@ -1037,6 +1101,8 @@ export function PosScreen() {
               ref={barcodeInputRef}
               placeholder={t("billing.typeBarcode")}
               value={barcodeQuery}
+              inputMode={scannerOpen ? "none" : undefined}
+              readOnly={scannerOpen}
               onChange={(e) => setBarcodeQuery(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
@@ -1052,7 +1118,14 @@ export function PosScreen() {
             <Button type="button" variant="secondary" onClick={addByBarcode}>
               {t("common.add")}
             </Button>
-            <Button type="button" onClick={() => setScannerOpen(true)}>
+            <Button
+              type="button"
+              onPointerDown={(event) => event.preventDefault()}
+              onClick={() => {
+                barcodeInputRef.current?.blur();
+                setScannerOpen(true);
+              }}
+            >
               {t("common.scan")}
             </Button>
             <div className="relative">
@@ -1796,57 +1869,69 @@ export function PosScreen() {
           })()}
 
           {/* Manual entry section — for customers not yet in the database */}
-          <details className="group">
-            <summary className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-info hover:text-info/80 transition-colors list-none">
-              <span className="rotate-0 transition-transform group-open:rotate-90">›</span>
-              {t("billing.enterManually")}
+          <details className="group rounded-2xl border border-border-subtle bg-surface-soft/70 p-3 open:bg-brand-soft/30">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+              <span className="flex min-w-0 items-center gap-2 text-sm font-semibold text-slate-900">
+                <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-brand-soft text-brand">
+                  <UserPlus size={16} aria-hidden />
+                </span>
+                {t("billing.enterManually")}
+              </span>
+              <span className="text-lg leading-none text-slate-400 transition-transform group-open:rotate-90">›</span>
             </summary>
-            <div className="mt-2 flex flex-col gap-2">
-              <input
+            <div className="mt-3 flex flex-col gap-3">
+              <p className="text-xs leading-5 text-slate-500">
+                {t("billing.manualCustomerHint")}
+              </p>
+              <Input
                 type="text"
                 placeholder={t("billing.customerName")}
                 aria-label={t("billing.customerName")}
-                defaultValue={watchedCustomerName}
-                onBlur={(e) =>
-                  form.setValue("customerName", e.target.value.trim(), {
-                    shouldDirty: true,
-                  })
-                }
-                className={clsx(
-                  "w-full rounded-xl border border-border-default bg-surface px-3 py-2",
-                  "text-sm text-slate-800 placeholder:text-slate-400",
-                  "focus:outline-none focus:ring-2 focus:ring-brand/30",
-                  "[font-size:16px]",
-                )}
+                value={manualCustomerName}
+                onChange={(e) => setManualCustomerName(e.target.value)}
+                inputSize="lg"
+                leftSlot={<Users size={17} aria-hidden />}
+                className="[font-size:16px]"
+                autoComplete="name"
               />
-              <input
+              <Input
                 type="tel"
+                inputMode="tel"
                 placeholder={t("billing.customerPhone")}
                 aria-label={t("billing.customerPhone")}
-                defaultValue={watchedCustomerPhone}
-                onBlur={(e) =>
-                  form.setValue("customerPhone", e.target.value.trim(), {
-                    shouldDirty: true,
-                  })
-                }
-                className={clsx(
-                  "w-full rounded-xl border border-border-default bg-surface px-3 py-2",
-                  "text-sm text-slate-800 placeholder:text-slate-400",
-                  "focus:outline-none focus:ring-2 focus:ring-brand/30",
-                  "[font-size:16px]",
-                )}
+                value={manualCustomerPhone}
+                onChange={(e) => setManualCustomerPhone(e.target.value)}
+                inputSize="lg"
+                leftSlot={<Phone size={17} aria-hidden />}
+                className="[font-size:16px]"
+                autoComplete="tel"
+                dir="ltr"
               />
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => {
-                  setCustomerSheetOpen(false);
-                  setCustomerSearch("");
-                }}
-              >
-                {t("common.close")}
-              </Button>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  fullWidth
+                  onClick={() => {
+                    setCustomerSheetOpen(false);
+                    setCustomerSearch("");
+                  }}
+                  disabled={isSavingCustomer}
+                >
+                  {t("common.cancel")}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  fullWidth
+                  onClick={saveManualCustomer}
+                  disabled={!canSaveManualCustomer}
+                  loading={isSavingCustomer}
+                >
+                  {t("billing.saveCustomer")}
+                </Button>
+              </div>
             </div>
           </details>
         </div>

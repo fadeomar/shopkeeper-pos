@@ -6,6 +6,7 @@ import { buildSyncQueueItem } from '@/lib/services/sync-queue-service';
 import { logAudit } from '@/lib/services/audit-service';
 import { assertPermission, getCurrentPermissions } from '@/lib/services/permission-service';
 import type { Product, StockMovement, StockMovementType } from '@/types/domain';
+import { assertSubscriptionCanWrite } from '@/lib/services/subscription-service';
 
 function requestSync(): void {
   if (typeof window !== 'undefined') {
@@ -14,6 +15,7 @@ function requestSync(): void {
 }
 
 export async function createProductWithInitialMovement(product: Product) {
+  await assertSubscriptionCanWrite();
   // Cost (buyPrice) is permission-gated. A user without canEditCost can still
   // create a product so cashiers can add SKUs on the fly — but they cannot set
   // a cost. Force buyPrice to 0 here as the service-layer backstop so a hidden
@@ -58,6 +60,7 @@ export async function createProductWithInitialMovement(product: Product) {
 }
 
 export async function updateProductDetails(product: Product, changes: Partial<Product>) {
+  await assertSubscriptionCanWrite();
   // Editing the cost (buy price) requires canEditCost. The product form already
   // hides the field for roles without it; this is the service-layer backstop.
   if (
@@ -87,6 +90,7 @@ export async function adjustProductStock(
   note: string,
   movementType: StockMovementType = 'adjustment',
 ) {
+  await assertSubscriptionCanWrite();
   // The inventory model is integer-based (receiveProductStock and
   // countProductStock both enforce Number.isInteger). Matching here keeps
   // adjustment movements consistent and prevents fractional stock drift.
@@ -155,6 +159,7 @@ export async function receiveProductStock(
   buyPrice?: number,
   supplierName?: string,
 ) {
+  await assertSubscriptionCanWrite();
   if (!Number.isInteger(quantityReceived) || quantityReceived <= 0) {
     throw new AppError(AppErrorCode.STOCK_RECEIVED_QTY_INVALID);
   }
@@ -219,6 +224,7 @@ export async function countProductStock(
   countedQuantity: number,
   note: string,
 ) {
+  await assertSubscriptionCanWrite();
   if (!Number.isInteger(countedQuantity) || countedQuantity < 0) {
     throw new AppError(AppErrorCode.STOCK_COUNTED_QTY_INVALID);
   }

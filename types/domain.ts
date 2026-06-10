@@ -1,5 +1,7 @@
 export type EntityStatus = 'active' | 'inactive';
 export type UserRole = 'owner' | 'manager' | 'cashier' | 'accountant';
+export type AccountType = 'standard' | 'trial';
+export type SubscriptionStatus = 'trial' | 'active' | 'expired' | 'suspended';
 
 export function isUserRole(value: unknown): value is UserRole {
   return (
@@ -177,6 +179,20 @@ export interface AppUser {
   role: UserRole;
   isActive: boolean;
   pendingApproval?: boolean;
+  /** standard = paid/admin-created account, trial = self-service testing account. */
+  accountType?: AccountType;
+  /** Manual admin-managed subscription state. Legacy users without this field stay allowed. */
+  subscriptionStatus?: SubscriptionStatus;
+  subscriptionStartAt?: string;
+  subscriptionEndAt?: string;
+  /** Numeric mirror of subscriptionEndAt for local/offline checks. */
+  subscriptionEndAtMs?: number;
+  /** Firestore Timestamp mirror so security rules can compare against request.time. */
+  subscriptionEndAtTimestamp?: unknown;
+  lastRenewedAt?: string;
+  renewalCount?: number;
+  contactedAt?: string;
+  subscriptionNote?: string;
   createdAt: string;
 }
 

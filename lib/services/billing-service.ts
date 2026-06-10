@@ -17,6 +17,7 @@ import { buildSyncQueueItem, getSyncQueueId } from "@/lib/services/sync-queue-se
 import { assertPaymentMethodEnabled, effectiveTaxAmount } from "@/lib/services/settings-policy";
 import { assertPermission } from "@/lib/services/permission-service";
 import { isMiscLine } from "@/lib/utils/misc-items";
+import { assertSubscriptionCanWrite } from "@/lib/services/subscription-service";
 import type {
   Bill,
   BillDraftItem,
@@ -138,6 +139,7 @@ export async function createFinalizedBill(input: {
   items: BillDraftItem[];
   form: BillFormValues;
 }): Promise<{ bill: Bill; billItems: BillItem[] }> {
+  await assertSubscriptionCanWrite();
   if (input.items.length === 0) {
     throw new AppError(AppErrorCode.BILL_NO_ITEMS);
   }
@@ -497,6 +499,7 @@ export async function voidBill(input: {
   reason: string;
 }): Promise<void> {
   const reason = input.reason.trim();
+  await assertSubscriptionCanWrite();
   if (!reason) throw new AppError(AppErrorCode.VOID_REASON_REQUIRED);
   await assertPermission("canVoid");
 
@@ -621,6 +624,7 @@ export async function returnBillItem(input: {
 }): Promise<void> {
   const reason = input.reason.trim();
   const quantity = Number(input.quantity);
+  await assertSubscriptionCanWrite();
   if (!reason) throw new AppError(AppErrorCode.RETURN_REASON_REQUIRED);
   if (!Number.isInteger(quantity) || quantity <= 0)
     throw new AppError(AppErrorCode.RETURN_QTY_INVALID);

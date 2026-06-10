@@ -8,6 +8,7 @@ import clsx from "clsx";
 import { useAuth } from "@/components/providers/auth-context";
 import { useLocale } from "@/components/providers/locale-context";
 import { signIn, registerUser } from "@/lib/firebase/auth-service";
+import { getSubscriptionAccessState, subscriptionExpiryDateLabel } from "@/lib/services/subscription-service";
 import { syncAllToCloud, type SyncMeta } from "@/lib/firebase/sync-service";
 import { getPendingSyncCount } from "@/lib/services/sync-queue-service";
 import { getOpenConflicts } from "@/lib/services/sync-conflict-service";
@@ -118,6 +119,7 @@ export function AuthenticatedShell({
   if (status === "unauthenticated") return <AuthScreen />;
   if (status === "pending") return <PendingScreen onLogout={logout} />;
   if (status === "inactive") return <InactiveScreen onLogout={logout} />;
+  if (status === "subscription_expired") return <SubscriptionExpiredScreen onLogout={logout} />;
 
   // Authenticated — split by role
   if (user?.role === "owner") return <AdminShell>{children}</AdminShell>;
@@ -803,6 +805,72 @@ function InactiveScreen({ onLogout }: { onLogout: () => void }) {
   );
 }
 
+
+function SubscriptionExpiredScreen({ onLogout }: { onLogout: () => void }) {
+  const { user, refreshStatus } = useAuth();
+  const { t } = useLocale();
+  const [checking, setChecking] = useState(false);
+  const state = getSubscriptionAccessState(user);
+  const isSuspended = state === "suspended";
+
+  async function handleCheck() {
+    setChecking(true);
+    await refreshStatus();
+    setChecking(false);
+  }
+
+  return (
+    <div className="min-h-dvh flex items-center justify-center bg-slate-50 px-4">
+      <div className="max-w-sm w-full bg-white rounded-2xl shadow-sm border border-warning/20 p-8 text-center">
+        <div className="w-12 h-12 bg-warning-soft rounded-full flex items-center justify-center mx-auto mb-4">
+          <svg
+            className="w-6 h-6 text-warning"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M12 8v4m0 4h.01M4.93 19h14.14c1.54 0 2.5-1.67 1.73-3L13.73 4c-.77-1.33-2.69-1.33-3.46 0L3.2 16c-.77 1.33.19 3 1.73 3z"
+            />
+          </svg>
+        </div>
+        <h2 className="font-semibold text-slate-800 mb-2">
+          {isSuspended ? t("auth.subscriptionSuspendedTitle") : t("auth.subscriptionExpiredTitle")}
+        </h2>
+        <p className="text-sm text-slate-500 mb-2">
+          {isSuspended ? t("auth.subscriptionSuspendedDesc") : t("auth.subscriptionExpiredDesc")}
+        </p>
+        {user?.subscriptionEndAt && !isSuspended && (
+          <p className="text-xs text-slate-400 mb-5">
+            {t("auth.subscriptionExpiredOn", { date: subscriptionExpiryDateLabel(user) })}
+          </p>
+        )}
+        <div className="rounded-xl bg-warning-soft border border-warning/20 px-3 py-2 text-xs text-warning mb-5">
+          {t("auth.subscriptionReadOnlyNote")}
+        </div>
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={handleCheck}
+            disabled={checking}
+            className="w-full py-2.5 px-4 bg-brand hover:bg-brand-hover disabled:opacity-60 text-white text-sm font-medium rounded-xl transition-colors"
+          >
+            {checking ? t("auth.checking") : t("auth.checkStatus")}
+          </button>
+          <button
+            onClick={onLogout}
+            className="w-full py-2 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium rounded-xl transition-colors"
+          >
+            {t("auth.signOut")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Auth screens ─────────────────────────────────────────────────────────────
 
 function AuthScreen() {
@@ -883,7 +951,7 @@ function LoginForm({ onShowSignUp }: { onShowSignUp: () => void }) {
             onClick={onShowSignUp}
             className="text-info hover:underline font-medium"
           >
-            {t("auth.requestAccess")}
+            {t("auth.startTrial")}
           </button>
         </p>
         <p className="text-center text-sm text-slate-500 mt-2">
@@ -938,7 +1006,7 @@ function SignUpForm({ onBack }: { onBack: () => void }) {
   return (
     <div className="min-h-dvh flex items-center justify-center bg-slate-50 px-4">
       <div className="max-w-sm w-full">
-        <AppLogo subtitle={t("auth.requestAccess")} />
+        <AppLogo subtitle={t("auth.startTrial")} />
         <Card padding="lg">
           <form onSubmit={handleSubmit} className="space-y-4">
             <FormField label={t("auth.fullName")}>
@@ -998,7 +1066,7 @@ function SignUpForm({ onBack }: { onBack: () => void }) {
             </FormField>
             {error && <ErrorBox message={error} />}
             <Button type="submit" loading={loading} fullWidth>
-              {loading ? t("auth.sendingRequest") : t("auth.requestAccess")}
+              {loading ? t("auth.creatingTrial") : t("auth.createTrial")}
             </Button>
           </form>
         </Card>

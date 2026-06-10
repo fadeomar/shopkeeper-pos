@@ -508,6 +508,15 @@ export interface TranslationDict {
     statementBill: string;
     statementPayment: string;
     noStatementRows: string;
+    addCustomerDesc: string;
+    quickAddTitle: string;
+    quickAddHint: string;
+    addCustomerSyncHint: string;
+    saveCustomer: string;
+    customerRequired: string;
+    customerSaved: string;
+    customerUpdated: string;
+    customerSaveFailed: string;
   };
 
   reports: {
@@ -727,8 +736,15 @@ export interface TranslationDict {
     searchCustomers: string;
     noCustomersFound: string;
     enterManually: string;
+    manualCustomerHint: string;
     savedLocally: string;
     syncedToCloud: string;
+    saveCustomer: string;
+    customerRequired: string;
+    customerSaved: string;
+    customerUpdated: string;
+    customerSelected: string;
+    customerSaveFailed: string;
   };
   bills: {
     title: string;
@@ -950,6 +966,8 @@ export interface TranslationDict {
     signIn: string;
     signInToContinue: string;
     requestAccess: string;
+    startTrial: string;
+    createTrial: string;
     email: string;
     password: string;
     confirmPassword: string;
@@ -962,6 +980,7 @@ export interface TranslationDict {
     passwordMinLength: string;
     signingIn: string;
     sendingRequest: string;
+    creatingTrial: string;
     passwordMismatch: string;
     emailInUse: string;
     weakPassword: string;
@@ -1007,6 +1026,12 @@ export interface TranslationDict {
     pendingStillWaiting: string;
     inactiveTitle: string;
     inactiveDesc: string;
+    subscriptionExpiredTitle: string;
+    subscriptionExpiredDesc: string;
+    subscriptionSuspendedTitle: string;
+    subscriptionSuspendedDesc: string;
+    subscriptionExpiredOn: string;
+    subscriptionReadOnlyNote: string;
     useExistingTitle: string;
     useExistingDesc: string;
     startEmpty: string;
@@ -1181,6 +1206,13 @@ export interface TranslationDict {
     searchSuppliers: string;
     noSuppliersFound: string;
     enterManually: string;
+    manualSupplierHint: string;
+    saveSupplier: string;
+    supplierRequired: string;
+    supplierSaved: string;
+    supplierUpdated: string;
+    supplierSelected: string;
+    supplierSaveFailed: string;
   };
   suppliers: {
     title: string;
@@ -1239,6 +1271,15 @@ export interface TranslationDict {
     statementPurchase: string;
     statementPayment: string;
     noStatementRows: string;
+    addSupplierDesc: string;
+    quickAddTitle: string;
+    quickAddHint: string;
+    addSupplierSyncHint: string;
+    saveSupplier: string;
+    supplierRequired: string;
+    supplierSaved: string;
+    supplierUpdated: string;
+    supplierSaveFailed: string;
   };
   shift: {
     title: string;
@@ -1334,6 +1375,8 @@ export interface TranslationDict {
     totalUsers: string;
     pendingCount: string;
     activeCount: string;
+    trialCount: string;
+    expiredCount: string;
     needsHelp: string;
     supportChecklist: string;
     backupCounts: string;
@@ -1366,6 +1409,24 @@ export interface TranslationDict {
     noUsersFound: string;
     allUsers: string;
     usersTableDesc: string;
+    subscription: string;
+    accountType: string;
+    trialAccount: string;
+    standardAccount: string;
+    legacyAccount: string;
+    expires: string;
+    daysLeft: string;
+    expired: string;
+    suspended: string;
+    renewOneMonth: string;
+    renewThreeMonths: string;
+    suspendSubscription: string;
+    markContacted: string;
+    contacted: string;
+    notContacted: string;
+    errorRenewSubscription: string;
+    errorSuspendSubscription: string;
+    errorContacted: string;
     errorLoadUsers: string;
     errorRefreshHealth: string;
     errorUpdateUser: string;
@@ -1462,6 +1523,9 @@ export interface TranslationDict {
     SHIFT_REQUIRED_FOR_CASH_ACTION: string;
     PAYMENT_METHOD_DISABLED: string;
     PERMISSION_DENIED: string;
+    SUBSCRIPTION_EXPIRED: string;
+    SUBSCRIPTION_SUSPENDED: string;
+    SUBSCRIPTION_WRITE_BLOCKED: string;
     // Purchase-specific
     PURCHASE_NO_ITEMS: string;
     PURCHASE_CREDIT_NEEDS_SUPPLIER: string;

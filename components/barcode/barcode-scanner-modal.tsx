@@ -39,6 +39,7 @@ export function BarcodeScannerModal({
   title, description, continuous = false,
 }: Props) {
   const { t } = useLocale();
+  const modalRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const controlsRef = useRef<IScannerControls | null>(null);
   const lastScanRef = useRef<{ barcode: string; time: number } | null>(null);
@@ -46,6 +47,26 @@ export function BarcodeScannerModal({
   const onCloseRef = useRef(onClose);
   useEffect(() => { onDetectedRef.current = onDetected; });
   useEffect(() => { onCloseRef.current = onClose; });
+
+  useEffect(() => {
+    if (!open || typeof document === 'undefined') return;
+
+    // Mobile browsers keep the software keyboard open while a previously
+    // focused input remains active behind the scanner modal. Blur it before
+    // requesting the camera and move focus to the modal container instead.
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLElement) {
+      activeElement.blur();
+    }
+
+    const focusModal = () => {
+      modalRef.current?.focus({ preventScroll: true });
+    };
+
+    focusModal();
+    const timeoutId = window.setTimeout(focusModal, 100);
+    return () => window.clearTimeout(timeoutId);
+  }, [open]);
 
   const [scannerState, setScannerState] = useState<ScannerState>('requesting');
   const [hasTorch, setHasTorch] = useState(false);
@@ -230,8 +251,10 @@ export function BarcodeScannerModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-900/50 p-4 backdrop-blur-xs"
+      ref={modalRef}
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-900/50 p-4 backdrop-blur-xs outline-none"
       role="dialog" aria-modal="true" aria-label={title}
+      tabIndex={-1}
       onClick={() => onCloseRef.current()}
     >
       <div

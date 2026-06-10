@@ -7,6 +7,7 @@ import { SETTINGS_ID } from '@/lib/db/repositories';
 import { buildSyncQueueItem } from '@/lib/services/sync-queue-service';
 import { logAudit } from '@/lib/services/audit-service';
 import type { Expense, ExpenseCategory, ExpensePaymentMethod } from '@/types/domain';
+import { assertSubscriptionCanWrite } from '@/lib/services/subscription-service';
 
 export interface RecordExpenseInput {
   category: ExpenseCategory;
@@ -19,6 +20,7 @@ export interface RecordExpenseInput {
 }
 
 export async function recordExpense(input: RecordExpenseInput): Promise<Expense> {
+  await assertSubscriptionCanWrite();
   const amount = Number(input.amount);
   if (!Number.isFinite(amount) || amount <= 0) {
     throw new AppError(AppErrorCode.PAYMENT_AMOUNT_INVALID);

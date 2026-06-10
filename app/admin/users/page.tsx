@@ -10,6 +10,9 @@ import {
   updateUserStatus,
   rejectUser,
   createAppUser,
+  renewUserSubscription,
+  suspendUserSubscription,
+  markUserContacted,
 } from "@/lib/firebase/auth-service";
 import {
   fetchUserSummary,
@@ -17,6 +20,11 @@ import {
   type UserSummary,
 } from "@/lib/firebase/admin-service";
 import type { AppUser, UserRole } from "@/types/domain";
+import {
+  getSubscriptionAccessState,
+  subscriptionDaysRemaining,
+  subscriptionExpiryDateLabel,
+} from "@/lib/services/subscription-service";
 import { PageShell } from "@/components/ui/page-shell";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionCard } from "@/components/ui/section-card";
@@ -123,12 +131,51 @@ export default function AdminUsersPage() {
     }
   }
 
+  async function renewSubscription(uid: string, months: number) {
+    try {
+      const next = await renewUserSubscription(uid, months);
+      setUsers((prev) => prev.map((u) => (u.uid === uid ? next : u)));
+    } catch {
+      setError(t("admin.errorRenewSubscription"));
+    }
+  }
+
+  async function suspendSubscription(uid: string) {
+    try {
+      await suspendUserSubscription(uid);
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.uid === uid ? { ...u, subscriptionStatus: "suspended" } : u,
+        ),
+      );
+    } catch {
+      setError(t("admin.errorSuspendSubscription"));
+    }
+  }
+
+  async function markContacted(uid: string) {
+    try {
+      const contactedAt = new Date().toISOString();
+      await markUserContacted(uid);
+      setUsers((prev) =>
+        prev.map((u) => (u.uid === uid ? { ...u, contactedAt } : u)),
+      );
+    } catch {
+      setError(t("admin.errorContacted"));
+    }
+  }
+
   const dashboard = useMemo(() => {
     const summaryList = Object.values(summaries);
     return {
       totalUsers: users.length,
       pendingCount: users.filter((u) => u.pendingApproval).length,
       activeCount: users.filter((u) => !u.pendingApproval && u.isActive).length,
+      trialCount: users.filter((u) => u.accountType === "trial" || u.subscriptionStatus === "trial").length,
+      expiredCount: users.filter((u) => {
+        const state = getSubscriptionAccessState(u);
+        return state === "expired" || state === "suspended";
+      }).length,
       needsAttention: summaryList.filter((s) => s.syncHealth !== "healthy")
         .length,
       totalRevenue: summaryList.reduce((sum, s) => sum + s.totalRevenue, 0),
@@ -226,6 +273,12 @@ export default function AdminUsersPage() {
       },
     },
     {
+      header: t("admin.subscription"),
+      id: "subscription",
+      cell: ({ row }) => <SubscriptionCell user={row.original} />,
+    },
+
+    {
       header: t("bills.status"),
       accessorKey: "isActive",
       cell: ({ row }) => (
@@ -248,14 +301,50 @@ export default function AdminUsersPage() {
             <span className="text-xs text-slate-400">{t("common.self")}</span>
           );
         return (
-          <Button
-            type="button"
-            size="sm"
-            variant={u.isActive ? "danger" : "success"}
-            onClick={() => void toggleActive(u.uid, u.isActive)}
-          >
-            {u.isActive ? t("admin.deactivate") : t("admin.reactivate")}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="success"
+              onClick={() => void renewSubscription(u.uid, 1)}
+            >
+              {t("admin.renewOneMonth")}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => void renewSubscription(u.uid, 3)}
+            >
+              {t("admin.renewThreeMonths")}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => void markContacted(u.uid)}
+            >
+              {t("admin.markContacted")}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={u.isActive ? "danger" : "success"}
+              onClick={() => void toggleActive(u.uid, u.isActive)}
+            >
+              {u.isActive ? t("admin.deactivate") : t("admin.reactivate")}
+            </Button>
+            {u.subscriptionStatus !== "suspended" && (
+              <Button
+                type="button"
+                size="sm"
+                variant="danger"
+                onClick={() => void suspendSubscription(u.uid)}
+              >
+                {t("admin.suspendSubscription")}
+              </Button>
+            )}
+          </div>
         );
       },
     },
@@ -283,7 +372,7 @@ export default function AdminUsersPage() {
         }
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-8 gap-3">
         <SupportCard
           label={t("admin.totalUsers")}
           value={dashboard.totalUsers}
@@ -296,6 +385,16 @@ export default function AdminUsersPage() {
         <SupportCard
           label={t("admin.activeCount")}
           value={dashboard.activeCount}
+        />
+        <SupportCard
+          label={t("admin.trialCount")}
+          value={dashboard.trialCount}
+          tone={dashboard.trialCount > 0 ? "amber" : undefined}
+        />
+        <SupportCard
+          label={t("admin.expiredCount")}
+          value={dashboard.expiredCount}
+          tone={dashboard.expiredCount > 0 ? "red" : undefined}
         />
         <SupportCard
           label={t("admin.needsHelp")}
@@ -405,6 +504,63 @@ export default function AdminUsersPage() {
 
       {!loading && users.length === 0 && <EmptyState title={t("admin.noUsers")} />}
     </PageShell>
+  );
+}
+
+
+function SubscriptionCell({ user }: { user: AppUser }) {
+  const { t } = useLocale();
+  const state = getSubscriptionAccessState(user);
+  const days = subscriptionDaysRemaining(user);
+  const isTrial = user.accountType === "trial" || user.subscriptionStatus === "trial";
+  const accountLabel = !user.subscriptionStatus
+    ? t("admin.legacyAccount")
+    : isTrial
+      ? t("admin.trialAccount")
+      : t("admin.standardAccount");
+  const tone =
+    state === "active" || state === "legacy"
+      ? "success"
+      : state === "trial"
+        ? "warning"
+        : "danger";
+  const statusLabel =
+    state === "expired"
+      ? t("admin.expired")
+      : state === "suspended"
+        ? t("admin.suspended")
+        : state === "trial"
+          ? t("admin.trialAccount")
+          : state === "legacy"
+            ? t("admin.legacyAccount")
+            : t("common.active");
+
+  return (
+    <div className="min-w-[180px] space-y-1">
+      <div className="flex flex-wrap gap-1">
+        <Badge tone={tone}>{statusLabel}</Badge>
+        <Badge>{accountLabel}</Badge>
+      </div>
+      <div className="text-xs text-slate-500">
+        {user.subscriptionEndAt ? (
+          <>
+            {t("admin.expires")}: {subscriptionExpiryDateLabel(user)}
+            {typeof days === "number" && days >= 0 && (
+              <span className="ms-1 text-slate-400">
+                ({t("admin.daysLeft", { count: days })})
+              </span>
+            )}
+          </>
+        ) : (
+          "—"
+        )}
+      </div>
+      <div className="text-xs text-slate-400">
+        {user.contactedAt
+          ? `${t("admin.contacted")} ${user.contactedAt.slice(0, 10)}`
+          : t("admin.notContacted")}
+      </div>
+    </div>
   );
 }
 

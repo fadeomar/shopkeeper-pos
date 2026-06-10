@@ -10,6 +10,7 @@ import { createId, createPurchaseNumber } from "@/lib/utils/id";
 import { buildSyncQueueItem, getSyncQueueId } from "@/lib/services/sync-queue-service";
 import { isMiscLine } from "@/lib/utils/misc-items";
 import type { BillSplit } from "@/lib/utils/bill-split";
+import { assertSubscriptionCanWrite } from '@/lib/services/subscription-service';
 import type {
   PaymentMethod,
   Product,
@@ -117,6 +118,7 @@ export async function createFinalizedPurchase(input: {
   items: PurchaseDraftItem[];
   form: PurchaseFormValues;
 }): Promise<{ purchase: Purchase; purchaseItems: PurchaseItem[] }> {
+  await assertSubscriptionCanWrite();
   if (input.items.length === 0) {
     throw new AppError(AppErrorCode.PURCHASE_NO_ITEMS);
   }
@@ -441,6 +443,7 @@ export async function voidPurchase(input: {
   reason: string;
 }): Promise<void> {
   const reason = input.reason.trim();
+  await assertSubscriptionCanWrite();
   if (!reason) throw new AppError(AppErrorCode.VOID_REASON_REQUIRED);
 
   // Captured inside the transaction for the post-commit audit log entry.
@@ -582,6 +585,7 @@ export async function returnPurchaseItem(input: {
 }): Promise<void> {
   const reason = input.reason.trim();
   const quantity = Number(input.quantity);
+  await assertSubscriptionCanWrite();
   if (!reason) throw new AppError(AppErrorCode.RETURN_REASON_REQUIRED);
   if (!Number.isInteger(quantity) || quantity <= 0) {
     throw new AppError(AppErrorCode.RETURN_QTY_INVALID);

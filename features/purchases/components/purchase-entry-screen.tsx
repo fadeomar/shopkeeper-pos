@@ -34,7 +34,7 @@ import { MoneyInput, MoneyInputRHF } from "@/components/ui/money-input";
 import { QuantityStepper } from "@/components/pos/quantity-stepper";
 import { PaymentMethodControl } from "@/components/pos/payment-method-control";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { CircleCheck, Search, Store, X } from "lucide-react";
+import { CircleCheck, Phone, Search, Store, UserPlus, X } from "lucide-react";
 import { DataTable, useDataTableLabels } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Modal } from "@/components/ui/modal";
@@ -42,6 +42,7 @@ import { useToast } from "@/components/ui/toast";
 import { BarcodeScannerModal } from "@/components/barcode/barcode-scanner-modal";
 import { PurchaseQuickProductModal } from "@/features/purchases/components/purchase-quick-product-modal";
 import { normalizeBarcode } from "@/lib/utils/barcode";
+import { nowIso } from "@/lib/utils/date";
 import { createId } from "@/lib/utils/id";
 import { isMiscLine, MISC_ITEM_BARCODE } from "@/lib/utils/misc-items";
 import { useLocale } from "@/components/providers/locale-context";
@@ -276,6 +277,9 @@ export function PurchaseEntryScreen() {
 
   const [supplierSheetOpen, setSupplierSheetOpen] = useState(false);
   const [supplierSearch, setSupplierSearch] = useState("");
+  const [manualSupplierName, setManualSupplierName] = useState("");
+  const [manualSupplierPhone, setManualSupplierPhone] = useState("");
+  const [isSavingSupplier, setIsSavingSupplier] = useState(false);
 
   const form = useForm<PurchaseFormSchema>({
     resolver: zodResolver(purchaseFormSchema),
@@ -353,6 +357,64 @@ export function PurchaseEntryScreen() {
   const watchedTaxAmount = Number(form.watch("taxAmount") || 0);
   const watchedPaidAmount = Number(form.watch("paidAmount") || 0);
   const watchedCashierName = form.watch("cashierName");
+
+  useEffect(() => {
+    if (!supplierSheetOpen) return;
+    const searchValue = supplierSearch.trim();
+    const searchLooksLikePhone = Boolean(normalizePhone(searchValue));
+    setManualSupplierName(watchedSupplierName?.trim() || (searchLooksLikePhone ? "" : searchValue));
+    setManualSupplierPhone(watchedSupplierPhone?.trim() || (searchLooksLikePhone ? searchValue : ""));
+    // Only seed the manual form when the sheet opens; after that, the fields are user-controlled.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supplierSheetOpen]);
+
+  async function saveManualSupplier() {
+    const name = manualSupplierName.trim();
+    const phone = manualSupplierPhone.trim();
+    if (!name && !phone) {
+      push(t("purchases.supplierRequired"), "error");
+      return;
+    }
+
+    setIsSavingSupplier(true);
+    try {
+      const normalizedPhone = normalizePhone(phone);
+      const existing = normalizedPhone
+        ? await supplierRepo.findByNormalizedPhone(normalizedPhone)
+        : undefined;
+      const now = nowIso();
+      const supplier: Supplier = {
+        id: existing?.id ?? createId("supp"),
+        name: name || existing?.name || t("purchases.supplierName"),
+        phone: phone || undefined,
+        normalizedPhone: normalizedPhone || undefined,
+        notes: existing?.notes,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+        syncStatus: "pending",
+      };
+
+      await supplierRepo.save(supplier);
+      selectSupplier(supplier);
+      setSupplierSheetOpen(false);
+      setSupplierSearch("");
+      setManualSupplierName("");
+      setManualSupplierPhone("");
+      push({
+        title: existing ? t("purchases.supplierUpdated") : t("purchases.supplierSaved"),
+        description: t("purchases.supplierSelected"),
+        tone: "success",
+      });
+    } catch (error) {
+      push(getServiceErrorMessage(error, t, t("purchases.supplierSaveFailed")), "error");
+    } finally {
+      setIsSavingSupplier(false);
+    }
+  }
+
+  const canSaveManualSupplier = Boolean(
+    manualSupplierName.trim() || manualSupplierPhone.trim(),
+  );
 
   // Keep the saved purchase metadata meaningful even when Settings/auth data
   // arrives after the form was first created. The field is read-only in the UI,
@@ -1610,59 +1672,69 @@ export function PurchaseEntryScreen() {
           })()}
 
           {/* Manual entry — for suppliers not yet in the database */}
-          <details className="group">
-            <summary className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-info hover:text-info/80 transition-colors list-none">
-              <span className="rotate-0 transition-transform group-open:rotate-90">
-                ›
+          <details className="group rounded-2xl border border-border-subtle bg-surface-soft/70 p-3 open:bg-warning-soft/30">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+              <span className="flex min-w-0 items-center gap-2 text-sm font-semibold text-slate-900">
+                <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-warning-soft text-warning">
+                  <UserPlus size={16} aria-hidden />
+                </span>
+                {t("purchases.enterManually")}
               </span>
-              {t("purchases.enterManually")}
+              <span className="text-lg leading-none text-slate-400 transition-transform group-open:rotate-90">›</span>
             </summary>
-            <div className="mt-2 flex flex-col gap-2">
-              <input
+            <div className="mt-3 flex flex-col gap-3">
+              <p className="text-xs leading-5 text-slate-500">
+                {t("purchases.manualSupplierHint")}
+              </p>
+              <Input
                 type="text"
                 placeholder={t("purchases.supplierName")}
                 aria-label={t("purchases.supplierName")}
-                defaultValue={watchedSupplierName}
-                onBlur={(e) =>
-                  form.setValue("supplierName", e.target.value.trim(), {
-                    shouldDirty: true,
-                  })
-                }
-                className={clsx(
-                  "w-full rounded-xl border border-border-default bg-surface px-3 py-2",
-                  "text-sm text-slate-800 placeholder:text-slate-400",
-                  "focus:outline-none focus:ring-2 focus:ring-brand/30",
-                  "[font-size:16px]",
-                )}
+                value={manualSupplierName}
+                onChange={(e) => setManualSupplierName(e.target.value)}
+                inputSize="lg"
+                leftSlot={<Store size={17} aria-hidden />}
+                className="[font-size:16px]"
+                autoComplete="organization"
               />
-              <input
+              <Input
                 type="tel"
+                inputMode="tel"
                 placeholder={t("purchases.supplierPhone")}
                 aria-label={t("purchases.supplierPhone")}
-                defaultValue={watchedSupplierPhone}
-                onBlur={(e) =>
-                  form.setValue("supplierPhone", e.target.value.trim(), {
-                    shouldDirty: true,
-                  })
-                }
-                className={clsx(
-                  "w-full rounded-xl border border-border-default bg-surface px-3 py-2",
-                  "text-sm text-slate-800 placeholder:text-slate-400",
-                  "focus:outline-none focus:ring-2 focus:ring-brand/30",
-                  "[font-size:16px]",
-                )}
+                value={manualSupplierPhone}
+                onChange={(e) => setManualSupplierPhone(e.target.value)}
+                inputSize="lg"
+                leftSlot={<Phone size={17} aria-hidden />}
+                className="[font-size:16px]"
+                autoComplete="tel"
+                dir="ltr"
               />
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => {
-                  setSupplierSheetOpen(false);
-                  setSupplierSearch("");
-                }}
-              >
-                {t("common.close")}
-              </Button>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  fullWidth
+                  onClick={() => {
+                    setSupplierSheetOpen(false);
+                    setSupplierSearch("");
+                  }}
+                  disabled={isSavingSupplier}
+                >
+                  {t("common.cancel")}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  fullWidth
+                  onClick={saveManualSupplier}
+                  disabled={!canSaveManualSupplier}
+                  loading={isSavingSupplier}
+                >
+                  {t("purchases.saveSupplier")}
+                </Button>
+              </div>
             </div>
           </details>
         </div>

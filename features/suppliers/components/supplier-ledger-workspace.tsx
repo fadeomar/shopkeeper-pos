@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
 import { getServiceErrorMessage } from "@/lib/errors/get-error-message";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
@@ -23,12 +22,16 @@ import { DataTable } from "@/components/ui/data-table";
 // import { EmptyState } from '@/components/ui/empty-state';
 import { Modal } from "@/components/ui/modal";
 import { formatCurrency, MONEY_EPSILON } from "@/lib/utils/money";
-import { formatDateTime } from "@/lib/utils/date";
+import { formatDateTime, nowIso } from "@/lib/utils/date";
 import { downloadCSV } from "@/lib/utils/export-csv";
 import { netSplitField, normalizeBillSplit } from "@/lib/utils/bill-split";
 import { RecordSyncBadge } from "@/components/sync/record-sync-badge";
-import { settingsRepo } from "@/lib/db/repositories";
+import { settingsRepo, supplierRepo } from "@/lib/db/repositories";
+import { createId } from "@/lib/utils/id";
+import { normalizePhone } from "@/lib/utils/customer-key";
 import type { ColumnDef } from "@tanstack/react-table";
+import { Building2, CheckCircle2, Phone } from "lucide-react";
+import type { Supplier } from "@/types/domain";
 
 export function SupplierLedgerWorkspace() {
   const { t /* dir */ } = useLocale();
@@ -37,6 +40,10 @@ export function SupplierLedgerWorkspace() {
   const ledger = useLiveQuery(() => getSupplierLedger(), []);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<SupplierLedgerDetails | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [newSupplierName, setNewSupplierName] = useState("");
+  const [newSupplierPhone, setNewSupplierPhone] = useState("");
+  const [isSavingSupplier, setIsSavingSupplier] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [statementOpen, setStatementOpen] = useState(false);
   const [statementFrom, setStatementFrom] = useState("");
@@ -58,6 +65,7 @@ export function SupplierLedgerWorkspace() {
       ? safePaymentAmount - Math.max(0, balanceOwedAtModal)
       : 0;
   const isOverpayment = overpaymentExtra > MONEY_EPSILON;
+  const canSaveSupplier = Boolean(newSupplierName.trim() || newSupplierPhone.trim());
 
   type SupplierStatementRow = {
     id: string;
@@ -141,6 +149,44 @@ export function SupplierLedgerWorkspace() {
     const credit = statementRows.reduce((sum, row) => sum + row.credit, 0);
     return { opening, debit, credit, ending: opening + debit - credit };
   }, [selected, statementFrom, statementRows]);
+
+  async function saveSupplier() {
+    const name = newSupplierName.trim();
+    const phone = newSupplierPhone.trim();
+    if (!name && !phone) {
+      push(t("suppliers.supplierRequired"), "error");
+      return;
+    }
+
+    setIsSavingSupplier(true);
+    try {
+      const normalizedPhone = normalizePhone(phone);
+      const existing = normalizedPhone
+        ? await supplierRepo.findByNormalizedPhone(normalizedPhone)
+        : undefined;
+      const now = nowIso();
+      const supplier: Supplier = {
+        id: existing?.id ?? createId("supp"),
+        name: name || existing?.name || t("suppliers.supplier"),
+        phone: phone || undefined,
+        normalizedPhone: normalizedPhone || undefined,
+        notes: existing?.notes,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+        syncStatus: "pending",
+      };
+
+      await supplierRepo.save(supplier);
+      setAddOpen(false);
+      setNewSupplierName("");
+      setNewSupplierPhone("");
+      push(existing ? t("suppliers.supplierUpdated") : t("suppliers.supplierSaved"));
+    } catch (error) {
+      push(getServiceErrorMessage(error, t, t("suppliers.supplierSaveFailed")), "error");
+    } finally {
+      setIsSavingSupplier(false);
+    }
+  }
 
   function exportSupplierStatementCsv() {
     if (!selected) return;
@@ -313,12 +359,9 @@ export function SupplierLedgerWorkspace() {
         description={t("suppliers.subtitle")}
         actions={
           <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
-            <Link
-              href={"/purchases/new" as never}
-              className="inline-flex min-h-[42px] items-center justify-center rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-hover"
-            >
+            <Button type="button" onClick={() => setAddOpen(true)}>
               {t("suppliers.addSupplier")}
-            </Link>
+            </Button>
             <Button type="button" variant="secondary" onClick={() => setSearch("")}>
               {t("suppliers.showAll")}
             </Button>
@@ -610,6 +653,93 @@ export function SupplierLedgerWorkspace() {
             </div>
           </div>
         )}
+      </Modal>
+
+
+      <Modal
+        open={addOpen}
+        title={t("suppliers.addSupplier")}
+        description={t("suppliers.addSupplierDesc")}
+        onClose={() => setAddOpen(false)}
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full sm:w-auto"
+              onClick={() => setAddOpen(false)}
+              disabled={isSavingSupplier}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              type="button"
+              className="w-full sm:w-auto"
+              onClick={saveSupplier}
+              disabled={!canSaveSupplier}
+              loading={isSavingSupplier}
+            >
+              {t("suppliers.saveSupplier")}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-warning/20 bg-warning-soft/70 p-4">
+            <div className="flex items-start gap-3">
+              <span className="mt-0.5 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-warning text-white shadow-sm">
+                <Building2 size={20} aria-hidden />
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-slate-900">
+                  {t("suppliers.quickAddTitle")}
+                </p>
+                <p className="mt-1 text-sm leading-6 text-slate-600">
+                  {t("suppliers.quickAddHint")}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium uppercase tracking-wide text-slate-600">
+                {t("suppliers.supplier")}
+              </span>
+              <Input
+                value={newSupplierName}
+                onChange={(event) => setNewSupplierName(event.target.value)}
+                placeholder={t("purchases.supplierName")}
+                inputSize="lg"
+                leftSlot={<Building2 size={18} aria-hidden />}
+                className="[font-size:16px]"
+                autoComplete="organization"
+              />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium uppercase tracking-wide text-slate-600">
+                {t("suppliers.phone")}
+              </span>
+              <Input
+                value={newSupplierPhone}
+                onChange={(event) => setNewSupplierPhone(event.target.value)}
+                placeholder={t("purchases.supplierPhone")}
+                type="tel"
+                inputMode="tel"
+                inputSize="lg"
+                leftSlot={<Phone size={18} aria-hidden />}
+                className="[font-size:16px]"
+                autoComplete="tel"
+                dir="ltr"
+              />
+            </label>
+          </div>
+
+          <p className="flex items-start gap-2 rounded-xl border border-success/20 bg-success-soft/70 px-3 py-2 text-xs leading-5 text-success">
+            <CheckCircle2 size={16} className="mt-0.5 shrink-0" aria-hidden />
+            <span>{t("suppliers.addSupplierSyncHint")}</span>
+          </p>
+        </div>
       </Modal>
 
       <Modal

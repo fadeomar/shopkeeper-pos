@@ -4,6 +4,7 @@ import { createId } from "@/lib/utils/id";
 import { nowIso } from "@/lib/utils/date";
 import { normalizePhone } from "@/lib/utils/customer-key";
 import { buildSyncQueueItem } from "@/lib/services/sync-queue-service";
+import { assertSubscriptionCanWrite } from "@/lib/services/subscription-service";
 import type {
   Bill,
   BillItem,
@@ -66,10 +67,12 @@ export const productRepo = {
   },
 
   async save(product: Product) {
+    await assertSubscriptionCanWrite();
     return db.products.put(product);
   },
 
   async update(id: string, changes: Partial<Product>) {
+    await assertSubscriptionCanWrite();
     return db.products.update(id, changes);
   },
 };
@@ -270,6 +273,7 @@ export const customerRepo = {
   },
 
   async save(customer: Customer): Promise<void> {
+    await assertSubscriptionCanWrite();
     await db.transaction("rw", [db.customers, db.syncQueue], async () => {
       const now = nowIso();
       const next: Customer = {
@@ -372,6 +376,7 @@ export const supplierRepo = {
   },
 
   async save(supplier: Supplier): Promise<void> {
+    await assertSubscriptionCanWrite();
     await db.transaction("rw", [db.suppliers, db.syncQueue], async () => {
       const now = nowIso();
       const next: Supplier = {

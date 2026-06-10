@@ -7,6 +7,7 @@ import { SETTINGS_ID } from '@/lib/db/repositories';
 import { buildSyncQueueItem } from '@/lib/services/sync-queue-service';
 import { logAudit } from '@/lib/services/audit-service';
 import type { CashMovement, CashMovementType } from '@/types/domain';
+import { assertSubscriptionCanWrite } from '@/lib/services/subscription-service';
 
 /**
  * Sign convention: positive amount = into drawer, negative = out of drawer.
@@ -41,6 +42,7 @@ export interface RecordCashMovementInput {
  * a follow-up update.
  */
 export async function recordCashMovement(input: RecordCashMovementInput): Promise<CashMovement> {
+  await assertSubscriptionCanWrite();
   const magnitude = Number(input.amount);
   if (!Number.isFinite(magnitude) || magnitude === 0) {
     // Reuse the generic payment-amount error code — same semantic ("must be

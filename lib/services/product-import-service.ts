@@ -7,6 +7,7 @@ import { nowIso } from '@/lib/utils/date';
 import { normalizeBarcode } from '@/lib/utils/barcode';
 import { parseCsv } from '@/lib/utils/product-csv';
 import type { Product, StockMovement } from '@/types/domain';
+import { assertSubscriptionCanWrite } from '@/lib/services/subscription-service';
 
 export interface ProductImportError {
   rowNumber: number;
@@ -209,6 +210,7 @@ export async function previewProductCsvImport(text: string): Promise<ProductImpo
 }
 
 export async function importProductsFromPreview(preview: ProductImportPreview): Promise<ProductImportResult> {
+  await assertSubscriptionCanWrite();
   if (preview.validRows.length === 0) return { importedCount: 0, movementCount: 0 };
 
   const now = nowIso();
