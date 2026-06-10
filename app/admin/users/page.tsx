@@ -179,7 +179,9 @@ export default function AdminUsersPage() {
       needsAttention: summaryList.filter((s) => s.syncHealth !== "healthy")
         .length,
       totalRevenue: summaryList.reduce((sum, s) => sum + s.totalRevenue, 0),
+      totalPurchases: summaryList.reduce((sum, s) => sum + s.purchaseCount, 0),
       totalDebt: summaryList.reduce((sum, s) => sum + s.creditDebt, 0),
+      totalSupplierDebt: summaryList.reduce((sum, s) => sum + s.supplierDebt, 0),
     };
   }, [users, summaries]);
 
@@ -372,7 +374,7 @@ export default function AdminUsersPage() {
         }
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-8 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 xl:grid-cols-10 gap-3">
         <SupportCard
           label={t("admin.totalUsers")}
           value={dashboard.totalUsers}
@@ -406,9 +408,18 @@ export default function AdminUsersPage() {
           value={dashboard.totalRevenue.toFixed(2)}
         />
         <SupportCard
+          label={t("admin.cloudPurchases")}
+          value={dashboard.totalPurchases}
+        />
+        <SupportCard
           label={t("admin.customerDebt")}
           value={dashboard.totalDebt.toFixed(2)}
           tone={dashboard.totalDebt > 0 ? "amber" : undefined}
+        />
+        <SupportCard
+          label={t("admin.supplierDebt")}
+          value={dashboard.totalSupplierDebt.toFixed(2)}
+          tone={dashboard.totalSupplierDebt > 0 ? "amber" : undefined}
         />
       </div>
 

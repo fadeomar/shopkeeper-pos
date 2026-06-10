@@ -16,6 +16,7 @@ import {
   addDoc,
   serverTimestamp,
   Timestamp,
+  getFirestore,
 } from 'firebase/firestore';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { auth, firestore, firebaseApp } from './config';
@@ -74,13 +75,19 @@ export async function registerUser(
     const cred = await createUserWithEmailAndPassword(tempAuth, email, password);
     uid = cred.user.uid;
 
-    // Write Firestore doc before signing in on main auth — no race condition.
+    // Write Firestore doc using the SAME secondary Firebase app/auth session.
+    // This makes the Firestore create request authenticated as the new uid.
+    // Previously this used the main Firestore instance while the main auth was
+    // still signed out, so registration depended on unauthenticated Firestore
+    // profile creation and failed on projects whose deployed rules require
+    // request.auth.uid == uid.
     // If the write fails (e.g. rules not deployed, network error), delete the
     // orphaned Firebase Auth user so the same email can be retried immediately
     // instead of getting "email already in use" forever.
+    const tempFirestore = getFirestore(tempApp);
     try {
       const now = new Date();
-      await setDoc(doc(firestore, 'users', uid), {
+      await setDoc(doc(tempFirestore, 'users', uid), {
         uid,
         email,
         name,
@@ -105,8 +112,17 @@ export async function registerUser(
   try {
     await signInWithEmailAndPassword(auth, email, password);
   } catch (e) {
-    // Account was created but sign-in failed. User can sign in manually.
-    throw e;
+    // Account and profile were created successfully, but automatic sign-in
+    // failed (usually a transient network/auth refresh issue). The user can
+    // sign in manually with the same email/password, so surface a specific
+    // code instead of showing a generic registration failure.
+    const wrapped = new Error('Account created, but automatic sign-in failed.') as Error & {
+      code?: string;
+      cause?: unknown;
+    };
+    wrapped.code = 'auth/account-created-sign-in-failed';
+    wrapped.cause = e;
+    throw wrapped;
   }
 }
 

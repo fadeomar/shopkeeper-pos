@@ -3,12 +3,13 @@
 import { useState, useEffect, useId, useRef } from "react";
 import Link from "next/link";
 import type { Route } from "next";
+import type { AuthCacheEntry } from "@/types/domain";
 import { useRouter, usePathname } from "next/navigation";
 import clsx from "clsx";
 import { useAuth } from "@/components/providers/auth-context";
 import { useLocale } from "@/components/providers/locale-context";
 import { signIn, registerUser } from "@/lib/firebase/auth-service";
-import { getSubscriptionAccessState, subscriptionExpiryDateLabel } from "@/lib/services/subscription-service";
+import { getSubscriptionAccessState, subscriptionDaysRemaining, subscriptionExpiryDateLabel } from "@/lib/services/subscription-service";
 import { syncAllToCloud, type SyncMeta } from "@/lib/firebase/sync-service";
 import { getPendingSyncCount } from "@/lib/services/sync-queue-service";
 import { getOpenConflicts } from "@/lib/services/sync-conflict-service";
@@ -119,6 +120,14 @@ export function AuthenticatedShell({
   if (status === "unauthenticated") return <AuthScreen />;
   if (status === "pending") return <PendingScreen onLogout={logout} />;
   if (status === "inactive") return <InactiveScreen onLogout={logout} />;
+
+  // Expired/suspended cashier accounts are allowed to open the POS shell in
+  // read-only mode: data remains visible, but every create/update service and
+  // Firestore rule still blocks writes. This is less scary for pilot users than
+  // a full lock screen and lets support inspect debts, reports, and inventory.
+  if (status === "subscription_expired" && user?.role !== "owner") {
+    return <CashierShell>{children}</CashierShell>;
+  }
   if (status === "subscription_expired") return <SubscriptionExpiredScreen onLogout={logout} />;
 
   // Authenticated — split by role
@@ -474,6 +483,7 @@ function CashierShell({ children }: { children: React.ReactNode }) {
           className="min-w-0 p-3 pb-24 sm:p-4 sm:pb-24 lg:p-6 lg:pb-6"
         >
           <DbBootstrap>
+            {user && <SubscriptionStatusBanner user={user} />}
             <ConflictResolverModal userId={uid} />
             {cloudMeta && (
               <RestoreModal
@@ -493,6 +503,49 @@ function CashierShell({ children }: { children: React.ReactNode }) {
       {/* Fixed mobile bottom navigation — hidden on desktop */}
       <MobileBottomNav />
     </>
+  );
+}
+
+
+function SubscriptionStatusBanner({ user }: { user: AuthCacheEntry }) {
+  const { t } = useLocale();
+  const state = getSubscriptionAccessState(user);
+  const daysLeft = subscriptionDaysRemaining(user);
+
+  const shouldWarn =
+    state === "trial" ||
+    state === "expired" ||
+    state === "suspended" ||
+    (state === "active" && daysLeft !== null && daysLeft <= 7);
+
+  if (!shouldWarn) return null;
+
+  const isBlocked = state === "expired" || state === "suspended";
+  const isDanger = isBlocked || (daysLeft !== null && daysLeft <= 1);
+  const message = state === "suspended"
+    ? `${t("auth.subscriptionSuspendedTitle")} · ${t("auth.subscriptionReadOnlyNote")}`
+    : state === "expired"
+      ? `${t("auth.subscriptionExpiredTitle")} · ${t("auth.subscriptionReadOnlyNote")}`
+      : state === "trial"
+        ? t("auth.subscriptionTrialBanner", { count: daysLeft ?? 0 })
+        : t("auth.subscriptionEndingSoonBanner", { count: daysLeft ?? 0, date: subscriptionExpiryDateLabel(user) });
+
+  return (
+    <div
+      className={clsx(
+        "mb-3 rounded-2xl border px-4 py-3 text-sm font-medium shadow-xs",
+        isDanger
+          ? "border-danger/20 bg-danger-soft text-danger"
+          : "border-warning/20 bg-warning-soft text-warning",
+      )}
+    >
+      <div>{message}</div>
+      {isBlocked && user.subscriptionEndAt && state !== "suspended" && (
+        <div className="mt-1 text-xs opacity-80">
+          {t("auth.subscriptionExpiredOn", { date: subscriptionExpiryDateLabel(user) })}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -989,14 +1042,25 @@ function SignUpForm({ onBack }: { onBack: () => void }) {
       await registerUser(email, password, name, phone || undefined);
     } catch (err: unknown) {
       const code = (err as { code?: string }).code ?? "";
+      const message = (err as { message?: string }).message ?? "";
+      console.error("[auth] trial registration failed", { code, message, error: err });
+
       if (code === "auth/email-already-in-use") {
         setError(t("auth.emailInUse"));
       } else if (code === "auth/weak-password") {
         setError(t("auth.weakPassword"));
-      } else if (code === "auth/network-request-failed") {
+      } else if (code === "auth/invalid-email") {
+        setError(t("auth.invalidEmail"));
+      } else if (code === "auth/network-request-failed" || code === "unavailable") {
         setError(t("auth.noInternetRegister"));
+      } else if (code === "auth/operation-not-allowed" || code === "auth/admin-restricted-operation") {
+        setError(t("auth.authProviderDisabled"));
+      } else if (code === "permission-denied") {
+        setError(t("auth.profileCreateDenied"));
+      } else if (code === "auth/account-created-sign-in-failed") {
+        setError(t("auth.accountCreatedSignInFailed"));
       } else {
-        setError(t("auth.registrationFailed"));
+        setError(code ? `${t("auth.registrationFailed")} ${t("auth.errorCode")}: ${code}` : t("auth.registrationFailed"));
       }
     } finally {
       setLoading(false);

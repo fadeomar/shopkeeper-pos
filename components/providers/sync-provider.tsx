@@ -33,6 +33,8 @@ import { autoDismissFalseOfflineSaleConflicts, getOpenConflicts } from '@/lib/se
 import { detectProductCloudConflict, prepareSettingsForCloudSync } from '@/lib/firebase/cloud-merge-service';
 import { pullCloudChangesBeforePush } from '@/lib/firebase/cloud-pull-service';
 import { isSyncBlocked } from '@/lib/services/sync-gate';
+import { acquireSyncRunLock } from '@/lib/services/sync-run-lock';
+import { requeueStaleSyncingJobs } from '@/lib/services/sync-health-service';
 import type { Product, Settings, StockMovement, SyncQueueItem, SyncStatus } from '@/types/domain';
 
 const MAX_RETRIES = 5;
@@ -450,32 +452,53 @@ export async function runSync(uid: string): Promise<void> {
   // the user has been asked whether to restore.
   if (isSyncBlocked()) return;
 
-  await autoDismissFalseOfflineSaleConflicts();
-  const openConflicts = await getOpenConflicts();
-  if (openConflicts.length > 0) return;
-
-  const jobs = await getPendingSyncJobs();
-  if (jobs.length === 0) {
-    await pullCloudChangesBeforePush(uid);
-    await autoDismissFalseOfflineSaleConflicts();
+  const lock = acquireSyncRunLock(uid);
+  if (!lock.acquired) {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('shopkeeper:sync-skipped', {
+          detail: { reason: 'another-tab-running', ownerAgeMs: lock.ownerAgeMs },
+        }),
+      );
+    }
     return;
   }
 
-  // Push the durable offline queue first. Offline bills intentionally change
-  // product stock and the bill sequence; pulling products before the bill is
-  // pushed can misread those expected local changes as cloud conflicts.
-  await processJobs(uid, jobs);
+  try {
+    // A crashed/closed tab can leave jobs in `syncing`; requeue only stale jobs
+    // before reading the queue so they are retried predictably instead of
+    // waiting for the user to hit manual retry.
+    await requeueStaleSyncingJobs();
 
-  await autoDismissFalseOfflineSaleConflicts();
-  const conflictsAfterPush = await getOpenConflicts();
-  if (conflictsAfterPush.length > 0) return;
+    await autoDismissFalseOfflineSaleConflicts();
+    const openConflicts = await getOpenConflicts();
+    if (openConflicts.length > 0) return;
 
-  if (typeof navigator !== 'undefined' && !navigator.onLine) return;
-  await pullCloudChangesBeforePush(uid);
-  await autoDismissFalseOfflineSaleConflicts();
+    const jobs = await getPendingSyncJobs();
+    if (jobs.length === 0) {
+      await pullCloudChangesBeforePush(uid);
+      await autoDismissFalseOfflineSaleConflicts();
+      return;
+    }
 
-  const remainingJobs = await getPendingSyncJobs();
-  if (remainingJobs.length > 0) await processJobs(uid, remainingJobs);
+    // Push the durable offline queue first. Offline bills intentionally change
+    // product stock and the bill sequence; pulling products before the bill is
+    // pushed can misread those expected local changes as cloud conflicts.
+    await processJobs(uid, jobs);
+
+    await autoDismissFalseOfflineSaleConflicts();
+    const conflictsAfterPush = await getOpenConflicts();
+    if (conflictsAfterPush.length > 0) return;
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+    await pullCloudChangesBeforePush(uid);
+    await autoDismissFalseOfflineSaleConflicts();
+
+    const remainingJobs = await getPendingSyncJobs();
+    if (remainingJobs.length > 0) await processJobs(uid, remainingJobs);
+  } finally {
+    lock.release();
+  }
 }
 
 export function SyncProvider({ children }: { children: React.ReactNode }) {

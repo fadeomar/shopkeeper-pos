@@ -96,3 +96,29 @@ Firebase work at module scope / in `generateMetadata`.
 ## Sprint 4 production QA focus
 
 Customer and supplier statements must be tested with: all-time period, custom period, no matching rows, partial payments, cash/card paid at bill or purchase time, and later debt payments. CSV exports should match the filtered statement rows shown in the UI and print output should hide app navigation.
+
+## Step 3 production pilot sync checks
+
+- Same-browser multi-tab: keep two tabs open on the same account and reconnect after offline work. Only one sync run should actively process the local queue; the second tab may refresh health but should not duplicate work.
+- Stale syncing recovery: a queue row stuck in `syncing` for more than 2 minutes should be automatically returned to `pending` on the next sync run.
+- Support visibility: Settings → Device health should show enough details for a support call: local counts, waiting jobs, failed/blocked jobs, oldest waiting job, and recent sync errors.
+- Full backup should still refuse to run when active queue/conflicts exist; use **Run pending sync** first, then run **Sync Now** only after the queue is clean.
+
+## Step 5 — mobile and read-only pilot QA
+
+Use a real phone before pilot rollout:
+
+1. Scanner keyboard regression
+   - Billing scanner opens without soft keyboard.
+   - Scanner close does not reopen barcode input keyboard on mobile.
+   - Desktop barcode scan loop still focuses the barcode field after product add.
+
+2. Read-only subscription regression
+   - Expired/suspended cashier can view data.
+   - Expired/suspended cashier cannot create bills or purchases from the UI.
+   - Firestore rules and service checks remain the final enforcement layer.
+
+3. Purchase entry mobile regression
+   - Purchase draft cards are editable for active users.
+   - Purchase draft cards are disabled for read-only users.
+   - Mobile bottom navigation does not hide the final action area.

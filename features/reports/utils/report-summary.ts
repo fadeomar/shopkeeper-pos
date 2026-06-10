@@ -1,4 +1,4 @@
-import type { Bill, BillItem, CashMovement, Expense, ExpenseCategory, PaymentMethod, Product, Purchase, SupplierPayment } from '@/types/domain';
+import type { Bill, BillItem, CashMovement, Expense, ExpenseCategory, PaymentMethod, Product, Purchase, Shift, SupplierPayment } from '@/types/domain';
 import { getBillNetItemCount, getBillNetProfit, getBillNetTotal } from '@/features/bills/utils/bill-summary';
 import { calculateBillItemNetContribution, calculateLineProfit, calculateLineSubtotal } from '@/lib/utils/calculations';
 import { roundMoney } from '@/lib/utils/money';
@@ -106,6 +106,20 @@ export function filterByDateRange<T extends { createdAt: string }>(
     const created = new Date(row.createdAt);
     if (from && created < from) return false;
     if (to && created >= to) return false;
+    return true;
+  });
+}
+
+
+export function filterShiftsForReport(shifts: Shift[], filters: ReportFilters): Shift[] {
+  const { from, to } = getReportRange(filters);
+  return shifts.filter((shift) => {
+    const opened = new Date(shift.openedAt);
+    const closed = shift.closedAt ? new Date(shift.closedAt) : new Date();
+    // Include any shift that overlaps the selected range. A shift can open
+    // before midnight and still carry today's drawer-affecting records.
+    if (from && closed <= from) return false;
+    if (to && opened >= to) return false;
     return true;
   });
 }

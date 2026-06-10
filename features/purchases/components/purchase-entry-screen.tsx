@@ -203,7 +203,8 @@ function SuccessPanel({
 export function PurchaseEntryScreen() {
   const { t } = useLocale();
   const tableLabels = useDataTableLabels();
-  const { user } = useAuth();
+  const { user, status } = useAuth();
+  const isReadOnlyMode = status === "subscription_expired";
   const products = useLiveQuery(
     () => db.products.where("status").equals("active").sortBy("name"),
     [],
@@ -369,6 +370,11 @@ export function PurchaseEntryScreen() {
   }, [supplierSheetOpen]);
 
   async function saveManualSupplier() {
+    if (isReadOnlyMode) {
+      push(t("purchases.readOnlyModeHint"), "error");
+      return;
+    }
+
     const name = manualSupplierName.trim();
     const phone = manualSupplierPhone.trim();
     if (!name && !phone) {
@@ -641,6 +647,7 @@ export function PurchaseEntryScreen() {
     hasValidTotal &&
     hasEnoughPayment &&
     !shiftBlocked &&
+    !isReadOnlyMode &&
     (!isCreditPurchase || hasCreditSupplier);
 
   // Auto-fill paid amount on total change (unless cashier manually overrode).
@@ -666,6 +673,11 @@ export function PurchaseEntryScreen() {
   }
 
   function addProductToDraft(product: Product, quantity: number, unitCost: number) {
+    if (isReadOnlyMode) {
+      push(t("purchases.readOnlyModeHint"), "error");
+      return;
+    }
+
     const qty = Math.max(1, Math.trunc(quantity || 0));
     const cost = Math.max(0, unitCost || product.buyPrice);
     setDraftItems((cur) => {
@@ -695,6 +707,11 @@ export function PurchaseEntryScreen() {
   }
 
   function addLine() {
+    if (isReadOnlyMode) {
+      push(t("purchases.readOnlyModeHint"), "error");
+      return;
+    }
+
     const product = products?.find((p) => p.id === productId);
     if (!product) return;
     addProductToDraft(product, newLineQty, newLineCost);
@@ -711,6 +728,11 @@ export function PurchaseEntryScreen() {
   }
 
   function addMiscPurchaseLine() {
+    if (isReadOnlyMode) {
+      push(t("purchases.readOnlyModeHint"), "error");
+      return;
+    }
+
     const cost = Math.max(0, Number(miscCost) || 0);
     const quantity = Math.max(1, Math.trunc(Number(miscQuantity) || 1));
     const description = miscDescription.trim();
@@ -745,6 +767,11 @@ export function PurchaseEntryScreen() {
   }
 
   function handleScanForPurchase(barcode: string) {
+    if (isReadOnlyMode) {
+      push(t("purchases.readOnlyModeHint"), "error");
+      return;
+    }
+
     const bc = normalizeBarcode(barcode);
     const product = products?.find((p) => normalizeBarcode(p.barcode) === bc);
     if (!product) {
@@ -761,6 +788,8 @@ export function PurchaseEntryScreen() {
     productIdToUpdate: string,
     patch: Partial<PurchaseDraftItem>,
   ) {
+    if (isReadOnlyMode) return;
+
     setDraftItems((cur) =>
       cur.map((i) => {
         if (i.productId !== productIdToUpdate) return i;
@@ -777,6 +806,8 @@ export function PurchaseEntryScreen() {
   }
 
   function removeLine(productIdToRemove: string) {
+    if (isReadOnlyMode) return;
+
     setDraftItems((cur) =>
       cur.filter((i) => i.productId !== productIdToRemove),
     );
@@ -810,6 +841,11 @@ export function PurchaseEntryScreen() {
   }
 
   async function finalize(values: PurchaseFormSchema) {
+    if (isReadOnlyMode) {
+      push(t("purchases.readOnlyModeHint"), "error");
+      return;
+    }
+
     if (draftItems.length === 0) {
       push(t("purchases.addOneProduct"), "error");
       return;
@@ -865,6 +901,7 @@ export function PurchaseEntryScreen() {
             onChange={(v) => updateLine(item.productId, { quantity: v })}
             min={1}
             className="w-[140px]"
+            disabled={isReadOnlyMode}
           />
         );
       },
@@ -884,6 +921,7 @@ export function PurchaseEntryScreen() {
             inputSize="sm"
             className="w-36"
             fullWidth={false}
+            disabled={isReadOnlyMode}
           />
         );
       },
@@ -938,6 +976,12 @@ export function PurchaseEntryScreen() {
         </p>
       </div>
 
+      {isReadOnlyMode && (
+        <div className="mb-4 rounded-2xl border border-danger/20 bg-danger-soft px-4 py-3 text-sm font-medium text-danger">
+          {t("purchases.readOnlyModeHint")}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_400px] gap-4 xl:gap-5 items-start pb-28 lg:pb-0">
         <div className="flex flex-col gap-4">
           {/* Build purchase panel */}
@@ -962,13 +1006,14 @@ export function PurchaseEntryScreen() {
               placeholder={t("purchases.selectProduct")}
               searchPlaceholder={t("products.searchPlaceholder")}
               emptyMessage={t("products.noProducts")}
-              disabled={!products?.length}
+              disabled={isReadOnlyMode || !products?.length}
             />
             <QuantityStepper
               value={newLineQty}
               onChange={setNewLineQty}
               min={1}
               className="w-[140px]"
+              disabled={isReadOnlyMode}
             />
             <MoneyInput
               value={newLineCost}
@@ -983,12 +1028,13 @@ export function PurchaseEntryScreen() {
               inputSize="sm"
               className="w-32"
               fullWidth={false}
+              disabled={isReadOnlyMode}
             />
             <Button
               type="button"
               variant="secondary"
               onClick={addLine}
-              disabled={!productId}
+              disabled={isReadOnlyMode || !productId}
             >
               {t("purchases.addItem")}
             </Button>
@@ -996,6 +1042,7 @@ export function PurchaseEntryScreen() {
               type="button"
               variant="secondary"
               onClick={() => setScannerOpen(true)}
+              disabled={isReadOnlyMode}
             >
               {t("common.scan")}
             </Button>
@@ -1003,6 +1050,7 @@ export function PurchaseEntryScreen() {
               type="button"
               variant="soft"
               onClick={() => setMiscOpen(true)}
+              disabled={isReadOnlyMode}
             >
               {t("purchases.addMiscPurchase")}
             </Button>
@@ -1038,10 +1086,12 @@ export function PurchaseEntryScreen() {
               size="sm"
               className="mt-2"
               onClick={() => {
+                if (isReadOnlyMode) return;
                 setQuickAddBarcode("");
                 setQuickAddDefaultQuantity(newLineQty || 1);
                 setQuickAddOpen(true);
               }}
+              disabled={isReadOnlyMode}
             >
               {t("purchases.addMissingProduct")}
             </Button>
@@ -1079,6 +1129,7 @@ export function PurchaseEntryScreen() {
                         type="button"
                         onClick={() => removeLine(item.productId)}
                         aria-label={t("common.remove")}
+                        disabled={isReadOnlyMode}
                         className="shrink-0 rounded-lg p-1 text-slate-400 hover:bg-danger-soft hover:text-danger transition-colors"
                       >
                         <X size={16} aria-hidden />
@@ -1098,6 +1149,7 @@ export function PurchaseEntryScreen() {
                           }
                           min={1}
                           className="w-full"
+                          disabled={isReadOnlyMode}
                         />
                       </label>
                       <label className="flex flex-col gap-1">
@@ -1114,6 +1166,7 @@ export function PurchaseEntryScreen() {
                           onKeyDown={dismissKeyboardOnEnter}
                           inputSize="sm"
                           fullWidth
+                          disabled={isReadOnlyMode}
                         />
                       </label>
                     </div>
@@ -1171,7 +1224,13 @@ export function PurchaseEntryScreen() {
 
               <form
                 className="flex flex-col gap-3"
-                onSubmit={form.handleSubmit(() => setConfirmOpen(true))}
+                onSubmit={form.handleSubmit(() => {
+                  if (isReadOnlyMode) {
+                    push(t("purchases.readOnlyModeHint"), "error");
+                    return;
+                  }
+                  setConfirmOpen(true);
+                })}
               >
                 {/* Supplier — compact selector; the select sheet opens on tap */}
                 <div className="flex flex-col gap-1.5">
@@ -1200,6 +1259,7 @@ export function PurchaseEntryScreen() {
                       <button
                         type="button"
                         onClick={() => setSupplierSheetOpen(true)}
+                        disabled={isReadOnlyMode}
                         aria-label={t("purchases.pickSupplier")}
                         className="shrink-0 rounded-lg p-1 text-slate-400 hover:bg-surface-soft hover:text-slate-600 transition-colors"
                       >
@@ -1209,6 +1269,7 @@ export function PurchaseEntryScreen() {
                       <button
                         type="button"
                         onClick={() => {
+                          if (isReadOnlyMode) return;
                           form.setValue("supplierName", "", {
                             shouldDirty: true,
                           });
@@ -1217,6 +1278,7 @@ export function PurchaseEntryScreen() {
                           });
                         }}
                         aria-label={t("purchases.clearSupplier")}
+                        disabled={isReadOnlyMode}
                         className="shrink-0 rounded-lg p-1 text-slate-400 hover:bg-danger-soft hover:text-danger transition-colors"
                       >
                         <X size={14} aria-hidden />
@@ -1227,11 +1289,13 @@ export function PurchaseEntryScreen() {
                     <button
                       type="button"
                       onClick={() => setSupplierSheetOpen(true)}
+                      disabled={isReadOnlyMode}
                       className={clsx(
                         "flex items-center gap-2 w-full rounded-xl border border-dashed border-border-default",
                         "bg-surface px-3 py-2.5 text-sm text-slate-500",
                         "hover:border-border-strong hover:bg-surface-soft hover:text-slate-700 transition-colors",
                         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
+                        isReadOnlyMode && "cursor-not-allowed opacity-60 hover:border-border-default hover:bg-surface hover:text-slate-500",
                       )}
                     >
                       <Store size={15} aria-hidden className="shrink-0" />
@@ -1249,14 +1313,14 @@ export function PurchaseEntryScreen() {
                   </summary>
                   <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <FormField label={t("purchases.supplierInvoiceNumber")}>
-                      <Input {...form.register("supplierInvoiceNumber")} />
+                      <Input {...form.register("supplierInvoiceNumber")} readOnly={isReadOnlyMode} />
                     </FormField>
                     <FormField label={t("purchases.invoiceDate")}>
-                      <Input type="date" {...form.register("invoiceDate")} />
+                      <Input type="date" {...form.register("invoiceDate")} readOnly={isReadOnlyMode} />
                     </FormField>
                     {isCreditPurchase && (
                       <FormField label={t("purchases.paymentDueDate")}>
-                        <Input type="date" {...form.register("paymentDueDate")} />
+                        <Input type="date" {...form.register("paymentDueDate")} readOnly={isReadOnlyMode} />
                       </FormField>
                     )}
                   </div>
@@ -1270,6 +1334,7 @@ export function PurchaseEntryScreen() {
                     }
                     label={t("purchases.paymentMethod")}
                     available={availablePaymentMethods}
+                    disabled={isReadOnlyMode}
                   />
                 </FormField>
 
@@ -1293,6 +1358,7 @@ export function PurchaseEntryScreen() {
                       currency={currency}
                       min={0}
                       onKeyDown={dismissKeyboardOnEnter}
+                      disabled={isReadOnlyMode}
                     />
                   </FormField>
                   {taxEnabled && (
@@ -1303,6 +1369,7 @@ export function PurchaseEntryScreen() {
                         currency={currency}
                         min={0}
                         onKeyDown={dismissKeyboardOnEnter}
+                        disabled={isReadOnlyMode}
                       />
                     </FormField>
                   )}
@@ -1334,6 +1401,7 @@ export function PurchaseEntryScreen() {
                         }}
                         onKeyDown={dismissKeyboardOnEnter}
                         className="flex-1"
+                        disabled={isReadOnlyMode}
                       />
                       {isPaidAmountManuallyEdited && (
                         <Button
@@ -1341,6 +1409,7 @@ export function PurchaseEntryScreen() {
                           variant="ghost"
                           size="sm"
                           onClick={() => setIsPaidAmountManuallyEdited(false)}
+                          disabled={isReadOnlyMode}
                         >
                           {t("common.reset")}
                         </Button>
@@ -1350,7 +1419,7 @@ export function PurchaseEntryScreen() {
                 )}
 
                 <FormField label={t("purchases.notes")}>
-                  <Input {...form.register("notes")} />
+                  <Input {...form.register("notes")} readOnly={isReadOnlyMode} />
                 </FormField>
 
                 <div className="rounded-xl border border-border-default bg-surface-soft/60 px-4 py-3">
@@ -1422,6 +1491,7 @@ export function PurchaseEntryScreen() {
                     type="button"
                     variant="ghost"
                     onClick={clearDraft}
+                    disabled={isReadOnlyMode}
                     className="flex-1"
                   >
                     {t("purchases.clearDraft")}
@@ -1460,7 +1530,7 @@ export function PurchaseEntryScreen() {
             >
               {t("common.cancel")}
             </Button>
-            <Button type="button" onClick={addMiscPurchaseLine}>
+            <Button type="button" onClick={addMiscPurchaseLine} disabled={isReadOnlyMode}>
               {t("purchases.addMiscToPurchase")}
             </Button>
           </>
@@ -1472,6 +1542,7 @@ export function PurchaseEntryScreen() {
               value={miscDescription}
               onChange={(e) => setMiscDescription(e.target.value)}
               placeholder={t("purchases.miscDescriptionPlaceholder")}
+              readOnly={isReadOnlyMode}
             />
           </FormField>
           <div className="grid grid-cols-2 gap-3">
@@ -1481,6 +1552,7 @@ export function PurchaseEntryScreen() {
                 onChange={(v) => setMiscQuantity(String(v))}
                 min={1}
                 className="w-full"
+                disabled={isReadOnlyMode}
               />
             </FormField>
             <FormField label={t("purchases.cost")}>
@@ -1490,6 +1562,7 @@ export function PurchaseEntryScreen() {
                 currency={currency}
                 min={0}
                 onKeyDown={dismissKeyboardOnEnter}
+                disabled={isReadOnlyMode}
               />
             </FormField>
           </div>
@@ -1514,6 +1587,11 @@ export function PurchaseEntryScreen() {
         supplierName={watchedSupplierName}
         onClose={() => setQuickAddOpen(false)}
         onCreated={(product, quantity) => {
+          if (isReadOnlyMode) {
+            push(t("purchases.readOnlyModeHint"), "error");
+            setQuickAddOpen(false);
+            return;
+          }
           addProductToDraft(product, quantity, product.buyPrice);
           setQuickAddOpen(false);
           setQuickAddBarcode("");
@@ -1524,6 +1602,11 @@ export function PurchaseEntryScreen() {
           push(t("purchases.quickAddCreated", { name: product.name }));
         }}
         onUseExisting={(product) => {
+          if (isReadOnlyMode) {
+            push(t("purchases.readOnlyModeHint"), "error");
+            setQuickAddOpen(false);
+            return;
+          }
           setProductId(product.id);
           setNewLineQty(1);
           setNewLineCost(product.buyPrice);
@@ -1547,7 +1630,7 @@ export function PurchaseEntryScreen() {
             >
               {t("common.cancel")}
             </Button>
-            <Button type="button" onClick={form.handleSubmit(finalize)}>
+            <Button type="button" onClick={form.handleSubmit(finalize)} disabled={isReadOnlyMode}>
               {t("purchases.confirmSave")}
             </Button>
           </>

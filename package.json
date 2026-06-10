@@ -11,7 +11,10 @@
     "start:host": "next start -H 0.0.0.0",
     "typecheck": "tsc --noEmit",
     "dev:offline:host": "cross-env NEXT_PUBLIC_ENABLE_OFFLINE_SW=1 next dev -H 0.0.0.0",
-    "preview:offline": "npm run build && npm run start:host"
+    "preview:offline": "npm run build && npm run start:host",
+    "verify": "npm run typecheck && npm run verify:rules && npm run verify:accounting && npm run build",
+    "verify:rules": "node scripts/verify-firestore-rules.mjs",
+    "verify:accounting": "node scripts/verify-accounting-reconciliation.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
