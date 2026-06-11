@@ -1,6 +1,7 @@
 import { auth } from "@/lib/firebase/config";
 import { db } from "@/lib/db/schema";
 import { SETTINGS_ID } from "@/lib/db/repositories";
+import { getActiveUid } from "@/lib/services/account-data-service";
 import { AppError, AppErrorCode } from "@/lib/errors/app-error";
 import { isUserRole, resolveRolePermissions, NO_PERMISSIONS } from "@/types/domain";
 import type { RolePermissions, UserRole } from "@/types/domain";
@@ -27,7 +28,7 @@ import type { RolePermissions, UserRole } from "@/types/domain";
 export async function getCurrentPermissions(): Promise<RolePermissions> {
   let role: UserRole | null = null;
   try {
-    const uid = auth.currentUser?.uid;
+    const uid = auth.currentUser?.uid ?? (process.env.NEXT_PUBLIC_E2E_AUTH === "1" ? getActiveUid() : null);
     if (uid) {
       const entry = await db.authCache.get(uid);
       if (isUserRole(entry?.role)) role = entry.role;

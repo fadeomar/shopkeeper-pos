@@ -547,19 +547,6 @@ export interface TranslationDict {
     billCount: string;
     averageBill: string;
     cashExpected: string;
-    reconciliationTitle: string;
-    reconciliationDesc: string;
-    reconciliationOpening: string;
-    reconciliationMoneyIn: string;
-    reconciliationMoneyOut: string;
-    reconciliationExpectedDrawer: string;
-    reconciliationFormula: string;
-    reconciliationFormulaText: string;
-    reconciliationLooksGood: string;
-    reconciliationIssuesTitle: string;
-    reconciliationIssueMissingShift: string;
-    reconciliationIssueSplitMismatch: string;
-    reconciliationSamples: string;
     customerPaymentsCashIn: string;
     purchaseCost: string;
     purchaseCount: string;
@@ -758,7 +745,6 @@ export interface TranslationDict {
     customerUpdated: string;
     customerSelected: string;
     customerSaveFailed: string;
-    readOnlyModeHint: string;
   };
   bills: {
     title: string;
@@ -881,11 +867,7 @@ export interface TranslationDict {
     lastSynced: string;
     bills: string;
     products: string;
-    purchases: string;
-    suppliers: string;
-    expenses: string;
     movements: string;
-    failedBlocked: string;
     neverSynced: string;
     deviceHealth: string;
     deviceHealthDesc: string;
@@ -899,13 +881,6 @@ export interface TranslationDict {
     exportingBackup: string;
     localBackupExported: string;
     localBackupFailed: string;
-    runPendingSync: string;
-    pendingSyncRan: string;
-    pendingSyncRanWithStale: string;
-    oldestWaitingJob: string;
-    staleSyncingJobs: string;
-    recentSyncProblems: string;
-    retryCount: string;
     retryFailedSync: string;
     retrySyncQueued: string;
     noFailedSyncJobs: string;
@@ -1009,12 +984,7 @@ export interface TranslationDict {
     passwordMismatch: string;
     emailInUse: string;
     weakPassword: string;
-    invalidEmail: string;
     noInternetRegister: string;
-    authProviderDisabled: string;
-    profileCreateDenied: string;
-    accountCreatedSignInFailed: string;
-    errorCode: string;
     registrationFailed: string;
     invalidCredentials: string;
     tooManyAttempts: string;
@@ -1062,8 +1032,6 @@ export interface TranslationDict {
     subscriptionSuspendedDesc: string;
     subscriptionExpiredOn: string;
     subscriptionReadOnlyNote: string;
-    subscriptionTrialBanner: string;
-    subscriptionEndingSoonBanner: string;
     useExistingTitle: string;
     useExistingDesc: string;
     startEmpty: string;
@@ -1245,7 +1213,6 @@ export interface TranslationDict {
     supplierUpdated: string;
     supplierSelected: string;
     supplierSaveFailed: string;
-    readOnlyModeHint: string;
   };
   suppliers: {
     title: string;
@@ -1382,11 +1349,6 @@ export interface TranslationDict {
     cloudProducts: string;
     netSales: string;
     customerDebt: string;
-    supplierDebt: string;
-    cloudPurchases: string;
-    purchaseCost: string;
-    expenses: string;
-    syncConflicts: string;
     lowStock: string;
     outOfStock: string;
     generateResetLink: string;
@@ -1403,10 +1365,6 @@ export interface TranslationDict {
     billItems: string;
     movements: string;
     payments: string;
-    supplierPayments: string;
-    suppliers: string;
-    purchaseItems: string;
-    cashMovements: string;
     settingsUpdated: string;
     resetLinkGenerated: string;
     resetLinkError: string;

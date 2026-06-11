@@ -72,9 +72,17 @@ export async function updateProductDetails(product: Product, changes: Partial<Pr
 
   const updatedAt = nowIso();
   await db.transaction('rw', db.products, db.syncQueue, async () => {
+    const liveProduct = await db.products.get(product.id);
+    if (!liveProduct) {
+      throw new AppError(AppErrorCode.PRODUCT_NOT_FOUND);
+    }
+
     await db.products.update(product.id, {
       ...changes,
-      quantityInStock: product.quantityInStock,
+      // Product detail edits must never overwrite the live stock count with a
+      // stale form/caller snapshot. Stock changes go through explicit stock
+      // movement services only, so audit/history and sync stay coherent.
+      quantityInStock: liveProduct.quantityInStock,
       lastUpdated: updatedAt,
       syncStatus: 'pending',
       lastSyncError: undefined,

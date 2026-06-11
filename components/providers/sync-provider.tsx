@@ -33,11 +33,10 @@ import { autoDismissFalseOfflineSaleConflicts, getOpenConflicts } from '@/lib/se
 import { detectProductCloudConflict, prepareSettingsForCloudSync } from '@/lib/firebase/cloud-merge-service';
 import { pullCloudChangesBeforePush } from '@/lib/firebase/cloud-pull-service';
 import { isSyncBlocked } from '@/lib/services/sync-gate';
-import { acquireSyncRunLock } from '@/lib/services/sync-run-lock';
-import { requeueStaleSyncingJobs } from '@/lib/services/sync-health-service';
 import type { Product, Settings, StockMovement, SyncQueueItem, SyncStatus } from '@/types/domain';
 
 const MAX_RETRIES = 5;
+const E2E_SYNC_STUB_ENABLED = process.env.NEXT_PUBLIC_E2E_SYNC_STUB === '1';
 
 const PRODUCT_COMPARE_FIELDS: Array<keyof Product> = [
   'barcode',
@@ -429,6 +428,54 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
   }
 }
 
+
+async function markE2EJobEntitySynced(job: SyncQueueItem, syncedAt: string): Promise<void> {
+  const patch = { syncStatus: 'synced' as const, syncedAt, lastSyncError: undefined };
+
+  if (job.entity === 'bill') {
+    await db.bills.update(job.entityId, patch);
+  } else if (job.entity === 'purchase') {
+    await db.purchases.update(job.entityId, patch);
+  } else if (job.entity === 'product') {
+    await db.products.update(job.entityId, patch);
+  } else if (job.entity === 'stockMovement') {
+    await db.stockMovements.update(job.entityId, patch);
+  } else if (job.entity === 'customerPayment') {
+    await db.customerPayments.update(job.entityId, patch);
+  } else if (job.entity === 'customer') {
+    await db.customers.update(job.entityId, patch);
+  } else if (job.entity === 'shift') {
+    await db.shifts.update(job.entityId, patch);
+  } else if (job.entity === 'supplier') {
+    await db.suppliers.update(job.entityId, patch);
+  } else if (job.entity === 'supplierPayment') {
+    await db.supplierPayments.update(job.entityId, patch);
+  } else if (job.entity === 'settings') {
+    await db.settings.update(job.entityId, patch);
+  } else if (job.entity === 'auditEvent') {
+    await db.auditEvents.update(job.entityId, patch);
+  } else if (job.entity === 'cashMovement') {
+    await db.cashMovements.update(job.entityId, patch);
+  } else if (job.entity === 'expense') {
+    await db.expenses.update(job.entityId, patch);
+  }
+}
+
+async function runE2ESyncStub(): Promise<void> {
+  // Playwright's PWA/offline tests need to assert that queued offline work
+  // drains after reconnecting, but they must not depend on a real Firebase
+  // project or internet access. This branch exists only when the public E2E
+  // flag is baked into the test build.
+  const jobs = sortJobs(await getPendingSyncJobs());
+  if (jobs.length === 0) return;
+
+  const syncedAt = new Date().toISOString();
+  for (const job of jobs) {
+    await markE2EJobEntitySynced(job, syncedAt);
+    await markSynced(job.id);
+  }
+}
+
 async function processJobs(uid: string, jobs: SyncQueueItem[]): Promise<void> {
   for (const job of sortJobs(jobs)) {
     if (typeof navigator !== 'undefined' && !navigator.onLine) break;
@@ -444,6 +491,11 @@ async function processJobs(uid: string, jobs: SyncQueueItem[]): Promise<void> {
 export async function runSync(uid: string): Promise<void> {
   if (typeof navigator !== 'undefined' && !navigator.onLine) return;
 
+  if (E2E_SYNC_STUB_ENABLED) {
+    await runE2ESyncStub();
+    return;
+  }
+
   // Skip this tick if a restore is running or the CashierShell hasn't yet
   // decided whether to offer a restore. See lib/services/sync-gate.ts for
   // the reasoning — short version: we don't want pullCloudChangesBeforePush
@@ -452,53 +504,32 @@ export async function runSync(uid: string): Promise<void> {
   // the user has been asked whether to restore.
   if (isSyncBlocked()) return;
 
-  const lock = acquireSyncRunLock(uid);
-  if (!lock.acquired) {
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(
-        new CustomEvent('shopkeeper:sync-skipped', {
-          detail: { reason: 'another-tab-running', ownerAgeMs: lock.ownerAgeMs },
-        }),
-      );
-    }
+  await autoDismissFalseOfflineSaleConflicts();
+  const openConflicts = await getOpenConflicts();
+  if (openConflicts.length > 0) return;
+
+  const jobs = await getPendingSyncJobs();
+  if (jobs.length === 0) {
+    await pullCloudChangesBeforePush(uid);
+    await autoDismissFalseOfflineSaleConflicts();
     return;
   }
 
-  try {
-    // A crashed/closed tab can leave jobs in `syncing`; requeue only stale jobs
-    // before reading the queue so they are retried predictably instead of
-    // waiting for the user to hit manual retry.
-    await requeueStaleSyncingJobs();
+  // Push the durable offline queue first. Offline bills intentionally change
+  // product stock and the bill sequence; pulling products before the bill is
+  // pushed can misread those expected local changes as cloud conflicts.
+  await processJobs(uid, jobs);
 
-    await autoDismissFalseOfflineSaleConflicts();
-    const openConflicts = await getOpenConflicts();
-    if (openConflicts.length > 0) return;
+  await autoDismissFalseOfflineSaleConflicts();
+  const conflictsAfterPush = await getOpenConflicts();
+  if (conflictsAfterPush.length > 0) return;
 
-    const jobs = await getPendingSyncJobs();
-    if (jobs.length === 0) {
-      await pullCloudChangesBeforePush(uid);
-      await autoDismissFalseOfflineSaleConflicts();
-      return;
-    }
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+  await pullCloudChangesBeforePush(uid);
+  await autoDismissFalseOfflineSaleConflicts();
 
-    // Push the durable offline queue first. Offline bills intentionally change
-    // product stock and the bill sequence; pulling products before the bill is
-    // pushed can misread those expected local changes as cloud conflicts.
-    await processJobs(uid, jobs);
-
-    await autoDismissFalseOfflineSaleConflicts();
-    const conflictsAfterPush = await getOpenConflicts();
-    if (conflictsAfterPush.length > 0) return;
-
-    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
-    await pullCloudChangesBeforePush(uid);
-    await autoDismissFalseOfflineSaleConflicts();
-
-    const remainingJobs = await getPendingSyncJobs();
-    if (remainingJobs.length > 0) await processJobs(uid, remainingJobs);
-  } finally {
-    lock.release();
-  }
+  const remainingJobs = await getPendingSyncJobs();
+  if (remainingJobs.length > 0) await processJobs(uid, remainingJobs);
 }
 
 export function SyncProvider({ children }: { children: React.ReactNode }) {

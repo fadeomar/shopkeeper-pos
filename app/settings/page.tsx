@@ -22,11 +22,6 @@ import { syncAllToCloud, type SyncMeta } from "@/lib/firebase/sync-service";
 import { runSync } from "@/components/providers/sync-provider";
 import { getOpenConflicts } from "@/lib/services/sync-conflict-service";
 import {
-  getSyncQueueHealthDetails,
-  requeueStaleSyncingJobs,
-  type SyncQueueHealthDetails,
-} from "@/lib/services/sync-health-service";
-import {
   getPendingSyncCount,
   getSyncQueueCounts,
   retryFailedSyncJobs,
@@ -753,11 +748,9 @@ function CloudBackupCard() {
 function DeviceHealthCard() {
   const { t } = useLocale();
   const { push } = useToast();
-  const { user } = useAuth();
   const { canExport } = usePermissions();
   const [loading, setLoading] = useState(true);
   const [repairing, setRepairing] = useState(false);
-  const [queueSyncing, setQueueSyncing] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   const [stats, setStats] = useState<{
@@ -766,19 +759,12 @@ function DeviceHealthCard() {
     billItems: number;
     stockMovements: number;
     customerPayments: number;
-    suppliers: number;
-    purchases: number;
-    purchaseItems: number;
-    supplierPayments: number;
-    cashMovements: number;
-    expenses: number;
     pending: number;
     syncing: number;
     failed: number;
     conflict: number;
     blocked: number;
     synced: number;
-    details: SyncQueueHealthDetails;
   } | null>(null);
 
   async function refreshHealth() {
@@ -790,28 +776,14 @@ function DeviceHealthCard() {
         billItems,
         stockMovements,
         customerPayments,
-        suppliers,
-        purchases,
-        purchaseItems,
-        supplierPayments,
-        cashMovements,
-        expenses,
         queue,
-        details,
       ] = await Promise.all([
         db.products.count(),
         db.bills.count(),
         db.billItems.count(),
         db.stockMovements.count(),
         db.customerPayments.count(),
-        db.suppliers.count(),
-        db.purchases.count(),
-        db.purchaseItems.count(),
-        db.supplierPayments.count(),
-        db.cashMovements.count(),
-        db.expenses.count(),
         getSyncQueueCounts(),
-        getSyncQueueHealthDetails(),
       ]);
       setStats({
         products,
@@ -819,14 +791,7 @@ function DeviceHealthCard() {
         billItems,
         stockMovements,
         customerPayments,
-        suppliers,
-        purchases,
-        purchaseItems,
-        supplierPayments,
-        cashMovements,
-        expenses,
         ...queue,
-        details,
       });
     } finally {
       setLoading(false);
@@ -838,12 +803,10 @@ function DeviceHealthCard() {
     const id = window.setInterval(refreshHealth, 5000);
     window.addEventListener("online", refreshHealth);
     window.addEventListener("shopkeeper:sync-requested", refreshHealth);
-    window.addEventListener("shopkeeper:sync-skipped", refreshHealth);
     return () => {
       window.clearInterval(id);
       window.removeEventListener("online", refreshHealth);
       window.removeEventListener("shopkeeper:sync-requested", refreshHealth);
-      window.removeEventListener("shopkeeper:sync-skipped", refreshHealth);
     };
   }, []);
 
@@ -859,25 +822,6 @@ function DeviceHealthCard() {
       );
     } finally {
       setRepairing(false);
-    }
-  }
-
-  async function handleRunQueueSync() {
-    if (!user?.uid) return;
-    setQueueSyncing(true);
-    try {
-      const staleCount = await requeueStaleSyncingJobs();
-      await runSync(user.uid);
-      await refreshHealth();
-      push(
-        staleCount > 0
-          ? t("settings.pendingSyncRanWithStale", { count: staleCount })
-          : t("settings.pendingSyncRan"),
-      );
-    } catch {
-      push(t("settings.syncFailed"), "error");
-    } finally {
-      setQueueSyncing(false);
     }
   }
 
@@ -946,17 +890,11 @@ function DeviceHealthCard() {
           value={stats?.products ?? "—"}
         />
         <SyncStat label={t("settings.bills")} value={stats?.bills ?? "—"} />
-        <SyncStat label={t("settings.purchases")} value={stats?.purchases ?? "—"} />
-        <SyncStat label={t("settings.suppliers")} value={stats?.suppliers ?? "—"} />
         <SyncStat
           label={t("settings.movements")}
           value={stats?.stockMovements ?? "—"}
         />
-        <SyncStat label={t("settings.expenses")} value={stats?.expenses ?? "—"} />
         <SyncStat label={t("settings.pendingSync")} value={waiting} />
-        <SyncStat label={t("settings.failedBlocked")}
-          value={(stats?.failed ?? 0) + (stats?.blocked ?? 0)}
-        />
       </div>
 
       <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50 p-3 text-xs text-slate-600">
@@ -979,53 +917,6 @@ function DeviceHealthCard() {
         )}
       </div>
 
-      {(stats?.details.oldestWaitingLabel || stats?.details.staleSyncing || stats?.details.recentProblems.length) ? (
-        <div className="mt-3 rounded-2xl border border-slate-100 bg-white p-3 text-xs text-slate-600">
-          <div className="grid gap-2 sm:grid-cols-2">
-            <div>
-              <span className="block text-slate-400">{t("settings.oldestWaitingJob")}</span>
-              <span className="font-medium text-slate-700">
-                {stats.details.oldestWaitingLabel ?? "—"}
-              </span>
-              {stats.details.oldestWaitingAt && (
-                <span className="ms-1 text-slate-400">
-                  · {new Date(stats.details.oldestWaitingAt).toLocaleString()}
-                </span>
-              )}
-            </div>
-            <div>
-              <span className="block text-slate-400">{t("settings.staleSyncingJobs")}</span>
-              <span className={clsx("font-medium", stats.details.staleSyncing > 0 ? "text-warning" : "text-success")}>
-                {stats.details.staleSyncing}
-              </span>
-            </div>
-          </div>
-
-          {stats.details.recentProblems.length > 0 && (
-            <div className="mt-3 space-y-2">
-              <p className="font-medium text-slate-700">{t("settings.recentSyncProblems")}</p>
-              {stats.details.recentProblems.map((job) => (
-                <div key={job.id} className="rounded-xl bg-slate-50 px-3 py-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="font-medium text-slate-700">
-                      {job.entity} · {job.status}
-                    </span>
-                    <span className="text-slate-400">
-                      {t("settings.retryCount", { count: job.retryCount })}
-                    </span>
-                  </div>
-                  {job.lastError && (
-                    <p className="mt-1 line-clamp-2 text-danger" dir="auto">
-                      {job.lastError}
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      ) : null}
-
       <div className="mt-4 flex flex-col sm:flex-row gap-2 flex-wrap">
         {canExport && (
           <Button
@@ -1039,14 +930,6 @@ function DeviceHealthCard() {
               : t("settings.exportLocalBackup")}
           </Button>
         )}
-        <Button
-          type="button"
-          variant="secondary"
-          onClick={handleRunQueueSync}
-          disabled={queueSyncing || !user?.uid}
-        >
-          {queueSyncing ? t("sync.syncing") : t("settings.runPendingSync")}
-        </Button>
         <Button
           type="button"
           variant="secondary"

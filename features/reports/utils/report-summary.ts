@@ -1,4 +1,4 @@
-import type { Bill, BillItem, CashMovement, Expense, ExpenseCategory, PaymentMethod, Product, Purchase, Shift, SupplierPayment } from '@/types/domain';
+import type { Bill, BillItem, CashMovement, Expense, ExpenseCategory, PaymentMethod, Product, Purchase, SupplierPayment } from '@/types/domain';
 import { getBillNetItemCount, getBillNetProfit, getBillNetTotal } from '@/features/bills/utils/bill-summary';
 import { calculateBillItemNetContribution, calculateLineProfit, calculateLineSubtotal } from '@/lib/utils/calculations';
 import { roundMoney } from '@/lib/utils/money';
@@ -106,20 +106,6 @@ export function filterByDateRange<T extends { createdAt: string }>(
     const created = new Date(row.createdAt);
     if (from && created < from) return false;
     if (to && created >= to) return false;
-    return true;
-  });
-}
-
-
-export function filterShiftsForReport(shifts: Shift[], filters: ReportFilters): Shift[] {
-  const { from, to } = getReportRange(filters);
-  return shifts.filter((shift) => {
-    const opened = new Date(shift.openedAt);
-    const closed = shift.closedAt ? new Date(shift.closedAt) : new Date();
-    // Include any shift that overlaps the selected range. A shift can open
-    // before midnight and still carry today's drawer-affecting records.
-    if (from && closed <= from) return false;
-    if (to && opened >= to) return false;
     return true;
   });
 }
@@ -286,9 +272,7 @@ export function summarizeProductSales(
     const product = isMisc ? undefined : productById.get(item.originalProductId);
     const existing = rows.get(key) ?? {
       key,
-      // Misc rows are relabeled with a localized "Misc sales" string at render
-      // time (reports-workspace); the snapshot name is kept only as a fallback.
-      name: item.productNameAtSale,
+      name: isMisc ? item.productNameAtSale.split(' - ')[0] : item.productNameAtSale,
       barcode: isMisc ? '—' : item.barcodeAtSale,
       category: item.categoryAtSale,
       quantity: 0,
@@ -400,11 +384,6 @@ export function summarizeReportCashMovements(movements: CashMovement[]) {
 export function summarizeCategorySales(rows: ProductSalesRow[]): CategorySalesRow[] {
   const categories = new Map<string, CategorySalesRow>();
   for (const row of rows) {
-    // Misc (متفرقات) rows have no real category and zero profit — they are
-    // surfaced via their own stat card + product row, so keep them out of the
-    // category breakdown (otherwise they'd collide with / dilute a real
-    // user-defined category that happens to share the name).
-    if (row.isMisc) continue;
     const category = row.category?.trim() || '—';
     const existing = categories.get(category) ?? {
       key: category,
@@ -435,10 +414,13 @@ export function summarizeCustomerSales(bills: Bill[]): PartyReportRow[] {
       total: 0,
       due: 0,
     };
-    const total = getBillNetTotal(bill);
+    const billWithSplit = normalizeBillSplit(bill) as Bill;
+    const total = getBillNetTotal(billWithSplit);
     existing.count += 1;
     existing.total = roundMoney(existing.total + total);
-    existing.due = roundMoney(existing.due + Math.max(0, (bill.creditAmount ?? 0) - (bill.returnedAmount ?? 0)));
+    existing.due = roundMoney(
+      existing.due + netSplitField(billWithSplit, billWithSplit.creditAmount),
+    );
     rows.set(key, existing);
   }
   return Array.from(rows.values()).sort((a, b) => b.total - a.total);
@@ -458,10 +440,13 @@ export function summarizeSupplierPurchases(purchases: Purchase[]): PartyReportRo
       total: 0,
       due: 0,
     };
-    const netCost = Math.max(0, purchase.totalAmount - (purchase.returnedAmount ?? 0));
+    const purchaseWithSplit = normalizeBillSplit(purchase) as Purchase;
+    const netCost = Math.max(0, purchaseWithSplit.totalAmount - (purchaseWithSplit.returnedAmount ?? 0));
     existing.count += 1;
     existing.total = roundMoney(existing.total + netCost);
-    existing.due = roundMoney(existing.due + Math.max(0, purchase.creditAmount ?? 0));
+    existing.due = roundMoney(
+      existing.due + netSplitField(purchaseWithSplit, purchaseWithSplit.creditAmount),
+    );
     rows.set(key, existing);
   }
   return Array.from(rows.values()).sort((a, b) => b.total - a.total);

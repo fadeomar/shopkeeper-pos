@@ -19,7 +19,6 @@ import {
   filterBillsForReport,
   filterByDateRange,
   filterExpensesForReport,
-  filterShiftsForReport,
   summarizeReportBills,
   summarizeReportCashMovements,
   summarizeReportExpenses,
@@ -27,7 +26,7 @@ import {
   type ReportRange,
   type ReportFilters,
 } from "@/features/reports/utils/report-summary";
-import { buildCashDrawerReconciliation } from "@/features/reports/utils/accounting-reconciliation";
+import { netSplitField, normalizeBillSplit } from "@/lib/utils/bill-split";
 import type {
   Bill,
   CashMovement,
@@ -38,6 +37,40 @@ import type {
   Shift,
   SupplierPayment,
 } from "@/types/domain";
+
+function startEndForRange(
+  range: ReportRange,
+  customFrom: string,
+  customTo: string,
+): { from?: Date; to?: Date } {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (range === "today") {
+    const next = new Date(today);
+    next.setDate(next.getDate() + 1);
+    return { from: today, to: next };
+  }
+  if (range === "week") {
+    const from = new Date(today);
+    from.setDate(from.getDate() - 6);
+    const to = new Date(today);
+    to.setDate(to.getDate() + 1);
+    return { from, to };
+  }
+  if (range === "month") {
+    return {
+      from: new Date(today.getFullYear(), today.getMonth(), 1),
+      to: new Date(today.getFullYear(), today.getMonth() + 1, 1),
+    };
+  }
+  if (range === "custom") {
+    const from = customFrom ? new Date(customFrom) : undefined;
+    const to = customTo ? new Date(customTo) : undefined;
+    if (to) to.setDate(to.getDate() + 1);
+    return { from, to };
+  }
+  return {};
+}
 
 function categoryKey(c: ExpenseCategory): string {
   return `expenses.cat${c.charAt(0).toUpperCase()}${c.slice(1)}`;
@@ -51,10 +84,7 @@ export function ZReport() {
   const [customFrom, setCustomFrom] = useState(localDateKey());
   const [customTo, setCustomTo] = useState(localDateKey());
 
-  const filters = useMemo<ReportFilters>(
-    () => ({ range, customFrom, customTo }),
-    [range, customFrom, customTo],
-  );
+  const filters: ReportFilters = { range, customFrom, customTo };
 
   const settings = useLiveQuery(() => settingsRepo.get(), []);
   const currency = settings?.currency ?? "ILS";
@@ -88,13 +118,31 @@ export function ZReport() {
   const shifts = useLiveQuery(() => db.shifts.toArray(), [], [] as Shift[]);
 
   const result = useMemo(() => {
+    const { from, to } = startEndForRange(range, customFrom, customTo);
+    const inRange = <T extends { createdAt: string }>(rows: T[]): T[] =>
+      rows.filter((row) => {
+        const d = new Date(row.createdAt);
+        if (from && d < from) return false;
+        if (to && d >= to) return false;
+        return true;
+      });
+
     const filteredBills = filterBillsForReport(bills, filters);
     const filteredPurchases = filterByDateRange(purchases, filters);
-    const filteredCustomerPayments = filterByDateRange(customerPayments, filters);
-    const filteredSupplierPayments = filterByDateRange(supplierPayments, filters);
+    const filteredCustomerPayments = inRange(customerPayments);
+    const filteredSupplierPayments = inRange(supplierPayments);
     const filteredExpenses = filterExpensesForReport(expenses, filters);
-    const filteredCashMovements = filterByDateRange(cashMovements, filters);
-    const shiftsInRange = filterShiftsForReport(shifts, filters);
+    const filteredCashMovements = inRange(cashMovements);
+    const shiftsInRange = shifts.filter((s) => {
+      const opened = new Date(s.openedAt);
+      const closed = s.closedAt ? new Date(s.closedAt) : new Date();
+      // A shift can open before midnight and still contain today's sales,
+      // purchases, payments and expenses. Count any shift that overlaps the
+      // selected report window instead of only shifts opened inside it.
+      if (from && closed <= from) return false;
+      if (to && opened >= to) return false;
+      return true;
+    });
 
     const salesSummary = summarizeReportBills(filteredBills);
     const purchaseSummary = summarizeReportPurchases(
@@ -103,22 +151,63 @@ export function ZReport() {
     );
     const expenseSummary = summarizeReportExpenses(filteredExpenses);
     const cashSummary = summarizeReportCashMovements(filteredCashMovements);
-    const drawer = buildCashDrawerReconciliation({
-      bills: filteredBills,
-      purchases: filteredPurchases,
-      customerPayments: filteredCustomerPayments,
-      supplierPayments: filteredSupplierPayments,
-      expenses: filteredExpenses,
-      cashMovements: filteredCashMovements,
-      shifts: shiftsInRange,
-    });
+
+    // Drawer reconciliation: aggregate across shifts that overlap the range.
+    // Sales cash uses bills' cashAmount net of returns. Purchases cash uses
+    // purchases' cashAmount net of returns.
+    const openingCashAcrossShifts = roundMoney(
+      shiftsInRange.reduce((sum, s) => sum + (Number(s.openingCash) || 0), 0),
+    );
+    const salesCash = roundMoney(
+      filteredBills.reduce(
+        (sum, b) =>
+          sum + netSplitField(normalizeBillSplit(b), b.cashAmount ?? 0),
+        0,
+      ),
+    );
+    const purchaseCash = roundMoney(
+      filteredPurchases.reduce(
+        (sum, p) =>
+          sum +
+          netSplitField(normalizeBillSplit(p), (p as Purchase).cashAmount ?? 0),
+        0,
+      ),
+    );
+    const customerCashIn = roundMoney(
+      filteredCustomerPayments
+        .filter((p) => !p.paymentMethod || p.paymentMethod === "cash")
+        .reduce((sum, p) => sum + (Number(p.amount) || 0), 0),
+    );
+    const supplierCashOut = roundMoney(
+      filteredSupplierPayments
+        .filter((p) => !p.paymentMethod || p.paymentMethod === "cash")
+        .reduce((sum, p) => sum + (Number(p.amount) || 0), 0),
+    );
+    const expectedDrawer = roundMoney(
+      openingCashAcrossShifts +
+        salesCash +
+        customerCashIn -
+        purchaseCash -
+        supplierCashOut -
+        expenseSummary.cashPaidOut +
+        cashSummary.net,
+    );
 
     return {
       salesSummary,
       purchaseSummary,
       expenseSummary,
       cashSummary,
-      drawer,
+      drawer: {
+        openingCash: openingCashAcrossShifts,
+        salesCash,
+        customerCashIn,
+        purchaseCash,
+        supplierCashOut,
+        expenseCash: expenseSummary.cashPaidOut,
+        cashMovementsNet: cashSummary.net,
+        expectedDrawer,
+      },
       customerPaymentsTotal: roundMoney(
         filteredCustomerPayments.reduce(
           (sum, p) => sum + (Number(p.amount) || 0),
@@ -380,7 +469,7 @@ export function ZReport() {
           />
           <Row
             label={t("reports.zDrawerPurchaseCashOut")}
-            value={formatCurrency(result.drawer.purchaseCashOut, currency)}
+            value={formatCurrency(result.drawer.purchaseCash, currency)}
           />
           <Row
             label={t("reports.zDrawerSupplierPaymentsCash")}
@@ -388,11 +477,11 @@ export function ZReport() {
           />
           <Row
             label={t("reports.zDrawerExpensesCash")}
-            value={formatCurrency(result.drawer.expenseCashOut, currency)}
+            value={formatCurrency(result.drawer.expenseCash, currency)}
           />
           <Row
             label={t("reports.zDrawerCashMovements")}
-            value={`${result.drawer.manualCashNet >= 0 ? "+" : ""}${formatCurrency(result.drawer.manualCashNet, currency)}`}
+            value={`${result.drawer.cashMovementsNet >= 0 ? "+" : ""}${formatCurrency(result.drawer.cashMovementsNet, currency)}`}
           />
           <Row
             label={t("reports.zDrawerExpected")}
@@ -401,24 +490,6 @@ export function ZReport() {
             highlight
           />
         </Section>
-
-        {result.drawer.issues.length > 0 && (
-          <Section title={t("reports.reconciliationIssuesTitle")}>
-            {result.drawer.issues.map((issue) => {
-              const key = issue.key === "split_mismatch"
-                ? "reports.reconciliationIssueSplitMismatch"
-                : "reports.reconciliationIssueMissingShift";
-              return (
-                <Row
-                  key={issue.key}
-                  label={t(key, { count: issue.count })}
-                  value={issue.sampleLabels.join(", ") || String(issue.count)}
-                  highlight={issue.severity === "danger"}
-                />
-              );
-            })}
-          </Section>
-        )}
         </div>
 
         <p className="text-center text-xs text-slate-400">

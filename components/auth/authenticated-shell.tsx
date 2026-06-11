@@ -3,13 +3,15 @@
 import { useState, useEffect, useId, useRef } from "react";
 import Link from "next/link";
 import type { Route } from "next";
-import type { AuthCacheEntry } from "@/types/domain";
 import { useRouter, usePathname } from "next/navigation";
 import clsx from "clsx";
 import { useAuth } from "@/components/providers/auth-context";
 import { useLocale } from "@/components/providers/locale-context";
 import { signIn, registerUser } from "@/lib/firebase/auth-service";
-import { getSubscriptionAccessState, subscriptionDaysRemaining, subscriptionExpiryDateLabel } from "@/lib/services/subscription-service";
+import {
+  getSubscriptionAccessState,
+  subscriptionExpiryDateLabel,
+} from "@/lib/services/subscription-service";
 import { syncAllToCloud, type SyncMeta } from "@/lib/firebase/sync-service";
 import { getPendingSyncCount } from "@/lib/services/sync-queue-service";
 import { getOpenConflicts } from "@/lib/services/sync-conflict-service";
@@ -46,6 +48,7 @@ import {
 // these paths bypass the auth gate; every other route keeps its existing
 // behaviour. Public pages render in PublicShell (no DB, no sync).
 const PUBLIC_PATHS = ["/guide"] as const;
+const E2E_AUTH_ENABLED = process.env.NEXT_PUBLIC_E2E_AUTH === "1";
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some(
@@ -120,15 +123,8 @@ export function AuthenticatedShell({
   if (status === "unauthenticated") return <AuthScreen />;
   if (status === "pending") return <PendingScreen onLogout={logout} />;
   if (status === "inactive") return <InactiveScreen onLogout={logout} />;
-
-  // Expired/suspended cashier accounts are allowed to open the POS shell in
-  // read-only mode: data remains visible, but every create/update service and
-  // Firestore rule still blocks writes. This is less scary for pilot users than
-  // a full lock screen and lets support inspect debts, reports, and inventory.
-  if (status === "subscription_expired" && user?.role !== "owner") {
-    return <CashierShell>{children}</CashierShell>;
-  }
-  if (status === "subscription_expired") return <SubscriptionExpiredScreen onLogout={logout} />;
+  if (status === "subscription_expired")
+    return <SubscriptionExpiredScreen onLogout={logout} />;
 
   // Authenticated — split by role
   if (user?.role === "owner") return <AdminShell>{children}</AdminShell>;
@@ -232,7 +228,7 @@ function CashierShell({ children }: { children: React.ReactNode }) {
 
   // Restore flow state
   const [cloudMeta, setCloudMeta] = useState<SyncMeta | null>(null);
-  const [restoreChecked, setRestoreChecked] = useState(false);
+  const [restoreChecked, setRestoreChecked] = useState(E2E_AUTH_ENABLED);
   const [restoreSkipped, setRestoreSkipped] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [restoreStep, setRestoreStep] = useState("");
@@ -245,7 +241,7 @@ function CashierShell({ children }: { children: React.ReactNode }) {
   // reopens in every branch of runRestoreCheck (success, skip, no-meta, or
   // error) via the finally.
   useEffect(() => {
-    if (!uid || checkRan.current === uid) return;
+    if (E2E_AUTH_ENABLED || !uid || checkRan.current === uid) return;
     checkRan.current = uid;
     setRestoreDecisionPending(true);
     void runRestoreCheck(uid).finally(() => setRestoreDecisionPending(false));
@@ -392,7 +388,7 @@ function CashierShell({ children }: { children: React.ReactNode }) {
 
   // Reconnect handler + daily auto-sync (only after restore decision)
   useEffect(() => {
-    if (!uid || !restoreChecked || restoreSkipped) return;
+    if (E2E_AUTH_ENABLED || !uid || !restoreChecked || restoreSkipped) return;
 
     const pullLatestSettings = async () => {
       const pulled = await pullSettingsFromCloud(uid);
@@ -483,7 +479,6 @@ function CashierShell({ children }: { children: React.ReactNode }) {
           className="min-w-0 p-3 pb-24 sm:p-4 sm:pb-24 lg:p-6 lg:pb-6"
         >
           <DbBootstrap>
-            {user && <SubscriptionStatusBanner user={user} />}
             <ConflictResolverModal userId={uid} />
             {cloudMeta && (
               <RestoreModal
@@ -503,49 +498,6 @@ function CashierShell({ children }: { children: React.ReactNode }) {
       {/* Fixed mobile bottom navigation — hidden on desktop */}
       <MobileBottomNav />
     </>
-  );
-}
-
-
-function SubscriptionStatusBanner({ user }: { user: AuthCacheEntry }) {
-  const { t } = useLocale();
-  const state = getSubscriptionAccessState(user);
-  const daysLeft = subscriptionDaysRemaining(user);
-
-  const shouldWarn =
-    state === "trial" ||
-    state === "expired" ||
-    state === "suspended" ||
-    (state === "active" && daysLeft !== null && daysLeft <= 7);
-
-  if (!shouldWarn) return null;
-
-  const isBlocked = state === "expired" || state === "suspended";
-  const isDanger = isBlocked || (daysLeft !== null && daysLeft <= 1);
-  const message = state === "suspended"
-    ? `${t("auth.subscriptionSuspendedTitle")} · ${t("auth.subscriptionReadOnlyNote")}`
-    : state === "expired"
-      ? `${t("auth.subscriptionExpiredTitle")} · ${t("auth.subscriptionReadOnlyNote")}`
-      : state === "trial"
-        ? t("auth.subscriptionTrialBanner", { count: daysLeft ?? 0 })
-        : t("auth.subscriptionEndingSoonBanner", { count: daysLeft ?? 0, date: subscriptionExpiryDateLabel(user) });
-
-  return (
-    <div
-      className={clsx(
-        "mb-3 rounded-2xl border px-4 py-3 text-sm font-medium shadow-xs",
-        isDanger
-          ? "border-danger/20 bg-danger-soft text-danger"
-          : "border-warning/20 bg-warning-soft text-warning",
-      )}
-    >
-      <div>{message}</div>
-      {isBlocked && user.subscriptionEndAt && state !== "suspended" && (
-        <div className="mt-1 text-xs opacity-80">
-          {t("auth.subscriptionExpiredOn", { date: subscriptionExpiryDateLabel(user) })}
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -858,7 +810,6 @@ function InactiveScreen({ onLogout }: { onLogout: () => void }) {
   );
 }
 
-
 function SubscriptionExpiredScreen({ onLogout }: { onLogout: () => void }) {
   const { user, refreshStatus } = useAuth();
   const { t } = useLocale();
@@ -891,14 +842,20 @@ function SubscriptionExpiredScreen({ onLogout }: { onLogout: () => void }) {
           </svg>
         </div>
         <h2 className="font-semibold text-slate-800 mb-2">
-          {isSuspended ? t("auth.subscriptionSuspendedTitle") : t("auth.subscriptionExpiredTitle")}
+          {isSuspended
+            ? t("auth.subscriptionSuspendedTitle")
+            : t("auth.subscriptionExpiredTitle")}
         </h2>
         <p className="text-sm text-slate-500 mb-2">
-          {isSuspended ? t("auth.subscriptionSuspendedDesc") : t("auth.subscriptionExpiredDesc")}
+          {isSuspended
+            ? t("auth.subscriptionSuspendedDesc")
+            : t("auth.subscriptionExpiredDesc")}
         </p>
         {user?.subscriptionEndAt && !isSuspended && (
           <p className="text-xs text-slate-400 mb-5">
-            {t("auth.subscriptionExpiredOn", { date: subscriptionExpiryDateLabel(user) })}
+            {t("auth.subscriptionExpiredOn", {
+              date: subscriptionExpiryDateLabel(user),
+            })}
           </p>
         )}
         <div className="rounded-xl bg-warning-soft border border-warning/20 px-3 py-2 text-xs text-warning mb-5">
@@ -1042,25 +999,14 @@ function SignUpForm({ onBack }: { onBack: () => void }) {
       await registerUser(email, password, name, phone || undefined);
     } catch (err: unknown) {
       const code = (err as { code?: string }).code ?? "";
-      const message = (err as { message?: string }).message ?? "";
-      console.error("[auth] trial registration failed", { code, message, error: err });
-
       if (code === "auth/email-already-in-use") {
         setError(t("auth.emailInUse"));
       } else if (code === "auth/weak-password") {
         setError(t("auth.weakPassword"));
-      } else if (code === "auth/invalid-email") {
-        setError(t("auth.invalidEmail"));
-      } else if (code === "auth/network-request-failed" || code === "unavailable") {
+      } else if (code === "auth/network-request-failed") {
         setError(t("auth.noInternetRegister"));
-      } else if (code === "auth/operation-not-allowed" || code === "auth/admin-restricted-operation") {
-        setError(t("auth.authProviderDisabled"));
-      } else if (code === "permission-denied") {
-        setError(t("auth.profileCreateDenied"));
-      } else if (code === "auth/account-created-sign-in-failed") {
-        setError(t("auth.accountCreatedSignInFailed"));
       } else {
-        setError(code ? `${t("auth.registrationFailed")} ${t("auth.errorCode")}: ${code}` : t("auth.registrationFailed"));
+        setError(t("auth.registrationFailed"));
       }
     } finally {
       setLoading(false);
