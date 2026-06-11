@@ -286,7 +286,9 @@ export function summarizeProductSales(
     const product = isMisc ? undefined : productById.get(item.originalProductId);
     const existing = rows.get(key) ?? {
       key,
-      name: isMisc ? item.productNameAtSale.split(' - ')[0] : item.productNameAtSale,
+      // Misc rows are relabeled with a localized "Misc sales" string at render
+      // time (reports-workspace); the snapshot name is kept only as a fallback.
+      name: item.productNameAtSale,
       barcode: isMisc ? '—' : item.barcodeAtSale,
       category: item.categoryAtSale,
       quantity: 0,
@@ -398,6 +400,11 @@ export function summarizeReportCashMovements(movements: CashMovement[]) {
 export function summarizeCategorySales(rows: ProductSalesRow[]): CategorySalesRow[] {
   const categories = new Map<string, CategorySalesRow>();
   for (const row of rows) {
+    // Misc (متفرقات) rows have no real category and zero profit — they are
+    // surfaced via their own stat card + product row, so keep them out of the
+    // category breakdown (otherwise they'd collide with / dilute a real
+    // user-defined category that happens to share the name).
+    if (row.isMisc) continue;
     const category = row.category?.trim() || '—';
     const existing = categories.get(category) ?? {
       key: category,

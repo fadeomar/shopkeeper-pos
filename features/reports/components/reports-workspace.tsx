@@ -64,7 +64,9 @@ function ProductRows({
           className="grid grid-cols-[1fr_auto] gap-3 py-3 text-sm"
         >
           <div className="min-w-0">
-            <p className="truncate font-semibold text-slate-800">{row.name}</p>
+            <p className="truncate font-semibold text-slate-800">
+              {row.isMisc ? t("reports.miscSales") : row.name}
+            </p>
             <p className="truncate text-xs text-slate-500">
               {row.barcode} · {row.category || "—"}
             </p>

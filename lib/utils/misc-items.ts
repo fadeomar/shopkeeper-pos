@@ -1,6 +1,5 @@
 export const MISC_ITEM_ID_PREFIX = "misc";
 export const MISC_ITEM_BARCODE = "MISC";
-export const MISC_ITEM_CATEGORY = "Misc";
 
 export type MaybeMiscLine = {
   productId?: string;

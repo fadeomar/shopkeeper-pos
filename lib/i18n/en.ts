@@ -548,7 +548,7 @@ export const en: TranslationDict = {
   reports: {
     miscSales: "Misc sales",
     miscSalesHelper: "{{count}} non-stock item(s)",
-    profitExcludesMisc: "Misc profit is excluded unless a real cost is recorded.",
+    profitExcludesMisc: "Profit excludes misc items — their cost isn't recorded.",
     title: "Reports",
     subtitle:
       "Understand sales, profit, payments, top products, and low-stock items from the data already saved in the app.",
@@ -690,7 +690,7 @@ export const en: TranslationDict = {
     miscCategory: "Misc",
     miscQuickSale: "Quick sale without barcode",
     miscItemAdded: "Misc item added: {{total}}",
-    miscProfitNote: "Misc items count as sales, but do not add product profit because their real cost is not recorded.",
+    miscProfitNote: "You're selling this at a price you type in, but its cost isn't recorded — so it adds to total sales, not to profit.",
     nonStock: "No stock",
     title: "Create bill",
     subtitle:

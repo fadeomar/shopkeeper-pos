@@ -458,6 +458,13 @@ export function PosScreen() {
     let stockCount = 0;
 
     const next = draftItems.reduce<BillDraftItem[]>((acc, item) => {
+      // Misc (متفرقات) lines have no backing product — they must never be
+      // reconciled or pruned against the live catalog, or a freshly added
+      // misc line gets dropped the moment this effect runs.
+      if (isMiscLine(item)) {
+        acc.push(item);
+        return acc;
+      }
       const live = products.find((p) => p.id === item.productId);
       if (!live || live.status !== "active") {
         removedCount += 1;
