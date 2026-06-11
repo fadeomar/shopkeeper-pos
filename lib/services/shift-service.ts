@@ -8,6 +8,7 @@ import { getBillNetItemCount } from '@/features/bills/utils/bill-summary';
 import { buildSyncQueueItem } from '@/lib/services/sync-queue-service';
 import { logAudit } from '@/lib/services/audit-service';
 import type { Bill, CashMovement, CustomerPayment, Expense, Purchase, Shift, SupplierPayment } from '@/types/domain';
+import { assertSubscriptionCanWrite } from '@/lib/services/subscription-service';
 
 function requestSync(): void {
   if (typeof window !== 'undefined') {
@@ -208,6 +209,7 @@ export async function openShift(input: {
   cashierName: string;
   notes?: string;
 }): Promise<Shift> {
+  await assertSubscriptionCanWrite();
   const openingCash = Number(input.openingCash);
   if (!Number.isFinite(openingCash) || openingCash < 0) {
     throw new AppError(AppErrorCode.SHIFT_OPENING_CASH_NEGATIVE);
@@ -261,6 +263,7 @@ export async function closeShift(input: {
   countedCash: number;
   notes?: string;
 }): Promise<Shift> {
+  await assertSubscriptionCanWrite();
   const countedCash = Number(input.countedCash);
   if (!Number.isFinite(countedCash) || countedCash < 0) {
     throw new AppError(AppErrorCode.SHIFT_COUNTED_CASH_NEGATIVE);

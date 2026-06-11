@@ -8,6 +8,7 @@ import { logAudit } from "@/lib/services/audit-service";
 import { normalizeCustomerKey as sharedNormalizeCustomerKey } from "@/lib/utils/customer-key";
 import { netSplitField, normalizeBillSplit } from "@/lib/utils/bill-split";
 import type { Bill, Customer, CustomerPayment } from "@/types/domain";
+import { assertSubscriptionCanWrite } from '@/lib/services/subscription-service';
 
 export interface CustomerLedgerRow {
   key: string;
@@ -255,6 +256,7 @@ export async function recordCustomerPayment(input: {
   paymentMethod?: CustomerPayment["paymentMethod"];
   shiftId?: string;
 }): Promise<CustomerPayment> {
+  await assertSubscriptionCanWrite();
   const amount = Number(input.amount);
   if (!input.customerKey) throw new AppError(AppErrorCode.CUSTOMER_REQUIRED);
   if (!Number.isFinite(amount) || amount <= 0)

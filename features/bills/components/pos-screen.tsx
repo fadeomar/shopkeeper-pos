@@ -20,15 +20,18 @@ import {
 } from "@/lib/utils/calculations";
 import { formatCurrency } from "@/lib/utils/money";
 import { createFinalizedBill } from "@/lib/services/billing-service";
+import { nowIso } from "@/lib/utils/date";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   CircleCheck,
   Cloud,
   CloudUpload,
+  Phone,
   ReceiptText,
   Search,
   ShoppingCart,
+  UserPlus,
   Users,
   X,
 } from "lucide-react";
@@ -49,6 +52,8 @@ import { QuantityStepper } from "@/components/pos/quantity-stepper";
 import { QuickProductModal } from "./quick-product-modal";
 import { ReceiptView } from "./receipt-view";
 import { normalizeBarcode } from "@/lib/utils/barcode";
+import { createId } from "@/lib/utils/id";
+import { isMiscLine, MISC_ITEM_BARCODE } from "@/lib/utils/misc-items";
 import { useAuth } from "@/components/providers/auth-context";
 import { usePermissions } from "@/lib/hooks/use-permissions";
 import { useOnlineStatus } from "@/lib/hooks/use-online-status";
@@ -280,8 +285,9 @@ function SuccessPanel({
 export function PosScreen() {
   const { t, dir } = useLocale();
   const tableLabels = useDataTableLabels();
-  const { user } = useAuth();
+  const { user, status } = useAuth();
   const { canDiscount } = usePermissions();
+  const isReadOnlyMode = status === "subscription_expired";
   const products = useLiveQuery(
     () => db.products.where("status").equals("active").sortBy("name"),
     [],
@@ -293,6 +299,24 @@ export function PosScreen() {
   const online = useOnlineStatus();
   const currency = settings?.currency ?? "ILS";
   const draftKey = user?.uid ? `${POS_DRAFT_KEY_PREFIX}:${user.uid}` : null;
+
+  function shouldAutoFocusBarcode() {
+    if (typeof window === "undefined") return false;
+    // On touch phones/tablets, focusing the barcode input reopens the soft keyboard.
+    // Keep auto-focus for desktop/laptop scanner workflows only.
+    const coarsePointer = window.matchMedia?.("(pointer: coarse)").matches ?? false;
+    const compactViewport = window.matchMedia?.("(max-width: 767px)").matches ?? false;
+    return !coarsePointer && !compactViewport;
+  }
+
+  function focusBarcodeInputSoon() {
+    if (typeof window === "undefined") return;
+    window.setTimeout(() => {
+      if (shouldAutoFocusBarcode()) {
+        barcodeInputRef.current?.focus({ preventScroll: true });
+      }
+    }, 0);
+  }
 
   // Mobile UX: tapping a numeric input opens the soft keyboard and leaves it
   // up until the user taps far away. That keyboard covers the bill summary +
@@ -314,8 +338,15 @@ export function PosScreen() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [miscOpen, setMiscOpen] = useState(false);
+  const [miscDescription, setMiscDescription] = useState("");
+  const [miscPrice, setMiscPrice] = useState("");
+  const [miscQuantity, setMiscQuantity] = useState("1");
   const [customerSheetOpen, setCustomerSheetOpen] = useState(false);
   const [customerSearch, setCustomerSearch] = useState("");
+  const [manualCustomerName, setManualCustomerName] = useState("");
+  const [manualCustomerPhone, setManualCustomerPhone] = useState("");
+  const [isSavingCustomer, setIsSavingCustomer] = useState(false);
   const [missingBarcode, setMissingBarcode] = useState("");
   const [isPaidAmountManuallyEdited, setIsPaidAmountManuallyEdited] =
     useState(false);
@@ -363,8 +394,9 @@ export function PosScreen() {
   });
 
   useEffect(() => {
-    barcodeInputRef.current?.focus();
-  }, []);
+    if (!scannerOpen) focusBarcodeInputSoon();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scannerOpen]);
 
   useEffect(() => {
     if (!settings) return;
@@ -426,6 +458,13 @@ export function PosScreen() {
     let stockCount = 0;
 
     const next = draftItems.reduce<BillDraftItem[]>((acc, item) => {
+      // Misc (متفرقات) lines have no backing product — they must never be
+      // reconciled or pruned against the live catalog, or a freshly added
+      // misc line gets dropped the moment this effect runs.
+      if (isMiscLine(item)) {
+        acc.push(item);
+        return acc;
+      }
       const live = products.find((p) => p.id === item.productId);
       if (!live || live.status !== "active") {
         removedCount += 1;
@@ -486,6 +525,65 @@ export function PosScreen() {
   const watchedTaxAmount = Number(form.watch("taxAmount") || 0);
   const watchedPaidAmount = Number(form.watch("paidAmount") || 0);
   const watchedNotes = form.watch("notes");
+
+  useEffect(() => {
+    if (!customerSheetOpen) return;
+    const searchValue = customerSearch.trim();
+    const searchLooksLikePhone = Boolean(normalizePhone(searchValue));
+    setManualCustomerName(watchedCustomerName?.trim() || (searchLooksLikePhone ? "" : searchValue));
+    setManualCustomerPhone(watchedCustomerPhone?.trim() || (searchLooksLikePhone ? searchValue : ""));
+    // Only seed the manual form when the sheet opens; after that, the fields are user-controlled.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerSheetOpen]);
+
+  async function saveManualCustomer() {
+    if (isReadOnlyMode) {
+      push(t("billing.readOnlyModeHint"), "error");
+      return;
+    }
+
+    const name = manualCustomerName.trim();
+    const phone = manualCustomerPhone.trim();
+    if (!name && !phone) {
+      push(t("billing.customerRequired"), "error");
+      return;
+    }
+
+    setIsSavingCustomer(true);
+    try {
+      const normalizedPhone = normalizePhone(phone);
+      const existing = normalizedPhone
+        ? await customerRepo.findByNormalizedPhone(normalizedPhone)
+        : undefined;
+      const now = nowIso();
+      const customer: Customer = {
+        id: existing?.id ?? createId("cust"),
+        name: name || existing?.name || t("billing.customerName"),
+        phone: phone || undefined,
+        normalizedPhone: normalizedPhone || undefined,
+        notes: existing?.notes,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+        syncStatus: "pending",
+      };
+
+      await customerRepo.save(customer);
+      selectCustomer(customer);
+      setCustomerSheetOpen(false);
+      setCustomerSearch("");
+      setManualCustomerName("");
+      setManualCustomerPhone("");
+      push({
+        title: existing ? t("billing.customerUpdated") : t("billing.customerSaved"),
+        description: t("billing.customerSelected"),
+        tone: "success",
+      });
+    } catch (error) {
+      push(getServiceErrorMessage(error, t, t("billing.customerSaveFailed")), "error");
+    } finally {
+      setIsSavingCustomer(false);
+    }
+  }
 
   useEffect(() => {
     if (!draftKey) return;
@@ -617,6 +715,7 @@ export function PosScreen() {
     hasEnoughPayment &&
     !shiftBlocked &&
     !discountExceedsLimit &&
+    !isReadOnlyMode &&
     (!isCreditSale || hasCreditCustomer);
 
   useEffect(() => {
@@ -646,7 +745,8 @@ export function PosScreen() {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.defaultPrevented) return;
-      if (confirmOpen || scannerOpen || quickAddOpen || lastFinalized) return;
+      if (confirmOpen || scannerOpen || quickAddOpen || miscOpen || lastFinalized)
+        return;
       if (!(e.ctrlKey || e.metaKey) || e.key !== "Enter") return;
       if (!canFinalize) return;
       e.preventDefault();
@@ -658,6 +758,7 @@ export function PosScreen() {
     confirmOpen,
     scannerOpen,
     quickAddOpen,
+    miscOpen,
     lastFinalized,
     canFinalize,
     form,
@@ -672,6 +773,11 @@ export function PosScreen() {
     product: Product,
     options?: { focusBarcode?: boolean },
   ) {
+    if (isReadOnlyMode) {
+      push(t("billing.readOnlyModeHint"), "error");
+      return;
+    }
+
     if (product.quantityInStock <= 0) {
       push(t("billing.outOfStock"), "error");
       return;
@@ -707,11 +813,16 @@ export function PosScreen() {
     }
 
     if (options?.focusBarcode !== false) {
-      setTimeout(() => barcodeInputRef.current?.focus(), 0);
+      focusBarcodeInputSoon();
     }
   }
 
   function promptQuickAddProduct(barcode: string) {
+    if (isReadOnlyMode) {
+      push(t("billing.readOnlyModeHint"), "error");
+      return;
+    }
+
     setScannerOpen(false);
     setBarcodeQuery("");
     setMissingBarcode(barcode);
@@ -720,6 +831,11 @@ export function PosScreen() {
   }
 
   function addByBarcode() {
+    if (isReadOnlyMode) {
+      push(t("billing.readOnlyModeHint"), "error");
+      return;
+    }
+
     const bc = normalizeBarcode(barcodeQuery);
     if (!bc) return;
     const product = products?.find((p) => normalizeBarcode(p.barcode) === bc);
@@ -732,16 +848,27 @@ export function PosScreen() {
   }
 
   function handleScanForBill(barcode: string) {
+    if (isReadOnlyMode) {
+      push(t("billing.readOnlyModeHint"), "error");
+      return;
+    }
+
     const bc = normalizeBarcode(barcode);
     const product = products?.find((p) => normalizeBarcode(p.barcode) === bc);
     if (!product) {
       promptQuickAddProduct(bc);
       return;
     }
-    appendProduct(product);
+    appendProduct(product, { focusBarcode: false });
   }
 
   function handleQuickProductCreated(product: Product) {
+    if (isReadOnlyMode) {
+      setQuickAddOpen(false);
+      push(t("billing.readOnlyModeHint"), "error");
+      return;
+    }
+
     setQuickAddOpen(false);
     setBarcodeQuery("");
     setMissingBarcode("");
@@ -752,6 +879,58 @@ export function PosScreen() {
     }
   }
 
+  function resetMiscForm() {
+    setMiscDescription("");
+    setMiscPrice("");
+    setMiscQuantity("1");
+  }
+
+  function addMiscLine(priceOverride?: number) {
+    if (isReadOnlyMode) {
+      push(t("billing.readOnlyModeHint"), "error");
+      return;
+    }
+
+    const price = Math.max(0, Number(priceOverride ?? miscPrice) || 0);
+    const quantity = Math.max(1, Math.trunc(Number(miscQuantity) || 1));
+    const description = miscDescription.trim();
+
+    if (price <= 0) {
+      push(t("billing.miscPriceRequired"), "error");
+      return;
+    }
+
+    if (lastFinalized) setLastFinalized(null);
+
+    const name = description
+      ? `${t("billing.miscItem")} - ${description}`
+      : t("billing.miscItem");
+    const newItem: BillDraftItem = {
+      productId: createId("misc"),
+      itemKind: "misc",
+      miscDescription: description || undefined,
+      barcode: MISC_ITEM_BARCODE,
+      name,
+      category: t("billing.miscCategory"),
+      availableStock: Number.MAX_SAFE_INTEGER,
+      quantity,
+      // Cost is intentionally equal to sell price so product-profit reports do
+      // not invent profit for a sale whose real cost was not recorded.
+      unitBuyPrice: price,
+      unitSellPrice: price,
+    };
+
+    setDraftItems((cur) => [...cur, newItem]);
+    push(
+      t("billing.miscItemAdded", {
+        total: formatCurrency(calculateLineSubtotal(quantity, price), currency),
+      }),
+    );
+    setMiscOpen(false);
+    resetMiscForm();
+    focusBarcodeInputSoon();
+  }
+
   function updateQuantity(productId: string, quantity: number) {
     // Number(""), Number("abc"), Number(".") all yield NaN/non-integer values.
     // Coerce to a safe whole number before clamping so the draft never enters
@@ -760,11 +939,27 @@ export function PosScreen() {
     setDraftItems((cur) =>
       cur.map((i) => {
         if (i.productId !== productId) return i;
+        // Misc lines have no real stock cap (sentinel availableStock), so they
+        // are never clamped down to a stock count.
+        const maxQuantity = isMiscLine(i)
+          ? Number.MAX_SAFE_INTEGER
+          : i.availableStock;
         return {
           ...i,
-          quantity: Math.max(1, Math.min(safeQuantity, i.availableStock)),
+          quantity: Math.max(1, Math.min(safeQuantity, maxQuantity)),
         };
       }),
+    );
+  }
+
+  function updateMiscSellPrice(productId: string, price: number) {
+    const safePrice = Number.isFinite(price) ? Math.max(0, price) : 0;
+    setDraftItems((cur) =>
+      cur.map((i) =>
+        i.productId === productId && isMiscLine(i)
+          ? { ...i, unitBuyPrice: safePrice, unitSellPrice: safePrice }
+          : i,
+      ),
     );
   }
 
@@ -784,10 +979,15 @@ export function PosScreen() {
       notes: "",
     });
     if (draftKey) window.localStorage.removeItem(draftKey);
-    barcodeInputRef.current?.focus();
+    focusBarcodeInputSoon();
   }
 
   async function finalize(values: BillFormSchema) {
+    if (isReadOnlyMode) {
+      push(t("billing.readOnlyModeHint"), "error");
+      return;
+    }
+
     if (draftItems.length === 0) {
       push(t("billing.addOneProduct"), "error");
       return;
@@ -832,7 +1032,9 @@ export function PosScreen() {
       header: t("billing.stock"),
       cell: ({ row }) => (
         <span className="tabular-nums text-slate-500">
-          {row.original.availableStock}
+          {isMiscLine(row.original)
+            ? t("billing.nonStock")
+            : row.original.availableStock}
         </span>
       ),
     },
@@ -846,8 +1048,9 @@ export function PosScreen() {
             value={item.quantity}
             onChange={(v) => updateQuantity(item.productId, v)}
             min={1}
-            max={item.availableStock}
+            max={isMiscLine(item) ? undefined : item.availableStock}
             className="w-[160px]"
+            disabled={isReadOnlyMode}
           />
         );
       },
@@ -855,11 +1058,26 @@ export function PosScreen() {
     {
       accessorKey: "unitSellPrice",
       header: t("billing.sell"),
-      cell: ({ row }) => (
-        <span className="tabular-nums text-slate-700" dir="ltr">
-          {formatCurrency(row.original.unitSellPrice, currency)}
-        </span>
-      ),
+      cell: ({ row }) =>
+        isMiscLine(row.original) ? (
+          <MoneyInput
+            value={row.original.unitSellPrice}
+            onValueChange={(v) =>
+              updateMiscSellPrice(row.original.productId, v)
+            }
+            currency={currency}
+            min={0}
+            onKeyDown={dismissKeyboardOnEnter}
+            inputSize="sm"
+            className="w-32"
+            fullWidth={false}
+            disabled={isReadOnlyMode}
+          />
+        ) : (
+          <span className="tabular-nums text-slate-700" dir="ltr">
+            {formatCurrency(row.original.unitSellPrice, currency)}
+          </span>
+        ),
     },
     {
       id: "subtotal",
@@ -887,6 +1105,7 @@ export function PosScreen() {
           type="button"
           variant="ghost"
           size="sm"
+          disabled={isReadOnlyMode}
           onClick={() =>
             setDraftItems((cur) =>
               cur.filter((i) => i.productId !== row.original.productId),
@@ -899,6 +1118,10 @@ export function PosScreen() {
     },
   ];
 
+  const canSaveManualCustomer = Boolean(
+    manualCustomerName.trim() || manualCustomerPhone.trim(),
+  );
+
   if (!products) {
     return (
       <Card>
@@ -909,6 +1132,12 @@ export function PosScreen() {
 
   return (
     <>
+      {isReadOnlyMode && (
+        <div className="mb-4 rounded-2xl border border-danger/20 bg-danger-soft px-4 py-3 text-sm font-medium text-danger">
+          {t("billing.readOnlyModeHint")}
+        </div>
+      )}
+
       {/* If no shift is open the bill still finalizes, but it won't be counted
           in any drawer reconciliation. Surface a soft warning + a link to the
           shift workspace so the cashier sees the consequence before selling. */}
@@ -950,6 +1179,9 @@ export function PosScreen() {
               ref={barcodeInputRef}
               placeholder={t("billing.typeBarcode")}
               value={barcodeQuery}
+              inputMode={scannerOpen ? "none" : undefined}
+              readOnly={scannerOpen || isReadOnlyMode}
+              disabled={isReadOnlyMode}
               onChange={(e) => setBarcodeQuery(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
@@ -962,10 +1194,18 @@ export function PosScreen() {
               }}
               className="flex-1"
             />
-            <Button type="button" variant="secondary" onClick={addByBarcode}>
+            <Button type="button" variant="secondary" onClick={addByBarcode} disabled={isReadOnlyMode}>
               {t("common.add")}
             </Button>
-            <Button type="button" onClick={() => setScannerOpen(true)}>
+            <Button
+              type="button"
+              onPointerDown={(event) => event.preventDefault()}
+              disabled={isReadOnlyMode}
+              onClick={() => {
+                barcodeInputRef.current?.blur();
+                setScannerOpen(true);
+              }}
+            >
               {t("common.scan")}
             </Button>
             <div className="relative">
@@ -1006,22 +1246,33 @@ export function PosScreen() {
 
           {/* Product select row — picking a product adds it to the bill
               immediately (no separate "Add item" tap). The selection resets to
-              the placeholder so the same product can be picked again. */}
-          <SearchableSelect
-            value=""
-            onValueChange={(value) => {
-              if (!value) return;
-              const product = products?.find((p) => p.id === value);
-              // Dropdown selection must not refocus the barcode input — on
-              // mobile that re-opens the keyboard and interrupts checkout.
-              if (product) appendProduct(product, { focusBarcode: false });
-            }}
-            options={productOptions}
-            placeholder={t("billing.selectProduct")}
-            searchPlaceholder={t("products.searchPlaceholder")}
-            emptyMessage={t("common.noResults")}
-            disabled={!products?.length}
-          />
+              the placeholder so the same product can be picked again. The misc
+              button lets the cashier add an ad-hoc open-price line. */}
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">
+            <SearchableSelect
+              value=""
+              onValueChange={(value) => {
+                if (!value) return;
+                const product = products?.find((p) => p.id === value);
+                // Dropdown selection must not refocus the barcode input — on
+                // mobile that re-opens the keyboard and interrupts checkout.
+                if (product) appendProduct(product, { focusBarcode: false });
+              }}
+              options={productOptions}
+              placeholder={t("billing.selectProduct")}
+              searchPlaceholder={t("products.searchPlaceholder")}
+              emptyMessage={t("common.noResults")}
+              disabled={isReadOnlyMode || !products?.length}
+            />
+            <Button
+              type="button"
+              variant="soft"
+              onClick={() => setMiscOpen(true)}
+              disabled={isReadOnlyMode}
+            >
+              {t("billing.addMiscItem")}
+            </Button>
+          </div>
 
           {/* Items */}
           {draftItems.length === 0 ? (
@@ -1043,13 +1294,16 @@ export function PosScreen() {
                           {item.name}
                         </p>
                         <p className="text-xs text-slate-500 font-mono truncate">
-                          {item.barcode}
+                          {isMiscLine(item)
+                            ? item.miscDescription || t("billing.miscQuickSale")
+                            : item.barcode}
                         </p>
                       </div>
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
+                        disabled={isReadOnlyMode}
                         onClick={() =>
                           setDraftItems((cur) =>
                             cur.filter((i) => i.productId !== item.productId),
@@ -1063,17 +1317,35 @@ export function PosScreen() {
                       <div className="rounded-xl bg-slate-50 p-2">
                         <p className="text-slate-500">{t("billing.stock")}</p>
                         <p className="font-bold text-slate-800 tabular-nums">
-                          {item.availableStock}
+                          {isMiscLine(item)
+                            ? t("billing.nonStock")
+                            : item.availableStock}
                         </p>
                       </div>
                       <div className="rounded-xl bg-slate-50 p-2">
                         <p className="text-slate-500">{t("billing.sell")}</p>
-                        <p
-                          className="font-bold text-slate-800 tabular-nums"
-                          dir="ltr"
-                        >
-                          {formatCurrency(item.unitSellPrice, currency)}
-                        </p>
+                        {isMiscLine(item) ? (
+                          <MoneyInput
+                            value={item.unitSellPrice}
+                            onValueChange={(v) =>
+                              updateMiscSellPrice(item.productId, v)
+                            }
+                            currency={currency}
+                            min={0}
+                            onKeyDown={dismissKeyboardOnEnter}
+                            inputSize="sm"
+                            className="mt-1"
+                            fullWidth
+                            disabled={isReadOnlyMode}
+                          />
+                        ) : (
+                          <p
+                            className="font-bold text-slate-800 tabular-nums"
+                            dir="ltr"
+                          >
+                            {formatCurrency(item.unitSellPrice, currency)}
+                          </p>
+                        )}
                       </div>
                       <div className="rounded-xl bg-slate-50 p-2">
                         <p className="text-slate-500">
@@ -1102,12 +1374,13 @@ export function PosScreen() {
                         onValueChange={(v) => updateQuantity(item.productId, v)}
                         precision="integer"
                         min={1}
-                        max={item.availableStock}
+                        max={isMiscLine(item) ? undefined : item.availableStock}
                         showStepper
                         align="center"
                         onKeyDown={dismissKeyboardOnEnter}
                         className="w-[170px]"
                         fullWidth={false}
+                        disabled={isReadOnlyMode}
                       />
                     </div>
                   </div>
@@ -1137,7 +1410,7 @@ export function PosScreen() {
               currency={currency}
               onDismiss={() => {
                 setLastFinalized(null);
-                setTimeout(() => barcodeInputRef.current?.focus(), 0);
+                focusBarcodeInputSoon();
               }}
             />
           )}
@@ -1152,10 +1425,16 @@ export function PosScreen() {
 
               <form
                 className="flex flex-col gap-3"
-                onSubmit={form.handleSubmit(() => setConfirmOpen(true))}
+                onSubmit={form.handleSubmit(() => {
+                  if (isReadOnlyMode) {
+                    push(t("billing.readOnlyModeHint"), "error");
+                    return;
+                  }
+                  setConfirmOpen(true);
+                })}
               >
                 <FormField label={t("billing.cashierName")}>
-                  <Input {...form.register("cashierName")} />
+                  <Input {...form.register("cashierName")} readOnly={isReadOnlyMode} />
                 </FormField>
                 {/* Customer — compact selector on mobile, sheet opens on tap */}
                 <div className="flex flex-col gap-1.5">
@@ -1179,21 +1458,23 @@ export function PosScreen() {
                       {/* Edit button — opens sheet to change */}
                       <button
                         type="button"
+                        disabled={isReadOnlyMode}
                         onClick={() => setCustomerSheetOpen(true)}
                         aria-label={t("billing.pickCustomer")}
-                        className="shrink-0 rounded-lg p-1 text-slate-400 hover:bg-surface-soft hover:text-slate-600 transition-colors"
+                        className="shrink-0 rounded-lg p-1 text-slate-400 hover:bg-surface-soft hover:text-slate-600 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
                       >
                         <Search size={14} aria-hidden />
                       </button>
                       {/* Clear button */}
                       <button
                         type="button"
+                        disabled={isReadOnlyMode}
                         onClick={() => {
                           form.setValue("customerName", "", { shouldDirty: true });
                           form.setValue("customerPhone", "", { shouldDirty: true });
                         }}
                         aria-label={t("billing.clearCustomer")}
-                        className="shrink-0 rounded-lg p-1 text-slate-400 hover:bg-danger-soft hover:text-danger transition-colors"
+                        className="shrink-0 rounded-lg p-1 text-slate-400 hover:bg-danger-soft hover:text-danger disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
                       >
                         <X size={14} aria-hidden />
                       </button>
@@ -1202,11 +1483,13 @@ export function PosScreen() {
                     /* Empty state — "Select customer" button */
                     <button
                       type="button"
+                      disabled={isReadOnlyMode}
                       onClick={() => setCustomerSheetOpen(true)}
                       className={clsx(
                         "flex items-center gap-2 w-full rounded-xl border border-dashed border-border-default",
                         "bg-surface px-3 py-2.5 text-sm text-slate-500",
                         "hover:border-border-strong hover:bg-surface-soft hover:text-slate-700 transition-colors",
+                        "disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-surface",
                         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
                       )}
                     >
@@ -1223,6 +1506,7 @@ export function PosScreen() {
                     }
                     label={t("billing.paymentMethod")}
                     available={availablePaymentMethods}
+                    disabled={isReadOnlyMode}
                   />
                 </FormField>
 
@@ -1235,6 +1519,7 @@ export function PosScreen() {
                         currency={currency}
                         min={0}
                         onKeyDown={dismissKeyboardOnEnter}
+                        disabled={isReadOnlyMode}
                       />
                     </FormField>
                   )}
@@ -1246,6 +1531,7 @@ export function PosScreen() {
                         currency={currency}
                         min={0}
                         onKeyDown={dismissKeyboardOnEnter}
+                        disabled={isReadOnlyMode}
                       />
                     </FormField>
                   )}
@@ -1270,6 +1556,7 @@ export function PosScreen() {
                           currency={currency}
                           min={0}
                           onKeyDown={dismissKeyboardOnEnter}
+                          disabled={isReadOnlyMode}
                           onValueChange={(v) => {
                             setIsPaidAmountManuallyEdited(true);
                             form.setValue("paidAmount", v, {
@@ -1284,6 +1571,7 @@ export function PosScreen() {
                             type="button"
                             variant="ghost"
                             size="sm"
+                            disabled={isReadOnlyMode}
                             onClick={() => setIsPaidAmountManuallyEdited(false)}
                           >
                             {t("common.reset")}
@@ -1295,6 +1583,7 @@ export function PosScreen() {
                           {/* Exact — always first: resets to the bill total */}
                           <button
                             type="button"
+                            disabled={isReadOnlyMode}
                             onClick={() => setIsPaidAmountManuallyEdited(false)}
                             className="rounded-lg border border-border-default bg-surface px-2.5 py-1 text-xs font-semibold text-fg-muted hover:bg-surface-soft hover:border-border-strong transition-colors"
                           >
@@ -1308,6 +1597,7 @@ export function PosScreen() {
                               <button
                                 key={amount}
                                 type="button"
+                                disabled={isReadOnlyMode}
                                 onClick={() => {
                                   setIsPaidAmountManuallyEdited(true);
                                   form.setValue("paidAmount", amount, {
@@ -1328,7 +1618,7 @@ export function PosScreen() {
                 )}
 
                 <FormField label={t("billing.notes")}>
-                  <Input {...form.register("notes")} />
+                  <Input {...form.register("notes")} readOnly={isReadOnlyMode} />
                 </FormField>
 
                 {/* Totals card */}
@@ -1405,6 +1695,7 @@ export function PosScreen() {
                     type="button"
                     variant="ghost"
                     onClick={clearDraft}
+                    disabled={isReadOnlyMode}
                     className="flex-1"
                   >
                     {t("billing.clearDraft")}
@@ -1479,7 +1770,7 @@ export function PosScreen() {
             >
               {t("common.cancel")}
             </Button>
-            <Button type="button" onClick={form.handleSubmit(finalize)}>
+            <Button type="button" onClick={form.handleSubmit(finalize)} disabled={isReadOnlyMode}>
               {t("billing.confirmSave")}
             </Button>
           </>
@@ -1517,6 +1808,85 @@ export function PosScreen() {
               highlight
             />
           )}
+        </div>
+      </Modal>
+
+      {/* ── Misc item modal ──────────────────────────────────────────────── */}
+      <Modal
+        open={miscOpen}
+        title={t("billing.addMiscItem")}
+        description={t("billing.miscItemDesc")}
+        onClose={() => {
+          setMiscOpen(false);
+          resetMiscForm();
+        }}
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setMiscOpen(false);
+                resetMiscForm();
+              }}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button type="button" onClick={() => addMiscLine()} disabled={isReadOnlyMode}>
+              {t("billing.addMiscToBill")}
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-3">
+          <FormField label={t("billing.miscDescription")}>
+            <Input
+              value={miscDescription}
+              onChange={(e) => setMiscDescription(e.target.value)}
+              placeholder={t("billing.miscDescriptionPlaceholder")}
+              readOnly={isReadOnlyMode}
+            />
+          </FormField>
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label={t("billing.miscQuantity")}>
+              <NumberField
+                value={Number(miscQuantity) || 1}
+                onValueChange={(v) => setMiscQuantity(String(v))}
+                precision="integer"
+                min={1}
+                showStepper
+                align="center"
+                onKeyDown={dismissKeyboardOnEnter}
+                disabled={isReadOnlyMode}
+              />
+            </FormField>
+            <FormField label={t("billing.miscPrice")}>
+              <MoneyInput
+                value={miscPrice === "" ? "" : Number(miscPrice)}
+                onValueChange={(v) => setMiscPrice(String(v))}
+                currency={currency}
+                min={0}
+                onKeyDown={dismissKeyboardOnEnter}
+                disabled={isReadOnlyMode}
+              />
+            </FormField>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {[1, 2, 5, 10].map((amount) => (
+              <button
+                key={amount}
+                type="button"
+                disabled={isReadOnlyMode}
+                onClick={() => setMiscPrice(String(amount))}
+                className="rounded-lg border border-border-default bg-surface px-3 py-1.5 text-xs font-semibold text-fg-secondary tabular-nums hover:bg-surface-soft hover:border-border-strong disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
+              >
+                {formatCurrency(amount, currency)}
+              </button>
+            ))}
+          </div>
+          <p className="rounded-xl border border-warning/30 bg-warning-soft px-3 py-2 text-xs text-warning">
+            {t("billing.miscProfitNote")}
+          </p>
         </div>
       </Modal>
 
@@ -1605,57 +1975,71 @@ export function PosScreen() {
           })()}
 
           {/* Manual entry section — for customers not yet in the database */}
-          <details className="group">
-            <summary className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-info hover:text-info/80 transition-colors list-none">
-              <span className="rotate-0 transition-transform group-open:rotate-90">›</span>
-              {t("billing.enterManually")}
+          <details className="group rounded-2xl border border-border-subtle bg-surface-soft/70 p-3 open:bg-brand-soft/30">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+              <span className="flex min-w-0 items-center gap-2 text-sm font-semibold text-slate-900">
+                <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-brand-soft text-brand">
+                  <UserPlus size={16} aria-hidden />
+                </span>
+                {t("billing.enterManually")}
+              </span>
+              <span className="text-lg leading-none text-slate-400 transition-transform group-open:rotate-90">›</span>
             </summary>
-            <div className="mt-2 flex flex-col gap-2">
-              <input
+            <div className="mt-3 flex flex-col gap-3">
+              <p className="text-xs leading-5 text-slate-500">
+                {t("billing.manualCustomerHint")}
+              </p>
+              <Input
                 type="text"
                 placeholder={t("billing.customerName")}
                 aria-label={t("billing.customerName")}
-                defaultValue={watchedCustomerName}
-                onBlur={(e) =>
-                  form.setValue("customerName", e.target.value.trim(), {
-                    shouldDirty: true,
-                  })
-                }
-                className={clsx(
-                  "w-full rounded-xl border border-border-default bg-surface px-3 py-2",
-                  "text-sm text-slate-800 placeholder:text-slate-400",
-                  "focus:outline-none focus:ring-2 focus:ring-brand/30",
-                  "[font-size:16px]",
-                )}
+                value={manualCustomerName}
+                onChange={(e) => setManualCustomerName(e.target.value)}
+                inputSize="lg"
+                leftSlot={<Users size={17} aria-hidden />}
+                className="[font-size:16px]"
+                autoComplete="name"
+                readOnly={isReadOnlyMode}
               />
-              <input
+              <Input
                 type="tel"
+                inputMode="tel"
                 placeholder={t("billing.customerPhone")}
                 aria-label={t("billing.customerPhone")}
-                defaultValue={watchedCustomerPhone}
-                onBlur={(e) =>
-                  form.setValue("customerPhone", e.target.value.trim(), {
-                    shouldDirty: true,
-                  })
-                }
-                className={clsx(
-                  "w-full rounded-xl border border-border-default bg-surface px-3 py-2",
-                  "text-sm text-slate-800 placeholder:text-slate-400",
-                  "focus:outline-none focus:ring-2 focus:ring-brand/30",
-                  "[font-size:16px]",
-                )}
+                value={manualCustomerPhone}
+                onChange={(e) => setManualCustomerPhone(e.target.value)}
+                inputSize="lg"
+                leftSlot={<Phone size={17} aria-hidden />}
+                className="[font-size:16px]"
+                autoComplete="tel"
+                dir="ltr"
+                readOnly={isReadOnlyMode}
               />
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => {
-                  setCustomerSheetOpen(false);
-                  setCustomerSearch("");
-                }}
-              >
-                {t("common.close")}
-              </Button>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  fullWidth
+                  onClick={() => {
+                    setCustomerSheetOpen(false);
+                    setCustomerSearch("");
+                  }}
+                  disabled={isSavingCustomer}
+                >
+                  {t("common.cancel")}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  fullWidth
+                  onClick={saveManualCustomer}
+                  disabled={isReadOnlyMode || !canSaveManualCustomer}
+                  loading={isSavingCustomer}
+                >
+                  {t("billing.saveCustomer")}
+                </Button>
+              </div>
             </div>
           </details>
         </div>
@@ -1668,7 +2052,7 @@ export function PosScreen() {
         onClose={() => {
           setQuickAddOpen(false);
           setMissingBarcode("");
-          setTimeout(() => barcodeInputRef.current?.focus(), 0);
+          focusBarcodeInputSoon();
         }}
         onCreated={handleQuickProductCreated}
       />
@@ -1678,7 +2062,7 @@ export function PosScreen() {
         open={scannerOpen}
         onClose={() => {
           setScannerOpen(false);
-          setTimeout(() => barcodeInputRef.current?.focus(), 0);
+          focusBarcodeInputSoon();
         }}
         title={t("billing.scanProduct")}
         description={t("billing.scanProductDesc")}

@@ -41,6 +41,7 @@ interface Props {
   label: string;
   /** Which methods to show, in render order. */
   available?: readonly ActivePaymentMethod[];
+  disabled?: boolean;
 }
 
 export function PaymentMethodControl({
@@ -48,6 +49,7 @@ export function PaymentMethodControl({
   onChange,
   label,
   available,
+  disabled = false,
 }: Props) {
   const { t } = useLocale();
 
@@ -67,6 +69,7 @@ export function PaymentMethodControl({
     <div
       role="radiogroup"
       aria-label={label}
+      aria-disabled={disabled || undefined}
       className={clsx(
         'grid grid-cols-2 gap-1.5',
         SM_COLS[visible.length] ?? 'sm:grid-cols-3',
@@ -80,11 +83,13 @@ export function PaymentMethodControl({
             type="button"
             role="radio"
             aria-checked={active}
+            disabled={disabled}
             onClick={() => onChange(method)}
             className={clsx(
               'flex flex-col items-center gap-1.5 rounded-xl border px-2 py-2.5',
               'text-xs font-semibold transition-all',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30',
+              'disabled:cursor-not-allowed disabled:opacity-60',
               active
                 ? 'border-brand bg-brand text-white shadow-sm'
                 : [

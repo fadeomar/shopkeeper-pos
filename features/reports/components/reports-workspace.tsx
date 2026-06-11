@@ -21,8 +21,8 @@ import {
   filterBillsForReport,
   filterByDateRange,
   filterExpensesForReport,
+  filterShiftsForReport,
   getLowStockSoldProducts,
-  getReportRange,
   summarizeProductSales,
   summarizeCategorySales,
   summarizeCustomerSales,
@@ -36,6 +36,7 @@ import {
   type ReportRange,
   type TrendRow,
 } from "@/features/reports/utils/report-summary";
+import { buildCashDrawerReconciliation, type AccountingIssue } from "@/features/reports/utils/accounting-reconciliation";
 
 function ProductRows({
   rows,
@@ -63,7 +64,9 @@ function ProductRows({
           className="grid grid-cols-[1fr_auto] gap-3 py-3 text-sm"
         >
           <div className="min-w-0">
-            <p className="truncate font-semibold text-slate-800">{row.name}</p>
+            <p className="truncate font-semibold text-slate-800">
+              {row.isMisc ? t("reports.miscSales") : row.name}
+            </p>
             <p className="truncate text-xs text-slate-500">
               {row.barcode} · {row.category || "—"}
             </p>
@@ -207,6 +210,46 @@ function TrendBars({ rows, currency }: { rows: TrendRow[]; currency: string }) {
   );
 }
 
+function AccountingIssues({
+  issues,
+}: {
+  issues: AccountingIssue[];
+}) {
+  const { t } = useLocale();
+  if (issues.length === 0) {
+    return (
+      <div className="rounded-2xl border border-success/20 bg-success-soft/30 px-4 py-3 text-sm font-medium text-success">
+        {t("reports.reconciliationLooksGood")}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {issues.map((issue) => {
+        const tone = issue.severity === "danger"
+          ? "border-danger/20 bg-danger-soft/30 text-danger"
+          : "border-warning/20 bg-warning-soft/30 text-warning";
+        const key = issue.key === "split_mismatch"
+          ? "reports.reconciliationIssueSplitMismatch"
+          : "reports.reconciliationIssueMissingShift";
+        return (
+          <div key={issue.key} className={`rounded-2xl border px-4 py-3 text-sm ${tone}`}>
+            <p className="font-semibold">
+              {t(key, { count: issue.count })}
+            </p>
+            {issue.sampleLabels.length > 0 && (
+              <p className="mt-1 text-xs opacity-80">
+                {t("reports.reconciliationSamples")}: {issue.sampleLabels.join(", ")}
+              </p>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function ReportsWorkspace() {
   const { t } = useLocale();
   const { canViewProfit } = usePermissions();
@@ -229,6 +272,11 @@ export function ReportsWorkspace() {
     () => db.supplierPayments.toArray(),
     [],
   );
+  const cashMovements = useLiveQuery(
+    () => db.cashMovements.toArray(),
+    [],
+  );
+  const shifts = useLiveQuery(() => db.shifts.toArray(), []);
   const settings = useLiveQuery(() => settingsRepo.get(), []);
   const customerPayments = useLiveQuery(
     () => db.customerPayments.toArray(),
@@ -237,30 +285,41 @@ export function ReportsWorkspace() {
   const [range, setRange] = useState<ReportRange>("today");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
+  const reportFilters = useMemo(
+    () => ({ range, customFrom, customTo }),
+    [range, customFrom, customTo],
+  );
 
   const currency = settings?.currency ?? "ILS";
   const loading = !bills || !billItems || !products;
 
   const filteredBills = useMemo(
-    () => filterBillsForReport(bills ?? [], { range, customFrom, customTo }),
-    [bills, range, customFrom, customTo],
+    () => filterBillsForReport(bills ?? [], reportFilters),
+    [bills, reportFilters],
   );
   const filteredPurchases = useMemo(
-    () => filterByDateRange(purchases ?? [], { range, customFrom, customTo }),
-    [purchases, range, customFrom, customTo],
+    () => filterByDateRange(purchases ?? [], reportFilters),
+    [purchases, reportFilters],
   );
   const filteredSupplierPayments = useMemo(
-    () =>
-      filterByDateRange(supplierPayments ?? [], {
-        range,
-        customFrom,
-        customTo,
-      }),
-    [supplierPayments, range, customFrom, customTo],
+    () => filterByDateRange(supplierPayments ?? [], reportFilters),
+    [supplierPayments, reportFilters],
+  );
+  const filteredCustomerPayments = useMemo(
+    () => filterByDateRange(customerPayments ?? [], reportFilters),
+    [customerPayments, reportFilters],
   );
   const filteredExpenses = useMemo(
-    () => filterExpensesForReport(expenses ?? [], { range, customFrom, customTo }),
-    [expenses, range, customFrom, customTo],
+    () => filterExpensesForReport(expenses ?? [], reportFilters),
+    [expenses, reportFilters],
+  );
+  const filteredCashMovements = useMemo(
+    () => filterByDateRange(cashMovements ?? [], reportFilters),
+    [cashMovements, reportFilters],
+  );
+  const shiftsInRange = useMemo(
+    () => filterShiftsForReport(shifts ?? [], reportFilters),
+    [shifts, reportFilters],
   );
   const summary = useMemo(
     () => summarizeReportBills(filteredBills),
@@ -277,17 +336,29 @@ export function ReportsWorkspace() {
   const grossMargin = summary.sales > 0
     ? roundMoney((summary.profit / summary.sales) * 100)
     : 0;
-  const customerPaymentsCashIn = useMemo(() => {
-    const { from, to } = getReportRange({ range, customFrom, customTo });
-    return (customerPayments ?? [])
-      .filter((p) => {
-        const created = new Date(p.createdAt);
-        if (from && created < from) return false;
-        if (to && created >= to) return false;
-        return (p.paymentMethod ?? "cash") === "cash";
-      })
-      .reduce((sum, p) => sum + p.amount, 0);
-  }, [customerPayments, range, customFrom, customTo]);
+  const reconciliation = useMemo(
+    () =>
+      buildCashDrawerReconciliation({
+        bills: filteredBills,
+        purchases: filteredPurchases,
+        customerPayments: filteredCustomerPayments,
+        supplierPayments: filteredSupplierPayments,
+        expenses: filteredExpenses,
+        cashMovements: filteredCashMovements,
+        shifts: shiftsInRange,
+      }),
+    [
+      filteredBills,
+      filteredPurchases,
+      filteredCustomerPayments,
+      filteredSupplierPayments,
+      filteredExpenses,
+      filteredCashMovements,
+      shiftsInRange,
+    ],
+  );
+  const customerPaymentsCashIn = reconciliation.customerCashIn;
+  const drawerCashPaidOut = roundMoney(reconciliation.purchaseCashOut + reconciliation.supplierCashOut);
   const purchaseSummary = useMemo(
     () => summarizeReportPurchases(filteredPurchases, filteredSupplierPayments),
     [filteredPurchases, filteredSupplierPayments],
@@ -295,6 +366,21 @@ export function ReportsWorkspace() {
   const productSales = useMemo(
     () => summarizeProductSales(filteredBills, billItems ?? [], products ?? []),
     [filteredBills, billItems, products],
+  );
+  // Aggregate the متفرقات (misc) rows into a single revenue/quantity figure
+  // for the headline stat card.
+  const miscSalesSummary = useMemo(
+    () =>
+      productSales
+        .filter((row) => row.isMisc)
+        .reduce(
+          (acc, row) => ({
+            quantity: acc.quantity + row.quantity,
+            revenue: acc.revenue + row.revenue,
+          }),
+          { quantity: 0, revenue: 0 },
+        ),
+    [productSales],
   );
   const categorySales = useMemo(() => summarizeCategorySales(productSales).slice(0, 8), [productSales]);
   const topCustomers = useMemo(() => summarizeCustomerSales(filteredBills).slice(0, 8), [filteredBills]);
@@ -325,7 +411,10 @@ export function ReportsWorkspace() {
         : []),
       { label: t("reports.purchaseCost"), value: purchaseSummary.purchaseCost },
       { label: t("reports.supplierPayments"), value: purchaseSummary.supplierPayments },
-      { label: t("reports.cashExpected"), value: summary.cashExpected },
+      { label: t("reports.reconciliationOpening"), value: reconciliation.openingCash },
+      { label: t("reports.reconciliationMoneyIn"), value: reconciliation.moneyIn },
+      { label: t("reports.reconciliationMoneyOut"), value: reconciliation.moneyOut },
+      { label: t("reports.cashExpected"), value: reconciliation.expectedDrawer },
     ];
 
     downloadCSV(
@@ -436,10 +525,12 @@ export function ReportsWorkspace() {
         </div>
       </Card>
 
-      {/* Money-in: 5 cards spread across the row on desktop (lg:grid-cols-5)
-          so the 5th card no longer wraps onto an orphan row; on small screens
-          the trailing odd card stretches full-width instead of sitting alone. */}
-      <section className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+      {/* Money-in cards. The profit card is permission-gated (canViewProfit),
+          so the desktop column count adapts: 6 cards when profit shows, 5 when
+          it's hidden — either way the row fills evenly with no orphan. */}
+      <section
+        className={`grid grid-cols-2 gap-4 ${canViewProfit ? "lg:grid-cols-6" : "lg:grid-cols-5"}`}
+      >
         <StatCard
           filled
           tone="brand"
@@ -453,6 +544,7 @@ export function ReportsWorkspace() {
             tone="positive"
             label={t("reports.totalProfit")}
             value={formatCurrency(summary.profit, currency)}
+            helper={t("reports.profitExcludesMisc")}
           />
         )}
         <StatCard
@@ -467,7 +559,7 @@ export function ReportsWorkspace() {
           filled
           tone="info"
           label={t("reports.cashExpected")}
-          value={formatCurrency(summary.cashExpected, currency)}
+          value={formatCurrency(reconciliation.expectedDrawer, currency)}
           href="/shift"
         />
         <StatCard
@@ -477,6 +569,13 @@ export function ReportsWorkspace() {
           label={t("reports.customerPaymentsCashIn")}
           value={formatCurrency(customerPaymentsCashIn, currency)}
           href="/customers"
+        />
+        <StatCard
+          filled
+          tone="neutral"
+          label={t("reports.miscSales")}
+          value={formatCurrency(miscSalesSummary.revenue, currency)}
+          helper={t("reports.miscSalesHelper", { count: String(miscSalesSummary.quantity) })}
         />
       </section>
 
@@ -532,7 +631,7 @@ export function ReportsWorkspace() {
           filled
           tone="warning"
           label={t("reports.cashPaidOut")}
-          value={formatCurrency(purchaseSummary.cashPaidOut, currency)}
+          value={formatCurrency(drawerCashPaidOut, currency)}
           helper={t("reports.cashPaidOutHelper")}
           href="/cash"
         />
@@ -552,6 +651,53 @@ export function ReportsWorkspace() {
           helper={t("reports.netSupplierDebtHelper")}
         />
       </section>
+
+      <ReportPanel
+        title={t("reports.reconciliationTitle")}
+        description={t("reports.reconciliationDesc")}
+      >
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <StatCard
+            filled
+            tone="neutral"
+            label={t("reports.reconciliationOpening")}
+            value={formatCurrency(reconciliation.openingCash, currency)}
+          />
+          <StatCard
+            filled
+            tone="positive"
+            label={t("reports.reconciliationMoneyIn")}
+            value={formatCurrency(reconciliation.moneyIn, currency)}
+          />
+          <StatCard
+            filled
+            tone="danger"
+            label={t("reports.reconciliationMoneyOut")}
+            value={formatCurrency(reconciliation.moneyOut, currency)}
+          />
+          <StatCard
+            filled
+            tone="info"
+            label={t("reports.reconciliationExpectedDrawer")}
+            value={formatCurrency(reconciliation.expectedDrawer, currency)}
+          />
+        </div>
+        <div className="mt-4 rounded-2xl border border-border-subtle bg-surface-soft/40 p-4 text-sm text-fg-secondary">
+          <p className="font-semibold text-fg">{t("reports.reconciliationFormula")}</p>
+          <p className="mt-1 leading-6">{t("reports.reconciliationFormulaText")}</p>
+          <div className="mt-3 grid grid-cols-1 gap-2 text-xs sm:grid-cols-2 lg:grid-cols-3">
+            <span>{t("reports.zDrawerSalesCash")}: {formatCurrency(reconciliation.salesCash, currency)}</span>
+            <span>{t("reports.zDrawerCustomerCashIn")}: {formatCurrency(reconciliation.customerCashIn, currency)}</span>
+            <span>{t("reports.zDrawerPurchaseCashOut")}: {formatCurrency(reconciliation.purchaseCashOut, currency)}</span>
+            <span>{t("reports.zDrawerSupplierPaymentsCash")}: {formatCurrency(reconciliation.supplierCashOut, currency)}</span>
+            <span>{t("reports.zDrawerExpensesCash")}: {formatCurrency(reconciliation.expenseCashOut, currency)}</span>
+            <span>{t("reports.zDrawerCashMovements")}: {reconciliation.manualCashNet >= 0 ? "+" : ""}{formatCurrency(reconciliation.manualCashNet, currency)}</span>
+          </div>
+        </div>
+        <div className="mt-4">
+          <AccountingIssues issues={reconciliation.issues} />
+        </div>
+      </ReportPanel>
 
       <section className="grid gap-4 lg:grid-cols-2">
         <ReportPanel title={t("reports.paymentBreakdown")}>

@@ -1,14 +1,15 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { onAuthChange, fetchUserDoc, signOut } from '@/lib/firebase/auth-service';
 import { db } from '@/lib/db/schema';
 import { getActiveUid, getLocalDataSummary, prepareRuntimeDbForUid, setActiveUid } from '@/lib/services/account-data-service';
 import { useToast } from '@/components/ui/toast';
 import { useLocale } from '@/components/providers/locale-context';
 import type { AuthCacheEntry } from '@/types/domain';
+import { getSubscriptionAccessState } from '@/lib/services/subscription-service';
 
-export type AuthStatus = 'loading' | 'unauthenticated' | 'pending' | 'inactive' | 'authenticated';
+export type AuthStatus = 'loading' | 'unauthenticated' | 'pending' | 'inactive' | 'subscription_expired' | 'authenticated';
 
 interface AuthContextValue {
   status: AuthStatus;
@@ -23,9 +24,11 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 function resolveStatus(user: AuthCacheEntry): Exclude<AuthStatus, 'loading' | 'unauthenticated'> {
-  if (user.isActive) return 'authenticated';
   if (user.pendingApproval ?? false) return 'pending';
-  return 'inactive';
+  if (!user.isActive) return 'inactive';
+  const accessState = getSubscriptionAccessState(user);
+  if (accessState === 'expired' || accessState === 'suspended') return 'subscription_expired';
+  return 'authenticated';
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -37,6 +40,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [authError, setAuthError] = useState('');
   const { push } = useToast();
   const { t } = useLocale();
+
+  const refreshProfileFromCloud = useCallback(async (uid: string): Promise<AuthCacheEntry | null> => {
+    const userDoc = await fetchUserDoc(uid);
+    if (!userDoc) return null;
+    const entry: AuthCacheEntry = { ...userDoc, cachedAt: new Date().toISOString() };
+    try { await db.authCache.put(entry); } catch { /* cache write failed, non-fatal */ }
+    try { setActiveUid(uid); } catch { /* non-fatal */ }
+    setAuthError('');
+    setUser(entry);
+    setStatus(resolveStatus(entry));
+    return entry;
+  }, []);
 
   const resolveUser = useCallback(async (uid: string) => {
     // Ensure Dexie is open (DbBootstrap may not have mounted yet)
@@ -78,16 +93,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      const userDoc = await fetchUserDoc(uid);
-      if (userDoc) {
-        const entry: AuthCacheEntry = { ...userDoc, cachedAt: new Date().toISOString() };
-        try { await db.authCache.put(entry); } catch { /* cache write failed, non-fatal */ }
-        try { setActiveUid(uid); } catch { /* non-fatal */ }
-        setAuthError('');
-        setUser(entry);
-        setStatus(resolveStatus(entry));
-        return;
-      }
+      const entry = await refreshProfileFromCloud(uid);
+      if (entry) return;
       console.warn('[auth] No Firestore profile found for uid:', uid);
     } catch (e) {
       console.warn('[auth] fetchUserDoc failed:', e);
@@ -109,7 +116,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     setStatus('unauthenticated');
     setAuthError('No profile found for this account. Ask your admin to create your profile through the app, then try again.');
-  }, [push, t]);
+  }, [push, refreshProfileFromCloud, t]);
 
   useEffect(() => {
     setStatus('loading');
@@ -153,15 +160,55 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const refreshStatus = useCallback(async () => {
     if (!user) return;
     try {
-      const userDoc = await fetchUserDoc(user.uid);
-      if (userDoc) {
-        const entry: AuthCacheEntry = { ...userDoc, cachedAt: new Date().toISOString() };
-        try { await db.authCache.put(entry); } catch { /* non-fatal */ }
-        setUser(entry);
-        setStatus(resolveStatus(entry));
-      }
+      await refreshProfileFromCloud(user.uid);
     } catch { /* offline — silently ignore, user can try again */ }
-  }, [user]);
+  }, [refreshProfileFromCloud, user]);
+
+  const lastAutoRefreshAt = useRef(0);
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    const uid = user.uid;
+
+    async function autoRefresh(force = false) {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      const now = Date.now();
+      if (!force && now - lastAutoRefreshAt.current < 30_000) return;
+      lastAutoRefreshAt.current = now;
+      try {
+        await refreshProfileFromCloud(uid);
+      } catch {
+        // Offline/permission/network blips should not log the cashier out.
+        // The cached profile remains the source of truth until a refresh succeeds.
+      }
+    }
+
+    function handleVisibilityChange() {
+      if (typeof document === 'undefined') return;
+      if (document.visibilityState !== 'visible') return;
+      void autoRefresh(false);
+    }
+
+    function handleFocus() {
+      void autoRefresh(false);
+    }
+
+    function handleOnline() {
+      void autoRefresh(true);
+    }
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    const interval = window.setInterval(() => void autoRefresh(false), 5 * 60_000);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.clearInterval(interval);
+    };
+  }, [refreshProfileFromCloud, user?.uid]);
 
   return (
     <AuthContext.Provider value={{ status, user, isAdmin: user?.role === 'owner', authError, logout, refreshStatus }}>

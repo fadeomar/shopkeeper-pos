@@ -8,6 +8,7 @@ import { logAudit } from '@/lib/services/audit-service';
 import { normalizeSupplierKey } from '@/lib/utils/supplier-key';
 import { netSplitField, normalizeBillSplit } from '@/lib/utils/bill-split';
 import type { Purchase, Supplier, SupplierPayment } from '@/types/domain';
+import { assertSubscriptionCanWrite } from '@/lib/services/subscription-service';
 
 /**
  * Buy-side ledger row, mirror of CustomerLedgerRow.
@@ -214,6 +215,7 @@ export async function recordSupplierPayment(input: {
   note?: string;
   paymentMethod?: SupplierPayment['paymentMethod'];
 }): Promise<SupplierPayment> {
+  await assertSubscriptionCanWrite();
   const amount = Number(input.amount);
   if (!input.supplierKey) throw new AppError(AppErrorCode.SUPPLIER_REQUIRED);
   if (!Number.isFinite(amount) || amount <= 0) {

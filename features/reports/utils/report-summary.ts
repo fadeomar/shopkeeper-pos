@@ -1,9 +1,10 @@
-import type { Bill, BillItem, CashMovement, Expense, ExpenseCategory, PaymentMethod, Product, Purchase, SupplierPayment } from '@/types/domain';
+import type { Bill, BillItem, CashMovement, Expense, ExpenseCategory, PaymentMethod, Product, Purchase, Shift, SupplierPayment } from '@/types/domain';
 import { getBillNetItemCount, getBillNetProfit, getBillNetTotal } from '@/features/bills/utils/bill-summary';
 import { calculateBillItemNetContribution, calculateLineProfit, calculateLineSubtotal } from '@/lib/utils/calculations';
 import { roundMoney } from '@/lib/utils/money';
 import { localDateKey } from '@/lib/utils/date';
 import { netSplitField, normalizeBillSplit } from '@/lib/utils/bill-split';
+import { isMiscLine } from '@/lib/utils/misc-items';
 
 export type ReportRange = 'today' | 'week' | 'month' | 'all' | 'custom';
 
@@ -23,6 +24,9 @@ export interface ProductSalesRow {
   profit: number;
   currentStock?: number;
   minimumStockAlert?: number;
+  // True for the aggregated متفرقات row — all misc lines collapse into one row
+  // and contribute no profit (their real cost isn't recorded).
+  isMisc?: boolean;
 }
 
 
@@ -102,6 +106,20 @@ export function filterByDateRange<T extends { createdAt: string }>(
     const created = new Date(row.createdAt);
     if (from && created < from) return false;
     if (to && created >= to) return false;
+    return true;
+  });
+}
+
+
+export function filterShiftsForReport(shifts: Shift[], filters: ReportFilters): Shift[] {
+  const { from, to } = getReportRange(filters);
+  return shifts.filter((shift) => {
+    const opened = new Date(shift.openedAt);
+    const closed = shift.closedAt ? new Date(shift.closedAt) : new Date();
+    // Include any shift that overlaps the selected range. A shift can open
+    // before midnight and still carry today's drawer-affecting records.
+    if (from && closed <= from) return false;
+    if (to && opened >= to) return false;
     return true;
   });
 }
@@ -261,23 +279,29 @@ export function summarizeProductSales(
       ? calculateBillItemNetContribution(bill, lineAmount, lineProfit)
       : { revenue: lineAmount, profit: lineProfit };
 
-    const key = item.originalProductId || item.barcodeAtSale || item.id;
-    const product = productById.get(item.originalProductId);
+    // All متفرقات lines collapse into a single "misc" row; real products key
+    // by their own id. Misc rows carry no product, no barcode, and no profit.
+    const isMisc = isMiscLine(item);
+    const key = isMisc ? 'misc' : item.originalProductId || item.barcodeAtSale || item.id;
+    const product = isMisc ? undefined : productById.get(item.originalProductId);
     const existing = rows.get(key) ?? {
       key,
+      // Misc rows are relabeled with a localized "Misc sales" string at render
+      // time (reports-workspace); the snapshot name is kept only as a fallback.
       name: item.productNameAtSale,
-      barcode: item.barcodeAtSale,
+      barcode: isMisc ? '—' : item.barcodeAtSale,
       category: item.categoryAtSale,
       quantity: 0,
       revenue: 0,
       profit: 0,
       currentStock: product?.quantityInStock,
       minimumStockAlert: product?.minimumStockAlert,
+      isMisc,
     };
 
     existing.quantity += netQuantity;
     existing.revenue = roundMoney(existing.revenue + net.revenue);
-    existing.profit = roundMoney(existing.profit + net.profit);
+    existing.profit = roundMoney(existing.profit + (isMisc ? 0 : net.profit));
     existing.currentStock = product?.quantityInStock ?? existing.currentStock;
     existing.minimumStockAlert = product?.minimumStockAlert ?? existing.minimumStockAlert;
     rows.set(key, existing);
@@ -376,6 +400,11 @@ export function summarizeReportCashMovements(movements: CashMovement[]) {
 export function summarizeCategorySales(rows: ProductSalesRow[]): CategorySalesRow[] {
   const categories = new Map<string, CategorySalesRow>();
   for (const row of rows) {
+    // Misc (متفرقات) rows have no real category and zero profit — they are
+    // surfaced via their own stat card + product row, so keep them out of the
+    // category breakdown (otherwise they'd collide with / dilute a real
+    // user-defined category that happens to share the name).
+    if (row.isMisc) continue;
     const category = row.category?.trim() || '—';
     const existing = categories.get(category) ?? {
       key: category,

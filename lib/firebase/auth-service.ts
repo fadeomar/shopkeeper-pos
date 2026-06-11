@@ -13,10 +13,15 @@ import {
   updateDoc,
   collection,
   getDocs,
+  addDoc,
+  serverTimestamp,
+  Timestamp,
+  getFirestore,
 } from 'firebase/firestore';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { auth, firestore, firebaseApp } from './config';
 import type { AppUser, UserRole } from '@/types/domain';
+import { addCalendarMonths, buildInitialPaidSubscription, buildTrialSubscription, getSubscriptionAccessState, toSubscriptionMs } from '@/lib/services/subscription-service';
 
 export function signIn(email: string, password: string) {
   return signInWithEmailAndPassword(auth, email, password);
@@ -70,20 +75,28 @@ export async function registerUser(
     const cred = await createUserWithEmailAndPassword(tempAuth, email, password);
     uid = cred.user.uid;
 
-    // Write Firestore doc before signing in on main auth — no race condition.
+    // Write Firestore doc using the SAME secondary Firebase app/auth session.
+    // This makes the Firestore create request authenticated as the new uid.
+    // Previously this used the main Firestore instance while the main auth was
+    // still signed out, so registration depended on unauthenticated Firestore
+    // profile creation and failed on projects whose deployed rules require
+    // request.auth.uid == uid.
     // If the write fails (e.g. rules not deployed, network error), delete the
     // orphaned Firebase Auth user so the same email can be retried immediately
     // instead of getting "email already in use" forever.
+    const tempFirestore = getFirestore(tempApp);
     try {
-      await setDoc(doc(firestore, 'users', uid), {
+      const now = new Date();
+      await setDoc(doc(tempFirestore, 'users', uid), {
         uid,
         email,
         name,
         ...(phone ? { phone } : {}),
         role: 'cashier',
-        isActive: false,
-        pendingApproval: true,
-        createdAt: new Date().toISOString(),
+        isActive: true,
+        pendingApproval: false,
+        ...buildTrialSubscription(now),
+        createdAt: now.toISOString(),
       } satisfies AppUser);
     } catch (firestoreError) {
       try { await cred.user.delete(); } catch { /* best-effort — ignore if already gone */ }
@@ -99,8 +112,17 @@ export async function registerUser(
   try {
     await signInWithEmailAndPassword(auth, email, password);
   } catch (e) {
-    // Account was created but sign-in failed. User can sign in manually.
-    throw e;
+    // Account and profile were created successfully, but automatic sign-in
+    // failed (usually a transient network/auth refresh issue). The user can
+    // sign in manually with the same email/password, so surface a specific
+    // code instead of showing a generic registration failure.
+    const wrapped = new Error('Account created, but automatic sign-in failed.') as Error & {
+      code?: string;
+      cause?: unknown;
+    };
+    wrapped.code = 'auth/account-created-sign-in-failed';
+    wrapped.cause = e;
+    throw wrapped;
   }
 }
 
@@ -125,9 +147,63 @@ export async function createAppUser(
       role,
       isActive: true,
       pendingApproval: false,
+      ...buildInitialPaidSubscription(new Date(now), 1),
       createdAt: now,
     } satisfies AppUser);
   } finally {
     await deleteApp(tempApp);
   }
+}
+
+
+export async function renewUserSubscription(uid: string, months = 1): Promise<AppUser> {
+  const ref = doc(firestore, 'users', uid);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error('User not found');
+  const user = snap.data() as AppUser;
+  const now = new Date();
+  const existingEndMs = toSubscriptionMs(user.subscriptionEndAt, user.subscriptionEndAtMs);
+  const isCurrentlyUsable = getSubscriptionAccessState(user) === 'active' || getSubscriptionAccessState(user) === 'trial';
+  const base = isCurrentlyUsable && existingEndMs && existingEndMs > now.getTime()
+    ? new Date(existingEndMs)
+    : now;
+  const nextEnd = addCalendarMonths(base, months);
+  const next: Partial<AppUser> = {
+    accountType: 'standard',
+    subscriptionStatus: 'active',
+    subscriptionStartAt: user.subscriptionStartAt ?? now.toISOString(),
+    subscriptionEndAt: nextEnd.toISOString(),
+    subscriptionEndAtMs: nextEnd.getTime(),
+    subscriptionEndAtTimestamp: Timestamp.fromDate(nextEnd),
+    lastRenewedAt: now.toISOString(),
+    renewalCount: (user.renewalCount ?? 0) + 1,
+    isActive: true,
+    pendingApproval: false,
+  };
+  await updateDoc(ref, next);
+  await addDoc(collection(firestore, `users/${uid}/subscriptionRenewals`), {
+    uid,
+    monthsAdded: months,
+    oldEndAt: user.subscriptionEndAt ?? null,
+    newEndAt: next.subscriptionEndAt,
+    previousStatus: user.subscriptionStatus ?? null,
+    createdAt: now.toISOString(),
+    createdAtServer: serverTimestamp(),
+  });
+  return { ...user, ...next } as AppUser;
+}
+
+export async function suspendUserSubscription(uid: string, note?: string): Promise<void> {
+  const now = new Date().toISOString();
+  await updateDoc(doc(firestore, 'users', uid), {
+    subscriptionStatus: 'suspended',
+    subscriptionNote: note ?? 'Suspended by admin',
+    lastRenewedAt: now,
+  } satisfies Partial<AppUser>);
+}
+
+export async function markUserContacted(uid: string): Promise<void> {
+  await updateDoc(doc(firestore, 'users', uid), {
+    contactedAt: new Date().toISOString(),
+  } satisfies Partial<AppUser>);
 }

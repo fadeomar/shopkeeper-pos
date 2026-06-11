@@ -79,3 +79,23 @@
 - Test statements while offline; they should use local ledger data only.
 - Verify Arabic mode: statement titles, date fields, debit/credit/balance labels, print layout, and CSV text are readable.
 - Verify old records without phone, note, invoice number, or invoice date still open and print safely.
+
+## Step 3 sync hardening QA addendum
+
+- Open the app in two tabs with the same account. Create a sale offline in one tab, reconnect, and confirm the queue is not processed twice.
+- Create bill + purchase offline, refresh while offline, reconnect, then confirm both records sync and stock movement deltas are applied once.
+- Manually leave a queue row in `syncing` with an old `lastAttemptAt`; after 2+ minutes, run Settings → Device health → Run pending sync and confirm it returns to `pending`/syncs.
+- In Settings → Device health, verify these fields render correctly in English and Arabic: purchases, suppliers, expenses, failed/blocked, oldest waiting job, stale syncing jobs, recent sync problems.
+- Force a permission-denied sync failure on staging, confirm recent problem row shows the entity/status/error and retry count without crashing the page.
+
+## Step 5 mobile UI QA checklist
+
+- [ ] On Android, open Billing → Scan. Camera opens and soft keyboard does not appear.
+- [ ] On iOS/Safari, open Billing → Scan. Camera opens and soft keyboard does not appear.
+- [ ] Close the scanner on mobile. Barcode input should not immediately refocus/open keyboard.
+- [ ] Add a misc sale item on mobile. After closing the modal, keyboard should not jump back open.
+- [ ] Add a product from the dropdown on mobile. Barcode input should not steal focus.
+- [ ] Expire/suspend a cashier account, refresh the POS, and confirm Billing shows read-only banner.
+- [ ] In read-only Billing, confirm add/scan/product select/customer save/payment/finalize are blocked.
+- [ ] In read-only Purchases, confirm add/scan/misc/supplier save/payment/finalize are blocked.
+- [ ] Arabic RTL Billing and Purchases: summary cards, buttons, totals, and bottom spacing stay readable.

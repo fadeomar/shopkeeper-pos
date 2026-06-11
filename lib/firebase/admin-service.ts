@@ -1,7 +1,7 @@
 import { collection, doc, getDoc, getDocs, limit, orderBy, query, setDoc } from 'firebase/firestore';
 import { firestore } from './config';
 import { netSplitField, normalizeBillSplit } from '@/lib/utils/bill-split';
-import type { Bill, BillItem, Customer, CustomerPayment, Product, Purchase, PurchaseItem, Settings, Shift, StockMovement, Supplier, SupplierPayment, SyncConflict } from '@/types/domain';
+import type { Bill, BillItem, CashMovement, Customer, CustomerPayment, Expense, Product, Purchase, PurchaseItem, Settings, Shift, StockMovement, Supplier, SupplierPayment, SyncConflict } from '@/types/domain';
 
 export interface CloudSyncMeta {
   lastSyncedAt: string;
@@ -17,6 +17,10 @@ export interface CloudSyncMeta {
     purchases?: number;
     purchaseItems?: number;
     supplierPayments?: number;
+    auditEvents?: number;
+    cashMovements?: number;
+    expenses?: number;
+    settings?: number;
   };
 }
 
@@ -29,6 +33,8 @@ export interface UserSummary {
   lowStockCount: number;
   outOfStockCount: number;
   creditDebt: number;
+  supplierDebt: number;
+  purchaseCount: number;
   lastSyncAt?: string;
   syncHealth: SupportHealth;
 }
@@ -38,12 +44,20 @@ export interface UserSupportSnapshot extends UserSummary {
   activeProductCount: number;
   inactiveProductCount: number;
   customerPaymentCount: number;
+  supplierPaymentCount: number;
+  supplierCount: number;
+  purchaseItemCount: number;
+  cashMovementCount: number;
+  expenseCount: number;
+  syncConflictCount: number;
   stockMovementCount: number;
   voidedBillCount: number;
   returnedBillCount: number;
   cashSales: number;
   cardSales: number;
   creditSales: number;
+  purchaseCost: number;
+  expenseTotal: number;
   warnings: string[];
   syncMeta: CloudSyncMeta | null;
 }
@@ -56,6 +70,11 @@ function netBillTotal(bill: Bill): number {
 function netBillProfit(bill: Bill): number {
   if (bill.status === 'voided') return 0;
   return Math.max(0, bill.totalProfit - (bill.returnedProfit ?? 0));
+}
+
+function netPurchaseTotal(purchase: Purchase): number {
+  if (purchase.status === 'voided') return 0;
+  return Math.max(0, purchase.totalAmount - (purchase.returnedAmount ?? 0));
 }
 
 function backupAgeDays(lastSyncAt?: string): number | null {
@@ -149,6 +168,20 @@ export async function fetchUserShifts(uid: string, maxRows = 500): Promise<Shift
   return snap.docs.map((d) => d.data() as Shift);
 }
 
+export async function fetchUserCashMovements(uid: string, maxRows = 1000): Promise<CashMovement[]> {
+  const snap = await getDocs(
+    query(collection(firestore, `users/${uid}/cashMovements`), orderBy('createdAt', 'desc'), limit(maxRows)),
+  );
+  return snap.docs.map((d) => d.data() as CashMovement);
+}
+
+export async function fetchUserExpenses(uid: string, maxRows = 1000): Promise<Expense[]> {
+  const snap = await getDocs(
+    query(collection(firestore, `users/${uid}/expenses`), orderBy('createdAt', 'desc'), limit(maxRows)),
+  );
+  return snap.docs.map((d) => d.data() as Expense);
+}
+
 export async function fetchUserSyncConflicts(uid: string): Promise<SyncConflict[]> {
   const snap = await getDocs(collection(firestore, `users/${uid}/syncConflicts`));
   return snap.docs.map((d) => d.data() as SyncConflict);
@@ -188,10 +221,12 @@ export async function updateUserSettingsInCloud(uid: string, settings: Settings)
 }
 
 export async function fetchUserSummary(uid: string): Promise<UserSummary> {
-  const [bills, products, customerPayments, syncMeta] = await Promise.all([
+  const [bills, products, customerPayments, purchases, supplierPayments, syncMeta] = await Promise.all([
     fetchUserBills(uid, 1000),
     fetchUserProducts(uid),
     fetchUserCustomerPayments(uid).catch(() => [] as CustomerPayment[]),
+    fetchUserPurchases(uid, 1000).catch(() => [] as Purchase[]),
+    fetchUserSupplierPayments(uid).catch(() => [] as SupplierPayment[]),
     fetchUserSyncMeta(uid),
   ]);
 
@@ -207,6 +242,11 @@ export async function fetchUserSummary(uid: string): Promise<UserSummary> {
       return sum + netSplitField(withSplit, withSplit.creditAmount);
     }, 0);
   const paymentsTotal = customerPayments.reduce((sum, p) => sum + p.amount, 0);
+  const supplierCreditBeforePayments = purchases
+    .filter((p) => p.status !== 'voided')
+    .map((p) => normalizeBillSplit(p))
+    .reduce((sum, p) => sum + netSplitField(p, p.creditAmount), 0);
+  const supplierPaymentsTotal = supplierPayments.reduce((sum, p) => sum + p.amount, 0);
 
   return {
     billCount: bills.length,
@@ -215,17 +255,40 @@ export async function fetchUserSummary(uid: string): Promise<UserSummary> {
     lowStockCount: activeProducts.filter((p) => p.quantityInStock > 0 && p.quantityInStock <= p.minimumStockAlert).length,
     outOfStockCount: activeProducts.filter((p) => p.quantityInStock <= 0).length,
     creditDebt: Math.max(0, creditDueBeforePayments - paymentsTotal),
+    supplierDebt: Math.max(0, supplierCreditBeforePayments - supplierPaymentsTotal),
+    purchaseCount: purchases.length,
     lastSyncAt: syncMeta?.lastSyncedAt,
     syncHealth: syncHealth(syncMeta?.lastSyncedAt),
   };
 }
 
 export async function fetchUserSupportSnapshot(uid: string): Promise<UserSupportSnapshot> {
-  const [bills, products, stockMovements, customerPayments, settings, syncMeta] = await Promise.all([
+  const [
+    bills,
+    products,
+    stockMovements,
+    customerPayments,
+    suppliers,
+    purchases,
+    purchaseItems,
+    supplierPayments,
+    cashMovements,
+    expenses,
+    syncConflicts,
+    settings,
+    syncMeta,
+  ] = await Promise.all([
     fetchUserBills(uid, 1000),
     fetchUserProducts(uid),
     fetchUserStockMovements(uid, 300).catch(() => [] as StockMovement[]),
     fetchUserCustomerPayments(uid).catch(() => [] as CustomerPayment[]),
+    fetchUserSuppliers(uid).catch(() => [] as Supplier[]),
+    fetchUserPurchases(uid, 1000).catch(() => [] as Purchase[]),
+    fetchUserPurchaseItems(uid).catch(() => [] as PurchaseItem[]),
+    fetchUserSupplierPayments(uid).catch(() => [] as SupplierPayment[]),
+    fetchUserCashMovements(uid).catch(() => [] as CashMovement[]),
+    fetchUserExpenses(uid).catch(() => [] as Expense[]),
+    fetchUserSyncConflicts(uid).catch(() => [] as SyncConflict[]),
     fetchUserSettings(uid),
     fetchUserSyncMeta(uid),
   ]);
@@ -240,6 +303,15 @@ export async function fetchUserSupportSnapshot(uid: string): Promise<UserSupport
     .reduce((sum, b) => sum + netSplitField(b, b.creditAmount), 0);
   const paymentsTotal = customerPayments.reduce((sum, p) => sum + p.amount, 0);
   const creditDebt = Math.max(0, creditDueBeforePayments - paymentsTotal);
+  const purchasesWithSplit = purchases.map((p) => normalizeBillSplit(p));
+  const supplierCreditBeforePayments = purchasesWithSplit
+    .filter((p) => p.status !== 'voided')
+    .reduce((sum, p) => sum + netSplitField(p, p.creditAmount), 0);
+  const supplierPaymentsTotal = supplierPayments.reduce((sum, p) => sum + p.amount, 0);
+  const supplierDebt = Math.max(0, supplierCreditBeforePayments - supplierPaymentsTotal);
+  const purchaseCost = purchases.reduce((sum, p) => sum + netPurchaseTotal(p), 0);
+  const expenseTotal = expenses.reduce((sum, e) => sum + e.amount, 0);
+  const openSyncConflicts = syncConflicts.filter((c) => c.status === 'open');
   const health = syncHealth(syncMeta?.lastSyncedAt);
   const warnings: string[] = [];
 
@@ -255,6 +327,8 @@ export async function fetchUserSupportSnapshot(uid: string): Promise<UserSupport
   const outOfStockCount = activeProducts.filter((p) => p.quantityInStock <= 0).length;
   if (outOfStockCount > 0) warnings.push(`${outOfStockCount} active products are out of stock.`);
   if (creditDebt > 0) warnings.push(`Customer debt balance is ${creditDebt.toFixed(2)}.`);
+  if (supplierDebt > 0) warnings.push(`Supplier debt balance is ${supplierDebt.toFixed(2)}.`);
+  if (openSyncConflicts.length > 0) warnings.push(`${openSyncConflicts.length} open sync conflict(s) need review on the user's device.`);
 
   return {
     billCount: bills.length,
@@ -263,12 +337,20 @@ export async function fetchUserSupportSnapshot(uid: string): Promise<UserSupport
     lowStockCount: activeProducts.filter((p) => p.quantityInStock > 0 && p.quantityInStock <= p.minimumStockAlert).length,
     outOfStockCount,
     creditDebt,
+    supplierDebt,
+    purchaseCount: purchases.length,
     lastSyncAt: syncMeta?.lastSyncedAt,
     syncHealth: health,
     settingsUpdatedAt: settings?.updatedAt,
     activeProductCount: activeProducts.length,
     inactiveProductCount: products.length - activeProducts.length,
     customerPaymentCount: customerPayments.length,
+    supplierPaymentCount: supplierPayments.length,
+    supplierCount: suppliers.length,
+    purchaseItemCount: purchaseItems.length,
+    cashMovementCount: cashMovements.length,
+    expenseCount: expenses.length,
+    syncConflictCount: openSyncConflicts.length,
     stockMovementCount: stockMovements.length,
     voidedBillCount: bills.filter((b) => b.status === 'voided').length,
     returnedBillCount: bills.filter((b) => b.status === 'returned' || b.status === 'partially_returned').length,
@@ -279,6 +361,8 @@ export async function fetchUserSupportSnapshot(uid: string): Promise<UserSupport
     cashSales: billsWithSplit.reduce((sum, b) => sum + netSplitField(b, b.cashAmount), 0),
     cardSales: billsWithSplit.reduce((sum, b) => sum + netSplitField(b, b.cardAmount), 0),
     creditSales: billsWithSplit.reduce((sum, b) => sum + netSplitField(b, b.creditAmount), 0),
+    purchaseCost,
+    expenseTotal,
     warnings,
     syncMeta,
   };

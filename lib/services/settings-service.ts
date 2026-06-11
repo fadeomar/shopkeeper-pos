@@ -2,6 +2,7 @@ import { settingsRepo } from "@/lib/db/repositories";
 import { assertPermission } from "@/lib/services/permission-service";
 import { enqueueSyncJob } from "@/lib/services/sync-queue-service";
 import type { RolePermissions, Settings, UserRole } from "@/types/domain";
+import { assertSubscriptionCanWrite } from '@/lib/services/subscription-service';
 
 /**
  * Service-layer writes for the Settings row. The Settings page hides these
@@ -16,6 +17,7 @@ import type { RolePermissions, Settings, UserRole } from "@/types/domain";
 export async function saveBusinessSettings(
   changes: Partial<Settings>,
 ): Promise<Settings> {
+  await assertSubscriptionCanWrite();
   await assertPermission("canManageSettings");
   const saved = await settingsRepo.update({
     ...changes,

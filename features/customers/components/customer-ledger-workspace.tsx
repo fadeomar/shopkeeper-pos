@@ -24,12 +24,16 @@ import { DataTable } from "@/components/ui/data-table";
 // import { EmptyState } from "@/components/ui/empty-state";
 import { Modal } from "@/components/ui/modal";
 import { formatCurrency, MONEY_EPSILON } from "@/lib/utils/money";
-import { formatDateTime } from "@/lib/utils/date";
+import { formatDateTime, nowIso } from "@/lib/utils/date";
 import { downloadCSV } from "@/lib/utils/export-csv";
 import { RecordSyncBadge } from "@/components/sync/record-sync-badge";
 import { netSplitField, normalizeBillSplit } from "@/lib/utils/bill-split";
-import { settingsRepo } from "@/lib/db/repositories";
+import { customerRepo, settingsRepo } from "@/lib/db/repositories";
+import { createId } from "@/lib/utils/id";
+import { normalizePhone } from "@/lib/utils/customer-key";
 import type { ColumnDef } from "@tanstack/react-table";
+import { CheckCircle2, Phone, UserRound } from "lucide-react";
+import type { Customer } from "@/types/domain";
 
 export function CustomerLedgerWorkspace() {
   const { t /* dir */ } = useLocale();
@@ -42,6 +46,10 @@ export function CustomerLedgerWorkspace() {
   );
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<CustomerLedgerDetails | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [newCustomerName, setNewCustomerName] = useState("");
+  const [newCustomerPhone, setNewCustomerPhone] = useState("");
+  const [isSavingCustomer, setIsSavingCustomer] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [statementOpen, setStatementOpen] = useState(false);
   const [statementFrom, setStatementFrom] = useState("");
@@ -89,6 +97,7 @@ export function CustomerLedgerWorkspace() {
       ? safePaymentAmount - Math.max(0, balanceDueAtModal)
       : 0;
   const isOverpayment = overpaymentExtra > MONEY_EPSILON;
+  const canSaveCustomer = Boolean(newCustomerName.trim() || newCustomerPhone.trim());
 
   type CustomerStatementRow = {
     id: string;
@@ -174,6 +183,44 @@ export function CustomerLedgerWorkspace() {
     const credit = statementRows.reduce((sum, row) => sum + row.credit, 0);
     return { opening, debit, credit, ending: opening + debit - credit };
   }, [selected, statementFrom, statementRows]);
+
+  async function saveCustomer() {
+    const name = newCustomerName.trim();
+    const phone = newCustomerPhone.trim();
+    if (!name && !phone) {
+      push(t("customers.customerRequired"), "error");
+      return;
+    }
+
+    setIsSavingCustomer(true);
+    try {
+      const normalizedPhone = normalizePhone(phone);
+      const existing = normalizedPhone
+        ? await customerRepo.findByNormalizedPhone(normalizedPhone)
+        : undefined;
+      const now = nowIso();
+      const customer: Customer = {
+        id: existing?.id ?? createId("cust"),
+        name: name || existing?.name || t("customers.customer"),
+        phone: phone || undefined,
+        normalizedPhone: normalizedPhone || undefined,
+        notes: existing?.notes,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+        syncStatus: "pending",
+      };
+
+      await customerRepo.save(customer);
+      setAddOpen(false);
+      setNewCustomerName("");
+      setNewCustomerPhone("");
+      push(existing ? t("customers.customerUpdated") : t("customers.customerSaved"));
+    } catch (error) {
+      push(getServiceErrorMessage(error, t, t("customers.customerSaveFailed")), "error");
+    } finally {
+      setIsSavingCustomer(false);
+    }
+  }
 
   function exportCustomerStatementCsv() {
     if (!selected) return;
@@ -316,12 +363,9 @@ export function CustomerLedgerWorkspace() {
         description={t("customers.subtitle")}
         actions={
           <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
-            <Link
-              href={"/billing" as never}
-              className="inline-flex min-h-[42px] items-center justify-center rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-hover"
-            >
+            <Button type="button" onClick={() => setAddOpen(true)}>
               {t("customers.addCustomer")}
-            </Link>
+            </Button>
             <Button type="button" variant="secondary" onClick={() => setSearch("")}>
               {t("customers.showAll")}
             </Button>
@@ -628,6 +672,93 @@ export function CustomerLedgerWorkspace() {
             </div>
           </div>
         )}
+      </Modal>
+
+
+      <Modal
+        open={addOpen}
+        title={t("customers.addCustomer")}
+        description={t("customers.addCustomerDesc")}
+        onClose={() => setAddOpen(false)}
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full sm:w-auto"
+              onClick={() => setAddOpen(false)}
+              disabled={isSavingCustomer}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              type="button"
+              className="w-full sm:w-auto"
+              onClick={saveCustomer}
+              disabled={!canSaveCustomer}
+              loading={isSavingCustomer}
+            >
+              {t("customers.saveCustomer")}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-brand/15 bg-brand-soft/60 p-4">
+            <div className="flex items-start gap-3">
+              <span className="mt-0.5 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-brand text-white shadow-sm">
+                <UserRound size={20} aria-hidden />
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-slate-900">
+                  {t("customers.quickAddTitle")}
+                </p>
+                <p className="mt-1 text-sm leading-6 text-slate-600">
+                  {t("customers.quickAddHint")}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium uppercase tracking-wide text-slate-600">
+                {t("customers.customer")}
+              </span>
+              <Input
+                value={newCustomerName}
+                onChange={(event) => setNewCustomerName(event.target.value)}
+                placeholder={t("billing.customerName")}
+                inputSize="lg"
+                leftSlot={<UserRound size={18} aria-hidden />}
+                className="[font-size:16px]"
+                autoComplete="name"
+              />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium uppercase tracking-wide text-slate-600">
+                {t("customers.phone")}
+              </span>
+              <Input
+                value={newCustomerPhone}
+                onChange={(event) => setNewCustomerPhone(event.target.value)}
+                placeholder={t("billing.customerPhone")}
+                type="tel"
+                inputMode="tel"
+                inputSize="lg"
+                leftSlot={<Phone size={18} aria-hidden />}
+                className="[font-size:16px]"
+                autoComplete="tel"
+                dir="ltr"
+              />
+            </label>
+          </div>
+
+          <p className="flex items-start gap-2 rounded-xl border border-success/20 bg-success-soft/70 px-3 py-2 text-xs leading-5 text-success">
+            <CheckCircle2 size={16} className="mt-0.5 shrink-0" aria-hidden />
+            <span>{t("customers.addCustomerSyncHint")}</span>
+          </p>
+        </div>
       </Modal>
 
       <Modal

@@ -76,6 +76,11 @@ export const AppErrorCode = {
   // The current user's role lacks the permission for this action.
   PERMISSION_DENIED: 'PERMISSION_DENIED',
 
+  // ── Subscription / account access ─────────────────────────────────────────
+  SUBSCRIPTION_EXPIRED: 'SUBSCRIPTION_EXPIRED',
+  SUBSCRIPTION_SUSPENDED: 'SUBSCRIPTION_SUSPENDED',
+  SUBSCRIPTION_WRITE_BLOCKED: 'SUBSCRIPTION_WRITE_BLOCKED',
+
   // ── Import ─────────────────────────────────────────────────────────────────
   IMPORT_DUPLICATES: 'IMPORT_DUPLICATES',
 } as const;

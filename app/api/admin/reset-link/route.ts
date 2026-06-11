@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAdminAuth, getAdminFirestore } from '@/lib/firebase/firebase-admin';
+import {
+  FirebaseAdminConfigurationError,
+  getAdminAuth,
+  getAdminFirestore,
+} from '@/lib/firebase/firebase-admin';
+
+export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
@@ -37,6 +43,11 @@ export async function POST(request: NextRequest) {
     const link = await auth.generatePasswordResetLink(targetUser.email);
     return NextResponse.json({ link });
   } catch (err) {
+    // Misconfigured server (missing/!invalid admin credentials) is a 503, not a
+    // generic 500 — distinguishes "server not set up" from "request failed".
+    if (err instanceof FirebaseAdminConfigurationError) {
+      return NextResponse.json({ error: err.message }, { status: 503 });
+    }
     const message = err instanceof Error ? err.message : 'Unknown error';
     return NextResponse.json({ error: message }, { status: 500 });
   }
