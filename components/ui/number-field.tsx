@@ -149,6 +149,20 @@ export const NumberField = forwardRef<HTMLInputElement, NumberFieldProps>(
     useImperativeHandle(forwardedRef, () => innerRef.current as HTMLInputElement);
     const { t } = useLocale();
 
+    // Pending "select-all on focus" frame. We schedule the select on the next
+    // frame so a click's caret placement settles first — but if the user starts
+    // typing before it fires, we cancel it. Otherwise the select would run
+    // mid-entry, re-select the first digit, and the next keystroke would
+    // overwrite it (e.g. typing "51" landed as "1").
+    const selectAllFrame = useRef<number | null>(null);
+    const cancelSelectAll = useCallback(() => {
+      if (selectAllFrame.current != null) {
+        cancelAnimationFrame(selectAllFrame.current);
+        selectAllFrame.current = null;
+      }
+    }, []);
+    useEffect(() => cancelSelectAll, [cancelSelectAll]);
+
     // Internal string buffer — the source of truth WHILE the field is focused.
     // When unfocused, we render the parent's numeric value formatted for display.
     // This split is what lets users backspace to empty without the value
@@ -190,6 +204,9 @@ export const NumberField = forwardRef<HTMLInputElement, NumberFieldProps>(
     );
 
     function handleInput(e: React.ChangeEvent<HTMLInputElement>) {
+      // The user is typing — cancel any pending select-all so it can't fire
+      // mid-entry and clobber the digits already typed.
+      cancelSelectAll();
       const raw = e.target.value;
       setDraft(raw);
       // Only emit numeric updates when the buffer is a clean number.
@@ -203,6 +220,7 @@ export const NumberField = forwardRef<HTMLInputElement, NumberFieldProps>(
     }
 
     function handleBlur(e: React.FocusEvent<HTMLInputElement>) {
+      cancelSelectAll();
       setFocused(false);
       const parsed = parseNumeric(draft);
       if (!Number.isFinite(parsed)) {
@@ -224,7 +242,8 @@ export const NumberField = forwardRef<HTMLInputElement, NumberFieldProps>(
       // physical till keypads: tap the field, type the new value, done.
       // We do this on a microtask so the click that brought focus to the
       // field finishes positioning the caret first.
-      requestAnimationFrame(() => {
+      selectAllFrame.current = requestAnimationFrame(() => {
+        selectAllFrame.current = null;
         innerRef.current?.select();
       });
       onFocus?.(e);

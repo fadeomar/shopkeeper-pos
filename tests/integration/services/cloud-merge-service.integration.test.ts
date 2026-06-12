@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/lib/db/schema';
 import { makeProduct, makeSettings } from '@/tests/helpers/builders';
 import { resetTestDb } from '@/tests/helpers/db';
-import type { Product, Settings, SyncQueueItem } from '@/types/domain';
+import type { Product, SyncQueueItem } from '@/types/domain';
 
 // Firestore reads are stubbed so the merge/conflict logic can be exercised
 // without a real project. saveConflict still runs against fake-indexeddb so we
