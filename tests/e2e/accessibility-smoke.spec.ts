@@ -6,7 +6,7 @@ type A11yIssue = { selector: string; text: string; issue: string };
 const ROUTES: Array<{ path: string; heading: RegExp }> = [
   { path: '/', heading: /my shop|asas pos|welcome/i },
   { path: '/billing', heading: /create bill/i },
-  { path: '/purchases/new', heading: /new purchase/i },
+  { path: '/purchases/new', heading: /record a purchase/i },
   { path: '/products', heading: /^products$/i },
   { path: '/inventory', heading: /^inventory$/i },
   { path: '/customers', heading: /^customers$/i },

@@ -24,6 +24,11 @@ import {
   calculateChange,
   calculateLineSubtotal,
 } from "@/lib/utils/calculations";
+import {
+  creditAwareDefaultPaidAmount,
+  resolveActualPaidAmount,
+  wasPaidAmountManuallyEdited,
+} from "@/features/bills/utils/paid-amount";
 import { formatCurrency } from "@/lib/utils/money";
 import { blurInputOnEnter } from "@/lib/utils/dismiss-on-enter";
 import { createFinalizedPurchase } from "@/lib/services/purchase-service";
@@ -335,10 +340,12 @@ export function PurchaseEntryScreen() {
         parsed.form.discountAmount,
         parsed.form.taxAmount,
       ).totalAmount;
-      const expectedDefault =
-        parsed.form.paymentMethod === "credit" ? 0 : autoTotal;
       setIsPaidAmountManuallyEdited(
-        Math.abs((parsed.form.paidAmount ?? 0) - expectedDefault) > 0.001,
+        wasPaidAmountManuallyEdited(
+          parsed.form.paidAmount,
+          parsed.form.paymentMethod,
+          autoTotal,
+        ),
       );
     } catch {
       window.localStorage.removeItem(draftKey);
@@ -563,12 +570,15 @@ export function PurchaseEntryScreen() {
   );
 
   const isCreditPurchase = watchedPaymentMethod === "credit";
-  const defaultPaidAmount = isCreditPurchase
-    ? 0
-    : Number(purchaseSummary.totalAmount.toFixed(2));
-  const actualPaidAmount = isPaidAmountManuallyEdited
-    ? watchedPaidAmount
-    : defaultPaidAmount;
+  const defaultPaidAmount = creditAwareDefaultPaidAmount(
+    watchedPaymentMethod,
+    purchaseSummary.totalAmount,
+  );
+  const actualPaidAmount = resolveActualPaidAmount(
+    isPaidAmountManuallyEdited,
+    watchedPaidAmount,
+    defaultPaidAmount,
+  );
   const actualChangeAmount = calculateChange(
     actualPaidAmount,
     purchaseSummary.totalAmount,
@@ -1262,7 +1272,13 @@ export function PurchaseEntryScreen() {
                   </div>
                 </details>
 
-                <FormField label={t("purchases.paymentMethod")}>
+                {/* Not a FormField: its <label> would bind to the first radio
+                    (Cash) and pollute that radio's accessible name. The
+                    radiogroup already self-labels via aria-label. */}
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs font-medium text-slate-600 uppercase tracking-wide">
+                    {t("purchases.paymentMethod")}
+                  </span>
                   <PaymentMethodControl
                     value={watchedPaymentMethod as PurchaseFormSchema["paymentMethod"]}
                     onChange={(v) =>
@@ -1271,7 +1287,7 @@ export function PurchaseEntryScreen() {
                     label={t("purchases.paymentMethod")}
                     available={availablePaymentMethods}
                   />
-                </FormField>
+                </div>
 
                 <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">

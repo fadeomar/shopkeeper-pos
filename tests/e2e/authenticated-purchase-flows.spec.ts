@@ -7,7 +7,9 @@ async function addProductToPurchase(page: Page, productName = 'Rice 5kg') {
   await page.getByRole('option', { name: new RegExp(productName, 'i') }).click();
   await expect(page.getByRole('button', { name: /add item/i })).toBeEnabled();
   await page.getByRole('button', { name: /add item/i }).click();
-  await expect(page.getByText(productName).first()).toBeVisible();
+  // Mobile + desktop layouts both render (one hidden via CSS); scope to the
+  // visible line item rather than a bare .first() that can hit the hidden copy.
+  await expect(page.getByText(productName).filter({ visible: true }).first()).toBeVisible();
 }
 
 async function saveManualSupplier(page: Page, name: string, phone: string) {
@@ -24,7 +26,7 @@ async function saveManualSupplier(page: Page, name: string, phone: string) {
 
 async function finalizePurchase(page: Page) {
   await page.getByRole('button', { name: /review & save/i }).last().click();
-  const dialog = page.getByRole('dialog', { name: /finalize purchase/i });
+  const dialog = page.getByRole('dialog', { name: /save purchase/i });
   await expect(dialog).toBeVisible();
   await dialog.getByRole('button', { name: /confirm save/i }).click();
   await expect(page.getByText(/purchase saved/i).first()).toBeVisible();

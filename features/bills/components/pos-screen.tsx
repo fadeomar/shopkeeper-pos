@@ -14,6 +14,11 @@ import { normalizePhone } from "@/lib/utils/customer-key";
 import { getActiveShift } from "@/lib/services/shift-service";
 import { billFormSchema, type BillFormSchema } from "@/features/bills/schema";
 import {
+  creditAwareDefaultPaidAmount,
+  resolveActualPaidAmount,
+  wasPaidAmountManuallyEdited,
+} from "@/features/bills/utils/paid-amount";
+import {
   calculateBillTotals,
   calculateChange,
   calculateLineSubtotal,
@@ -412,13 +417,12 @@ export function PosScreen() {
         parsed.form.discountAmount,
         parsed.form.taxAmount,
       ).totalAmount;
-      // The auto-fill default is the bill total (or 0 for a credit sale).
-      // Compare against the credit-aware default so a saved credit sale
-      // (paidAmount 0) isn't mistakenly flagged as a manual override.
-      const expectedDefault =
-        parsed.form.paymentMethod === "credit" ? 0 : autoTotal;
       setIsPaidAmountManuallyEdited(
-        Math.abs((parsed.form.paidAmount ?? 0) - expectedDefault) > 0.001,
+        wasPaidAmountManuallyEdited(
+          parsed.form.paidAmount,
+          parsed.form.paymentMethod,
+          autoTotal,
+        ),
       );
     } catch {
       window.localStorage.removeItem(draftKey);
@@ -597,12 +601,15 @@ export function PosScreen() {
   );
 
   const isCreditSale = watchedPaymentMethod === "credit";
-  const defaultPaidAmount = isCreditSale
-    ? 0
-    : Number(billSummary.totalAmount.toFixed(2));
-  const actualPaidAmount = isPaidAmountManuallyEdited
-    ? watchedPaidAmount
-    : defaultPaidAmount;
+  const defaultPaidAmount = creditAwareDefaultPaidAmount(
+    watchedPaymentMethod,
+    billSummary.totalAmount,
+  );
+  const actualPaidAmount = resolveActualPaidAmount(
+    isPaidAmountManuallyEdited,
+    watchedPaidAmount,
+    defaultPaidAmount,
+  );
   const actualChangeAmount = useMemo(
     () => calculateChange(actualPaidAmount, billSummary.totalAmount),
     [actualPaidAmount, billSummary.totalAmount],
@@ -1404,7 +1411,13 @@ export function PosScreen() {
                     </button>
                   )}
                 </div>
-                <FormField label={t("billing.paymentMethod")}>
+                {/* Not a FormField: its <label> would bind to the first radio
+                    (Cash) and pollute that radio's accessible name. The
+                    radiogroup already self-labels via aria-label. */}
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs font-medium text-slate-600 uppercase tracking-wide">
+                    {t("billing.paymentMethod")}
+                  </span>
                   <PaymentMethodControl
                     value={watchedPaymentMethod as BillFormSchema["paymentMethod"]}
                     onChange={(v) =>
@@ -1413,7 +1426,7 @@ export function PosScreen() {
                     label={t("billing.paymentMethod")}
                     available={availablePaymentMethods}
                   />
-                </FormField>
+                </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   {canDiscount && (

@@ -99,6 +99,47 @@ Additional service/report coverage added in Chunk 4:
   - query/date/payment/status/cashier filters
   - paid totals that exclude unpaid credit debt
 
+Additional sync/merge coverage added in Chunk 15 (closing the highest-risk gap — the cloud conflict engine had no coverage):
+
+- `bill-split` (pure)
+  - legacy single-method / mixed / credit-deposit split derivation
+  - non-finite/negative input clamping
+  - `normalizeBillSplit` passthrough vs derive-on-missing
+  - proportional `netSplitField` return allocation, voided → 0, never negative
+- `date` (pure)
+  - `nowIso` against fake timers
+  - `localDateKey` local-calendar formatting + zero padding (the local-vs-UTC day-bucket guard)
+- `settings-sync-fields` (pure)
+  - `finiteSequence` coercion/fallback
+  - `mergedSequences` max-merge never regressing a counter
+  - `SETTINGS_TRACKED_FIELDS` = business + sequence union (guards the dropped-field bug class)
+- `sync-conflict-service` (Dexie-backed)
+  - `saveConflict` open-dedup, fingerprint suppression after resolve, reopen on changed cloud/local state
+  - `getOpenConflicts` open-only ordering
+  - `resolveConflictWithAction` keep_cloud (overwrite local + queue synced) and keep_local (re-queue pending) for product and settings
+  - `autoDismissFalseOfflineSaleConflicts` closes false offline bill-stock conflicts and sequence-only settings conflicts, leaves genuine business conflicts open
+- `cloud-merge-service` (Firestore reads stubbed; `saveConflict` real)
+  - product same-field conflict with quantity → high severity escalation
+  - local-newer-than-cloud raises no conflict
+  - duplicate-barcode conflict against a different cloud id
+  - settings sequence-only drift max-merges with no conflict
+  - settings business-field conflict (high) and currency change (critical)
+- `cloud-pull-service` `pullCloudChangesBeforePush` (Firestore `getDocs` routed by collection path; Dexie/saveConflict real)
+  - id-fallback: a new cloud doc whose body omits its id still lands under the Firestore doc id (the "sign in and see nothing" data-loss regression guard)
+  - clean local product overwritten by a newer cloud copy
+  - unsynced local edit raises a pull-cloud conflict instead of overwriting
+  - settings counter max-merge re-queues a push when the device is ahead
+  - remote void/return propagates onto a local bill, but is skipped when a local job is pending
+  - append-only history (expenses) insert-if-missing leaves existing rows untouched
+- `restore-service` (Firestore reads stubbed; Dexie real)
+  - `getRestoreErrorMessage` maps permission-denied/unavailable/unauthenticated + RestoreError passthrough + default
+  - `isLocalDbEmpty` true on a fresh DB, false when any business table (not just bills) has a row
+  - `fetchSyncMeta` exists/missing/offline-safe paths
+  - `pullSettingsFromCloud` no-doc/newer-cloud-with-sequence-merge/pending-job-skip
+  - `restoreFromCloud` clears stale local data and replaces it with the cloud backup, bumps the bill sequence past restored bills, regenerates duplicate INV numbers with a restore note, and seeds default settings when the cloud has none
+
+Known follow-up: `npm run test:coverage` needs `@vitest/coverage-v8` added to devDependencies (referenced by vitest.config.ts but not installed) before coverage numbers/thresholds can be enforced in CI.
+
 Additional component coverage added in Chunk 5:
 
 - `QuantityStepper` / `NumberField`

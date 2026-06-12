@@ -5,7 +5,10 @@ async function addProductToBill(page: Page, productName = 'Milk 1L') {
   await page.getByRole('button', { name: /select product/i }).first().click();
   await page.getByRole('combobox', { name: /search by name/i }).fill(productName);
   await page.getByRole('option', { name: new RegExp(productName, 'i') }).click();
-  await expect(page.getByText(productName).first()).toBeVisible();
+  // The POS renders mobile + desktop layouts (one hidden via CSS), so scope to
+  // the visible cart instance rather than a bare .first() that can land on the
+  // hidden copy.
+  await expect(page.getByText(productName).filter({ visible: true }).first()).toBeVisible();
 }
 
 async function finalizeBill(page: Page) {

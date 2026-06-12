@@ -7,7 +7,7 @@ async function openShift(page: import('@playwright/test').Page, openingCash = '1
   await expect(page.getByRole('heading', { name: /no shift open/i })).toBeVisible();
 
   await page.getByLabel(/opening cash/i).fill(openingCash);
-  await page.getByLabel(/^cashier$/i).fill('E2E Cashier');
+  await page.getByLabel(/cashier/i).fill('E2E Cashier');
   await page.getByRole('button', { name: /open new shift/i }).click();
 
   await expect(page.getByText(/shift opened/i).first()).toBeVisible();
@@ -56,7 +56,7 @@ test.describe('authenticated shift and cash drawer flows', () => {
 
     await expect(page.getByText(/shift closed/i).first()).toBeVisible();
     await expect(page.getByRole('dialog', { name: /view report/i })).toBeVisible();
-    await page.getByRole('dialog', { name: /view report/i }).getByRole('button', { name: /close/i }).click();
+    await page.getByRole('dialog', { name: /view report/i }).getByRole('button', { name: /close/i }).first().click();
     await expect(page.getByRole('heading', { name: /no shift open/i })).toBeVisible();
     await expect(page.getByRole('cell', { name: /E2E Cashier/i })).toBeVisible();
   });

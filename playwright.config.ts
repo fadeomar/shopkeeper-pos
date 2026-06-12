@@ -6,12 +6,15 @@ const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${PORT}`;
 export default defineConfig({
   testDir: './tests/e2e',
   testIgnore: /.*\.pwa\.spec\.ts/,
-  timeout: 30_000,
-  expect: { timeout: 10_000 },
+  // The webServer is `next dev`, which compiles each route on first hit. Under
+  // parallel load those first compilations are slow, so timeouts are generous
+  // and workers are capped to keep the single dev server from thrashing.
+  timeout: 60_000,
+  expect: { timeout: 15_000 },
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 2 : undefined,
+  retries: process.env.CI ? 2 : 1,
+  workers: 2,
   reporter: process.env.CI ? [['html', { open: 'never' }], ['github']] : [['list'], ['html', { open: 'never' }]],
   use: {
     baseURL,

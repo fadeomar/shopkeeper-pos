@@ -10,8 +10,8 @@ test.describe('public guide smoke', () => {
 
     await expect(page).toHaveTitle(/Guide.*Asas POS/i);
     await expect(page.getByRole('heading', { name: /run your shop/i })).toBeVisible();
-    await expect(page.getByRole('link', { name: /^sign in$/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'EN' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('link', { name: /^sign in$/i }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'EN' }).first()).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByText(/works offline/i)).toBeVisible();
   });
 

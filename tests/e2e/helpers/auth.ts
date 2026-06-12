@@ -31,7 +31,7 @@ export async function loginAsOwner(page: Page, options?: { uid?: string; name?: 
 
 export async function openCashierDashboard(page: Page): Promise<void> {
   await page.goto('/');
-  await expect(page.getByRole('link', { name: /create bill/i })).toBeVisible();
+  await expect(page.getByRole('link', { name: /create.*bill/i })).toBeVisible();
 }
 
 export async function initializeDemoData(page: Page): Promise<void> {
