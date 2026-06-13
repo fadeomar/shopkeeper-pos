@@ -103,6 +103,18 @@ export function formatWeightForCart(grams: number): string {
 }
 
 /**
+ * Display a product's base quantity (stock, threshold) with its unit: a
+ * compact weight ("62.5 kg", "250 g") for weight products, the plain count
+ * for unit products.
+ */
+export function formatStockDisplay(
+  saleType: ProductSaleType | undefined,
+  baseQuantity: number,
+): string {
+  return saleType === 'weight' ? formatWeight(baseQuantity) : String(baseQuantity);
+}
+
+/**
  * Money for a weighted line: price-per-kg × kilograms sold. Integer-safe by
  * routing through `multiplyMoney` (cents × fractional-kg, then rounded).
  *   250 g  @ 8 ₪/kg → 2.00
