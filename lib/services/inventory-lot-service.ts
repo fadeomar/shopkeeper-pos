@@ -30,6 +30,7 @@ import { db } from '@/lib/db/schema';
 import { AppError, AppErrorCode } from '@/lib/errors/app-error';
 import { createId } from '@/lib/utils/id';
 import { addMoney, multiplyMoney, roundMoney } from '@/lib/utils/money';
+import { baseUnitsPerPricingUnit } from '@/lib/utils/weight';
 import { isMiscLine } from '@/lib/utils/misc-items';
 import type {
   BillItemCostAllocation,
@@ -84,6 +85,9 @@ export async function createPurchaseLots(input: {
       sourceItemId: item.id,
       sourceLabel: purchase.purchaseNumber,
       receivedAt: createdAt,
+      // For weight lines quantityPurchased is grams and unitCostAtPurchase is
+      // per kg; baseUnit tells the FIFO COGS math how to reconcile them.
+      baseUnit: item.baseUnit ?? 'piece',
       quantityReceived: item.quantityPurchased,
       quantityRemaining: item.quantityPurchased,
       unitCost: item.unitCostAtPurchase,
@@ -126,6 +130,10 @@ export async function allocateFifoLotsForSale(input: {
     throw new AppError(AppErrorCode.PRODUCT_INSUFFICIENT_STOCK, { name: productId });
   }
 
+  // Pricing factor (1 for piece lots, 1000 for gram lots). All of a product's
+  // lots share the same base unit, so the first open lot is authoritative.
+  const factor = baseUnitsPerPricingUnit(openLots[0]?.baseUnit);
+
   let remaining = quantity;
   let totalCost = 0;
   const allocations: BillItemCostAllocation[] = [];
@@ -134,7 +142,9 @@ export async function allocateFifoLotsForSale(input: {
   for (const lot of openLots) {
     if (remaining <= 0) break;
     const take = Math.min(remaining, lot.quantityRemaining);
-    const lineCost = multiplyMoney(lot.unitCost, take);
+    // unitCost is per pricing unit (per kg / per piece); `take` is in base
+    // units (grams / pieces), so divide by the factor before costing.
+    const lineCost = multiplyMoney(lot.unitCost, take / factor);
 
     allocations.push({
       id: createId('alloc'),
@@ -168,7 +178,10 @@ export async function allocateFifoLotsForSale(input: {
   await db.inventoryLots.bulkPut(lotUpdates);
 
   const roundedTotal = roundMoney(totalCost);
-  const averageUnitCost = quantity > 0 ? roundMoney(roundedTotal / quantity) : 0;
+  // Average cost per PRICING unit (per kg / per piece) so it pairs with the
+  // bill item's per-kg/per-piece sell price. pricingQuantity = base ÷ factor.
+  const pricingQuantity = quantity / factor;
+  const averageUnitCost = pricingQuantity > 0 ? roundMoney(roundedTotal / pricingQuantity) : 0;
   return { allocations, totalCost: roundedTotal, averageUnitCost };
 }
 
@@ -251,7 +264,10 @@ export async function restoreAllocationsForReturn(input: {
       });
     }
 
-    returnedCost = addMoney(returnedCost, multiplyMoney(alloc.unitCost, take));
+    // unitCost is per pricing unit; `take` is in base units, so divide by the
+    // lot's factor before costing the returned quantity.
+    const factor = baseUnitsPerPricingUnit(lot?.baseUnit);
+    returnedCost = addMoney(returnedCost, multiplyMoney(alloc.unitCost, take / factor));
     remaining -= take;
   }
 
@@ -259,9 +275,13 @@ export async function restoreAllocationsForReturn(input: {
   if (updatedAllocations.length > 0) await db.billItemCostAllocations.bulkPut(updatedAllocations);
   if (updatedLots.length > 0) await db.inventoryLots.bulkPut(updatedLots);
 
-  const restoredQty = quantity - remaining;
+  const restoredBaseQty = quantity - remaining;
   const roundedCost = roundMoney(returnedCost);
-  const averageReturnedUnitCost = restoredQty > 0 ? roundMoney(roundedCost / restoredQty) : 0;
+  // Average per PRICING unit. All restored lots share one base unit, so derive
+  // the factor from the first updated lot.
+  const factor = baseUnitsPerPricingUnit(updatedLots[0]?.baseUnit);
+  const restoredPricingQty = restoredBaseQty / factor;
+  const averageReturnedUnitCost = restoredPricingQty > 0 ? roundMoney(roundedCost / restoredPricingQty) : 0;
   return { updatedAllocations, updatedLots, returnedCost: roundedCost, averageReturnedUnitCost };
 }
 
@@ -325,15 +345,18 @@ export async function createAdjustmentLot(input: {
   unitCost: number;
   sourceId: string;
   sourceLabel?: string;
+  baseUnit?: InventoryLot['baseUnit'];
   createdAt: string;
 }): Promise<InventoryLot> {
-  const { productId, quantity, unitCost, sourceId, sourceLabel, createdAt } = input;
+  const { productId, quantity, unitCost, sourceId, sourceLabel, baseUnit, createdAt } = input;
   const lot: InventoryLot = {
     id: createId('lot'),
     productId,
     sourceType: 'stock_adjustment',
     sourceId,
     sourceLabel,
+    // grams for weight products (unitCost is then per kg), pieces otherwise.
+    baseUnit: baseUnit ?? 'piece',
     receivedAt: createdAt,
     quantityReceived: quantity,
     quantityRemaining: quantity,
@@ -395,7 +418,9 @@ export async function calculateInventoryCostValue(): Promise<number> {
   let total = 0;
   for (const lot of lots) {
     if (lot.status === 'voided' || lot.quantityRemaining <= 0) continue;
-    total = addMoney(total, multiplyMoney(lot.unitCost, lot.quantityRemaining));
+    // quantityRemaining is base units; unitCost is per pricing unit.
+    const factor = baseUnitsPerPricingUnit(lot.baseUnit);
+    total = addMoney(total, multiplyMoney(lot.unitCost, lot.quantityRemaining / factor));
   }
   return roundMoney(total);
 }

@@ -22,13 +22,30 @@
  * render correctly under RTL without bidi reordering of the number.
  */
 import { multiplyMoney } from '@/lib/utils/money';
-import type { LotBaseUnit } from '@/types/domain';
+import type { LotBaseUnit, ProductSaleType } from '@/types/domain';
 
 export const GRAMS_PER_KG = 1000;
 
 /** Base units per pricing unit: gram lots price per kg (1000), piece lots per piece (1). */
 export function baseUnitsPerPricingUnit(baseUnit: LotBaseUnit | undefined): number {
   return baseUnit === 'gram' ? GRAMS_PER_KG : 1;
+}
+
+/** The integer base unit a product/line is tracked in: grams for weight, pieces otherwise. */
+export function lotBaseUnitFor(saleType: ProductSaleType | undefined): LotBaseUnit {
+  return saleType === 'weight' ? 'gram' : 'piece';
+}
+
+/**
+ * The pricing-unit quantity for money math, given an integer base quantity.
+ * Weight → kilograms (grams ÷ 1000, may be fractional); unit → the base count
+ * unchanged. This is the multiplier paired with a per-kg / per-piece price.
+ */
+export function pricingQuantityFor(
+  saleType: ProductSaleType | undefined,
+  baseQuantity: number,
+): number {
+  return saleType === 'weight' ? gramsToKg(baseQuantity) : baseQuantity;
 }
 
 /** Convert a kilogram amount to integer grams (rounds to the nearest gram). */

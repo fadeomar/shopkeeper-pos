@@ -1,4 +1,5 @@
 import { createId } from '@/lib/utils/id';
+import { lotBaseUnitFor } from '@/lib/utils/weight';
 import type { InventoryLot, Product } from '@/types/domain';
 
 /**
@@ -45,6 +46,9 @@ export function buildOpeningLot(
     sourceType: 'opening_balance',
     sourceId: options.sourceId ?? OPENING_LOT_SOURCE_ID,
     sourceLabel: options.sourceLabel ?? 'Opening balance',
+    // Weight products store quantityInStock as grams and buyPrice per kg, so
+    // the opening lot must be a 'gram' lot for FIFO costing to reconcile.
+    baseUnit: lotBaseUnitFor(product.saleType),
     receivedAt: product.dateAdded || product.lastUpdated || now,
     quantityReceived: quantity,
     quantityRemaining: quantity,

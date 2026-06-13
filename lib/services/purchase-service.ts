@@ -15,7 +15,9 @@ import {
   createPurchaseLots,
   removePurchaseLotQuantity,
 } from "@/lib/services/inventory-lot-service";
+import { kgToGrams, pricingQuantityFor } from "@/lib/utils/weight";
 import type {
+  LotBaseUnit,
   PaymentMethod,
   Product,
   Purchase,
@@ -24,6 +26,31 @@ import type {
   PurchaseItem,
   StockMovement,
 } from "@/types/domain";
+
+/**
+ * Resolve a purchase draft line into the two quantity views the rest of the
+ * service needs: `baseQuantity` (integer grams for weight, pieces otherwise —
+ * what stock, lots, and movements use) and `pricingQuantity` (kilograms for
+ * weight, pieces otherwise — the multiplier for per-kg / per-piece money).
+ * Misc and unit lines collapse to identical base/pricing values.
+ */
+function resolvePurchaseLine(line: PurchaseDraftItem): {
+  isWeight: boolean;
+  baseUnit: LotBaseUnit;
+  baseQuantity: number;
+  pricingQuantity: number;
+} {
+  const isWeight = line.saleType === 'weight';
+  const baseQuantity = isWeight
+    ? Math.round(line.baseQuantity ?? kgToGrams(line.quantity))
+    : line.quantity;
+  return {
+    isWeight,
+    baseUnit: isWeight ? 'gram' : 'piece',
+    baseQuantity,
+    pricingQuantity: line.quantity,
+  };
+}
 
 function requestSync(): void {
   if (typeof window !== "undefined") {
@@ -35,7 +62,14 @@ function validatePurchaseLine(line: PurchaseDraftItem, product: Product) {
   if (product.status !== "active") {
     throw new AppError(AppErrorCode.PRODUCT_INACTIVE, { name: product.name });
   }
-  if (!Number.isInteger(line.quantity) || line.quantity <= 0) {
+  const { isWeight, baseQuantity } = resolvePurchaseLine(line);
+  if (isWeight) {
+    // Weight lines buy grams (integer base units); kg input is converted up
+    // front, so a sub-gram or zero quantity is rejected here.
+    if (!Number.isInteger(baseQuantity) || baseQuantity <= 0) {
+      throw new AppError(AppErrorCode.PRODUCT_QTY_POSITIVE_WHOLE, { name: product.name });
+    }
+  } else if (!Number.isInteger(line.quantity) || line.quantity <= 0) {
     throw new AppError(AppErrorCode.PRODUCT_QTY_POSITIVE_WHOLE, { name: product.name });
   }
   if (!Number.isFinite(line.unitCost) || line.unitCost < 0) {
@@ -265,20 +299,27 @@ export async function createFinalizedPurchase(input: {
       }
       const resolvedShiftId = activeShift?.id;
 
-      const purchaseItems: PurchaseItem[] = input.items.map((item) => ({
-        id: createId("purchase_item"),
-        purchaseId,
-        originalProductId: item.productId,
-        barcodeAtPurchase: item.barcode,
-        productNameAtPurchase: item.name,
-        categoryAtPurchase: item.category,
-        itemKind: isMiscLine(item) ? "misc" : "product",
-        miscDescription: item.miscDescription,
-        quantityPurchased: item.quantity,
-        unitCostAtPurchase: item.unitCost,
-        lineSubtotal: calculateLineSubtotal(item.quantity, item.unitCost),
-        createdAt,
-      }));
+      const purchaseItems: PurchaseItem[] = input.items.map((item) => {
+        const { isWeight, baseUnit, baseQuantity, pricingQuantity } = resolvePurchaseLine(item);
+        return {
+          id: createId("purchase_item"),
+          purchaseId,
+          originalProductId: item.productId,
+          barcodeAtPurchase: item.barcode,
+          productNameAtPurchase: item.name,
+          categoryAtPurchase: item.category,
+          itemKind: isMiscLine(item) ? "misc" : "product",
+          miscDescription: item.miscDescription,
+          // Weight lines store grams + per-kg cost; baseUnit lets the lot and
+          // FIFO COGS engine reconcile the two. Unit/misc lines are pieces.
+          saleType: isWeight ? "weight" : undefined,
+          baseUnit,
+          quantityPurchased: baseQuantity,
+          unitCostAtPurchase: item.unitCost,
+          lineSubtotal: calculateLineSubtotal(pricingQuantity, item.unitCost),
+          createdAt,
+        };
+      });
 
       const purchase: Purchase = {
         id: purchaseId,
@@ -301,7 +342,12 @@ export async function createFinalizedPurchase(input: {
         cashAmount: split.cashAmount,
         cardAmount: split.cardAmount,
         creditAmount: split.creditAmount,
-        itemCount: input.items.reduce((sum, item) => sum + item.quantity, 0),
+        // A weight line counts as one item (its "quantity" is kilograms, which
+        // would make a line-count meaningless); unit lines count their pieces.
+        itemCount: input.items.reduce(
+          (sum, item) => sum + (item.saleType === 'weight' ? 1 : item.quantity),
+          0,
+        ),
         status: "finalized",
         shiftId: resolvedShiftId,
         notes: input.form.notes,
@@ -316,7 +362,12 @@ export async function createFinalizedPurchase(input: {
       const updatedProducts: Product[] = products.map((product) => {
         const purchasedLines = input.items.filter((i) => i.productId === product.id);
         if (purchasedLines.length === 0) return product;
-        const totalQty = purchasedLines.reduce((sum, line) => sum + line.quantity, 0);
+        // Add stock in base units (grams for weight, pieces otherwise) to match
+        // how quantityInStock is stored for that product.
+        const totalQty = purchasedLines.reduce(
+          (sum, line) => sum + resolvePurchaseLine(line).baseQuantity,
+          0,
+        );
         // If multiple lines reference the same product with different costs,
         // use the latest line's cost as the new buyPrice. Edge case but
         // possible if the cashier accidentally entered two lines.
@@ -335,7 +386,8 @@ export async function createFinalizedPurchase(input: {
         id: createId("move"),
         productId: item.productId,
         movementType: "purchase",
-        quantityChange: item.quantity,
+        // Base units (grams for weight) so the movement ledger matches stock.
+        quantityChange: resolvePurchaseLine(item).baseQuantity,
         referenceType: "purchase",
         referenceId: purchaseId,
         note: `Purchase ${purchaseNumber}${input.form.supplierName ? ` from ${input.form.supplierName}` : ""}`,
@@ -440,7 +492,10 @@ function calculateReturnedPurchaseLineValue(
   item: PurchaseItem,
   quantity: number,
 ) {
-  const lineAmount = calculateLineSubtotal(quantity, item.unitCostAtPurchase);
+  // `quantity` is in base units (grams for weight); unitCostAtPurchase is per
+  // kg, so price the return against the kilograms returned.
+  const pricingQuantity = pricingQuantityFor(item.saleType, quantity);
+  const lineAmount = calculateLineSubtotal(pricingQuantity, item.unitCostAtPurchase);
   const subtotalRatio = purchase.subtotal > 0 ? lineAmount / purchase.subtotal : 0;
   const discountShare = allocateMoney(purchase.discountAmount, subtotalRatio);
   const taxShare = allocateMoney(purchase.taxAmount, subtotalRatio);

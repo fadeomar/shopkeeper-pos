@@ -11,6 +11,7 @@ import {
   consumeLotsForNegativeAdjustment,
   createAdjustmentLot,
 } from '@/lib/services/inventory-lot-service';
+import { lotBaseUnitFor } from '@/lib/utils/weight';
 
 function requestSync(): void {
   if (typeof window !== 'undefined') {
@@ -63,6 +64,8 @@ export async function createProductWithInitialMovement(product: Product) {
         unitCost: safeBuyPrice,
         sourceId: product.id,
         sourceLabel: 'Initial stock',
+        // Weight products: quantityInStock is grams, buyPrice is per kg.
+        baseUnit: lotBaseUnitFor(product.saleType),
         createdAt,
       });
     }
@@ -152,6 +155,7 @@ export async function adjustProductStock(
         unitCost: liveProduct.buyPrice,
         sourceId: product.id,
         sourceLabel: note?.trim() || 'Stock adjustment',
+        baseUnit: lotBaseUnitFor(liveProduct.saleType),
         createdAt,
       });
       lotSyncIds.push(lot.id);
@@ -250,6 +254,7 @@ export async function receiveProductStock(
       unitCost: hasNewCost ? (buyPrice as number) : liveProduct.buyPrice,
       sourceId: product.id,
       sourceLabel: note.trim() || 'Received stock',
+      baseUnit: lotBaseUnitFor(liveProduct.saleType),
       createdAt,
     });
 
@@ -321,6 +326,7 @@ export async function countProductStock(
         unitCost: liveProduct.buyPrice,
         sourceId: product.id,
         sourceLabel: note.trim() || 'Stock count',
+        baseUnit: lotBaseUnitFor(liveProduct.saleType),
         createdAt,
       });
       lotSyncIds.push(lot.id);
