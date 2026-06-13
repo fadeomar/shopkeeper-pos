@@ -309,6 +309,47 @@ describe('FIFO inventory lots', () => {
     await expect(db.products.get('p9')).resolves.toMatchObject({ quantityInStock: 99 });
   });
 
+  // 9b. Loss-sale validation costs against the actual FIFO lot, not buyPrice.
+  // Scenario A: old lot is cheap (cost 2), product.buyPrice is high (5).
+  // Selling at 3 must be ALLOWED with allowLossSale=false because the real
+  // FIFO cost consumed is 2 — the latest buyPrice 5 is irrelevant.
+  it('allows a sale below latest buyPrice when the consumed FIFO lot cost is lower', async () => {
+    await seedSettings({ allowLossSale: false });
+    const { product } = await seedProductWithLots({ id: 'pA', buyPrice: 5, sellPrice: 3 }, [{ qty: 10, cost: 2 }]);
+
+    const result = await createFinalizedBill({
+      items: [makeBillDraftItem(product, { quantity: 1, unitSellPrice: 3 })],
+      form: makeBillForm({ paidAmount: 3 }),
+    });
+
+    // 1 × (3 − 2) = 1.
+    expect(result.billItems[0].lineProfit).toBe(1);
+    expect(result.billItems[0].unitBuyPriceAtSale).toBe(2);
+    await expect(db.products.get('pA')).resolves.toMatchObject({ quantityInStock: 9 });
+  });
+
+  // Scenario B: old lot is expensive (cost 5), product.buyPrice is now low (2).
+  // Selling at 3 must be BLOCKED with allowLossSale=false because the real
+  // FIFO cost consumed is 5 — selling at 3 is a genuine loss. Nothing persists.
+  it('blocks a sale above latest buyPrice when the consumed FIFO lot cost is higher, and writes nothing', async () => {
+    await seedSettings({ allowLossSale: false });
+    const { product, lotIds } = await seedProductWithLots({ id: 'pB', buyPrice: 2, sellPrice: 3 }, [{ qty: 10, cost: 5 }]);
+
+    await expectAppError(
+      createFinalizedBill({
+        items: [makeBillDraftItem(product, { quantity: 1, unitSellPrice: 3 })],
+        form: makeBillForm({ paidAmount: 3 }),
+      }),
+      AppErrorCode.PRODUCT_LOSS_SALE_BLOCKED,
+    );
+
+    // Transaction rolled back: no bill, no allocation, lot untouched.
+    await expect(db.bills.count()).resolves.toBe(0);
+    await expect(db.billItemCostAllocations.count()).resolves.toBe(0);
+    await expect(db.inventoryLots.get(lotIds[0])).resolves.toMatchObject({ quantityRemaining: 10, status: 'open' });
+    await expect(db.products.get('pB')).resolves.toMatchObject({ quantityInStock: 10 });
+  });
+
   // 10. Inventory cost value uses lots, not latest buyPrice
   it('computes inventory cost value from lots, not the latest buy price', async () => {
     await seedProductWithLots({ id: 'p10', buyPrice: 13 }, [{ qty: 30, cost: 10 }, { qty: 100, cost: 13 }]);

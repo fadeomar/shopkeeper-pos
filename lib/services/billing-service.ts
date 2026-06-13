@@ -41,7 +41,6 @@ function requestSync(): void {
 }
 
 function validateDraftLine(
-  settings: Settings,
   line: BillDraftItem,
   product: Product,
   requestedQuantity: number,
@@ -54,8 +53,33 @@ function validateDraftLine(
     throw new AppError(AppErrorCode.PRODUCT_QTY_POSITIVE, { name: product.name });
   if (requestedQuantity > product.quantityInStock)
     throw new AppError(AppErrorCode.PRODUCT_INSUFFICIENT_STOCK, { name: product.name });
-  if (!settings.allowLossSale && line.unitSellPrice < line.unitBuyPrice) {
-    throw new AppError(AppErrorCode.PRODUCT_LOSS_SALE_BLOCKED, { name: product.name });
+  // NB: the loss-sale check is NOT here. Under FIFO the authoritative cost is
+  // the actual cost of the consumed lots, not product.buyPrice (the latest
+  // purchase price). Comparing against buyPrice would wrongly block a sale of
+  // cheap old stock, or wrongly allow a sale of expensive old stock. The check
+  // runs after lot allocation, against the real weighted cost — see
+  // assertLossSaleAllowed below.
+}
+
+/**
+ * Loss-sale guard, costed against the *actual* FIFO-allocated unit cost.
+ *
+ * Called after `allocateFifoLotsForSale` so `averageUnitCost` is the weighted
+ * cost of the exact lots that left the shelf. Throwing here aborts the
+ * enclosing Dexie transaction, so the allocations/lot decrements roll back and
+ * nothing is persisted. `settings` is non-null inside createFinalizedBill.
+ */
+function assertLossSaleAllowed(
+  settings: Settings,
+  productName: string,
+  unitSellPrice: number,
+  averageUnitCost: number,
+): void {
+  if (settings.allowLossSale) return;
+  // Money-rounded values; only block when cost meaningfully exceeds price so
+  // float noise on an exact break-even sale doesn't trip the guard.
+  if (averageUnitCost - unitSellPrice > MONEY_EPSILON) {
+    throw new AppError(AppErrorCode.PRODUCT_LOSS_SALE_BLOCKED, { name: productName });
   }
 }
 
@@ -260,7 +284,7 @@ export async function createFinalizedBill(input: {
           (candidate) => candidate.id === line.productId,
         );
         if (!product) throw new AppError(AppErrorCode.LINE_PRODUCT_NOT_FOUND, { name: line.name });
-        validateDraftLine(settings, line, product, requestedQuantities.get(line.productId) ?? line.quantity);
+        validateDraftLine(line, product, requestedQuantities.get(line.productId) ?? line.quantity);
       }
 
       // Build bill items. Real product lines are costed by consuming FIFO
@@ -305,6 +329,9 @@ export async function createFinalizedBill(input: {
           quantity: item.quantity,
           createdAt,
         });
+        // Loss-sale policy is enforced against the real FIFO cost, not the
+        // product's latest buyPrice. Throwing here rolls back the allocation.
+        assertLossSaleAllowed(settings, item.name, item.unitSellPrice, averageUnitCost);
         costAllocations.push(...allocations);
         for (const allocation of allocations) consumedLotIds.add(allocation.inventoryLotId);
 
