@@ -329,12 +329,13 @@ export function PurchaseHistory() {
   return (
     <div className="space-y-4">
       <Card>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
+        <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 xl:grid-cols-6">
           <Input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={t("purchases.searchPlaceholder")}
             aria-label={t("purchases.searchPlaceholder")}
+            className="sm:col-span-2 xl:col-span-2"
           />
           <SearchableSelect
             value={dateFilter}

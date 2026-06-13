@@ -196,4 +196,52 @@ describe('restoreFromCloud', () => {
 
     await expect(db.settings.get('app-settings')).resolves.toMatchObject({ nextBillSequence: 51, syncStatus: 'synced' });
   });
+
+  it('synthesizes an opening lot for legacy products that have stock but no lots, and queues it for sync', async () => {
+    // Pre-FIFO cloud backup: a product with stock but no inventoryLots.
+    setCloud({
+      products: [{ id: 'legacy-1', body: { id: 'legacy-1', name: 'Legacy Rice', barcode: '111', category: 'C', unit: 'pcs', quantityInStock: 40, buyPrice: 3, sellPrice: 6, status: 'active', dateAdded: '2026-01-01T00:00:00.000Z', lastUpdated: '2026-01-01T00:00:00.000Z' } }],
+    });
+
+    await restoreFromCloud('uid-1');
+
+    const lots = await db.inventoryLots.where('productId').equals('legacy-1').toArray();
+    expect(lots).toHaveLength(1);
+    expect(lots[0]).toMatchObject({
+      sourceType: 'opening_balance',
+      sourceId: 'legacy-opening-restore',
+      quantityReceived: 40,
+      quantityRemaining: 40,
+      unitCost: 3,
+      status: 'open',
+      syncStatus: 'pending',
+    });
+    // The new lot is queued so it reaches the cloud (restored rows are 'synced').
+    await expect(db.syncQueue.get(`sq:inventoryLot:${lots[0].id}`)).resolves.toMatchObject({
+      entity: 'inventoryLot',
+      operation: 'create',
+      status: 'pending',
+    });
+  });
+
+  it('does not duplicate the opening lot when a later restore already pulls it back (idempotent)', async () => {
+    setCloud({
+      products: [{ id: 'legacy-1', body: { id: 'legacy-1', name: 'Legacy Rice', barcode: '111', category: 'C', unit: 'pcs', quantityInStock: 40, buyPrice: 3, sellPrice: 6, status: 'active', dateAdded: '2026-01-01T00:00:00.000Z', lastUpdated: '2026-01-01T00:00:00.000Z' } }],
+    });
+    await restoreFromCloud('uid-1');
+    const firstLot = (await db.inventoryLots.where('productId').equals('legacy-1').toArray())[0];
+
+    // Simulate the synthesized lot having been pushed to the cloud, so the next
+    // restore pulls it back. The product now has a lot → no second one created.
+    setCloud({
+      products: [{ id: 'legacy-1', body: { id: 'legacy-1', name: 'Legacy Rice', barcode: '111', category: 'C', unit: 'pcs', quantityInStock: 40, buyPrice: 3, sellPrice: 6, status: 'active', dateAdded: '2026-01-01T00:00:00.000Z', lastUpdated: '2026-01-01T00:00:00.000Z' } }],
+      inventoryLots: [{ id: firstLot.id, body: firstLot as unknown as Record<string, unknown> }],
+    });
+
+    await restoreFromCloud('uid-1');
+
+    const lots = await db.inventoryLots.where('productId').equals('legacy-1').toArray();
+    expect(lots).toHaveLength(1);
+    expect(lots[0].id).toBe(firstLot.id);
+  });
 });

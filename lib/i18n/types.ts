@@ -1549,6 +1549,10 @@ export interface TranslationDict {
     STOCK_ADJ_NEGATIVE_RESULT: string;
     STOCK_RECEIVED_QTY_INVALID: string;
     STOCK_COUNTED_QTY_INVALID: string;
+    // FIFO inventory lots
+    INVENTORY_LOT_NOT_FOUND: string;
+    INVENTORY_LOT_INSUFFICIENT_STOCK: string;
+    INVENTORY_LOT_OVER_ALLOCATED: string;
     // Payments
     CUSTOMER_REQUIRED: string;
     SUPPLIER_REQUIRED: string;

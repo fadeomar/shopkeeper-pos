@@ -3,7 +3,7 @@ import { createEmptyBackupPlan, createLocalBackupSnapshot, downloadJsonFile } fr
 import { db } from '@/lib/db/schema';
 import { makeProduct, makeSettings } from '@/tests/helpers/builders';
 import { resetTestDb } from '@/tests/helpers/db';
-import type { AuditEvent, CashMovement, Expense, StockMovement, SyncQueueItem } from '@/types/domain';
+import type { AuditEvent, BillItemCostAllocation, CashMovement, Expense, InventoryLot, StockMovement, SyncQueueItem } from '@/types/domain';
 
 describe('local backup utilities', () => {
   beforeEach(async () => {
@@ -59,6 +59,35 @@ describe('local backup utilities', () => {
       createdAt: '2026-01-01T03:00:02.000Z',
       updatedAt: '2026-01-01T03:00:02.000Z',
     };
+    const inventoryLot: InventoryLot = {
+      id: 'lot-backup',
+      productId: product.id,
+      sourceType: 'opening_balance',
+      sourceId: 'import-opening',
+      sourceLabel: 'Imported opening stock',
+      receivedAt: '2026-01-01T00:30:00.000Z',
+      quantityReceived: 4,
+      quantityRemaining: 4,
+      unitCost: 3,
+      status: 'open',
+      createdAt: '2026-01-01T00:30:00.000Z',
+      updatedAt: '2026-01-01T00:30:00.000Z',
+      syncStatus: 'pending',
+    };
+    const costAllocation: BillItemCostAllocation = {
+      id: 'alloc-backup',
+      billId: 'bill-backup',
+      billItemId: 'bill-item-backup',
+      productId: product.id,
+      inventoryLotId: inventoryLot.id,
+      quantity: 1,
+      quantityReturned: 0,
+      unitCost: 3,
+      lineCost: 3,
+      createdAt: '2026-01-01T04:00:00.000Z',
+      updatedAt: '2026-01-01T04:00:00.000Z',
+      syncStatus: 'pending',
+    };
 
     await db.products.put(product);
     await db.stockMovements.put(movement);
@@ -67,6 +96,8 @@ describe('local backup utilities', () => {
     await db.expenses.put(expense);
     await db.auditEvents.put(auditEvent);
     await db.syncQueue.put(syncJob);
+    await db.inventoryLots.put(inventoryLot);
+    await db.billItemCostAllocations.put(costAllocation);
 
     const snapshot = await createLocalBackupSnapshot();
 
@@ -80,6 +111,8 @@ describe('local backup utilities', () => {
       expenses: 1,
       auditEvents: 1,
       syncQueue: 1,
+      inventoryLots: 1,
+      billItemCostAllocations: 1,
     });
     expect(snapshot.data.products).toEqual([product]);
     expect(snapshot.data.stockMovements).toEqual([movement]);
@@ -87,6 +120,8 @@ describe('local backup utilities', () => {
     expect(snapshot.data.expenses).toEqual([expense]);
     expect(snapshot.data.auditEvents).toEqual([auditEvent]);
     expect(snapshot.data.syncQueue).toEqual([syncJob]);
+    expect(snapshot.data.inventoryLots).toEqual([inventoryLot]);
+    expect(snapshot.data.billItemCostAllocations).toEqual([costAllocation]);
   });
 
   it('creates an empty backup plan with every count and table initialized', () => {
@@ -107,6 +142,8 @@ describe('local backup utilities', () => {
       auditEvents: 0,
       cashMovements: 0,
       expenses: 0,
+      inventoryLots: 0,
+      billItemCostAllocations: 0,
       settings: 0,
       syncQueue: 0,
       syncConflicts: 0,
@@ -114,6 +151,8 @@ describe('local backup utilities', () => {
     expect(plan.data.auditEvents).toEqual([]);
     expect(plan.data.cashMovements).toEqual([]);
     expect(plan.data.expenses).toEqual([]);
+    expect(plan.data.inventoryLots).toEqual([]);
+    expect(plan.data.billItemCostAllocations).toEqual([]);
   });
 
   it('downloads backup JSON using a temporary object URL and removes the temporary link', () => {

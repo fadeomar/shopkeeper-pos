@@ -69,8 +69,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <LocaleProvider>
           <SettingsProvider>
             <ToastProvider>
-              <ServiceWorkerRegister />
               <AuthProvider>
+                <ServiceWorkerRegister />
                 <SyncProvider>
                   <AuthenticatedShell>
                     {children}

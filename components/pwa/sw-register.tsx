@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { db } from "@/lib/db/schema";
+import clsx from "clsx";
 import { useLocale } from "@/components/providers/locale-context";
+import { useAuth } from "@/components/providers/auth-context";
 
 const OFFLINE_NAV_ROUTES = [
   "/",
@@ -101,6 +103,8 @@ async function hasRequiredOfflineCache(): Promise<boolean> {
 
 export function ServiceWorkerRegister() {
   const { t } = useLocale();
+  const { status } = useAuth();
+  const hasDesktopSidebar = status === "authenticated";
   const regRef = useRef<ServiceWorkerRegistration | null>(null);
   const warmRunRef = useRef(0);
 
@@ -425,7 +429,10 @@ export function ServiceWorkerRegister() {
 
   return (
     <div
-      className="flex flex-wrap gap-2 px-4 py-2 bg-slate-950 border-b border-white/5"
+      className={clsx(
+        "flex flex-wrap gap-2 bg-slate-950 px-4 py-2 transition-[padding] border-b border-white/5",
+        hasDesktopSidebar && "lg:ps-[276px]",
+      )}
       aria-live="polite"
     >
       {networkBadge}

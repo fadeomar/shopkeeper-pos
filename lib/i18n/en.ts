@@ -1184,14 +1184,14 @@ export const en: TranslationDict = {
     quickAddFailed: "Could not create the product.",
     noProductFoundForBarcode: "No product found for barcode {{barcode}}.",
     purchaseQuantity: "Purchase quantity",
-    buyPriceWillUpdate: "This will update the product buy price after saving.",
+    buyPriceWillUpdate: "This updates the product’s last purchase cost. Profit is calculated from stock lots, not this price.",
     reviewSellPrice: "Review sell price — this cost may make profit low or negative.",
     purchaseCostChanged: "Purchase cost changed",
     currentCost: "Current cost",
     newCost: "New cost",
     sellPrice: "Sell price",
     estimatedMargin: "Estimated margin",
-    buyPriceWillUpdateDetailed: "After saving, this product’s buy price will update. Sell price will not change automatically.",
+    buyPriceWillUpdateDetailed: "After saving, this product’s last purchase cost will update. Profit uses FIFO stock lots, so older stock keeps its original cost. Sell price will not change automatically.",
     lowMarginWarning: "Sell price should be reviewed because the margin is low or negative.",
     invoiceDetails: "Invoice details",
     invoiceDetailsHelper: "Optional",
@@ -1664,6 +1664,12 @@ export const en: TranslationDict = {
       "Received quantity must be a positive whole number.",
     STOCK_COUNTED_QTY_INVALID:
       "Counted quantity must be a non-negative whole number.",
+    // FIFO inventory lots
+    INVENTORY_LOT_NOT_FOUND: "Inventory lot not found.",
+    INVENTORY_LOT_INSUFFICIENT_STOCK:
+      "Cannot complete: the quantity available in stock lots is less than the quantity requested.",
+    INVENTORY_LOT_OVER_ALLOCATED:
+      "Cannot return more than was taken from this stock lot.",
     // Payments
     CUSTOMER_REQUIRED: "Customer is required.",
     SUPPLIER_REQUIRED: "Supplier is required.",

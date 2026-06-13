@@ -6,7 +6,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db/schema";
 import { settingsRepo } from "@/lib/db/repositories";
 import { seedDemoData } from "@/lib/db/seed";
-import { formatCurrency } from "@/lib/utils/money";
+import { addMoney, formatCurrency, multiplyMoney } from "@/lib/utils/money";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -33,6 +33,7 @@ export default function DashboardPage() {
     () => db.stockMovements.orderBy("createdAt").reverse().limit(5).toArray(),
     [],
   );
+  const inventoryLots = useLiveQuery(() => db.inventoryLots.toArray(), []);
   const settings = useLiveQuery(() => settingsRepo.get(), []);
   const supplierLedger = useLiveQuery(() => getSupplierLedger(), []);
   const { push } = useToast();
@@ -41,8 +42,13 @@ export default function DashboardPage() {
   const lowStockCount = liveProducts.filter(
     (p) => p.quantityInStock <= p.minimumStockAlert,
   ).length;
-  const totalInventoryValue = liveProducts.reduce(
-    (s, p) => s + p.quantityInStock * p.buyPrice,
+  // FIFO cost value of stock on hand: sum(quantityRemaining × unitCost) over
+  // non-voided lots, not quantityInStock × latest buyPrice.
+  const totalInventoryValue = (inventoryLots ?? []).reduce(
+    (s, lot) =>
+      lot.status === "voided" || lot.quantityRemaining <= 0
+        ? s
+        : addMoney(s, multiplyMoney(lot.unitCost, lot.quantityRemaining)),
     0,
   );
   // Use net total so voided bills contribute 0 and partial returns reduce the

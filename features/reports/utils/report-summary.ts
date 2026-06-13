@@ -1,7 +1,7 @@
-import type { Bill, BillItem, CashMovement, Expense, ExpenseCategory, PaymentMethod, Product, Purchase, SupplierPayment } from '@/types/domain';
+import type { Bill, BillItem, BillItemCostAllocation, CashMovement, Expense, ExpenseCategory, PaymentMethod, Product, Purchase, SupplierPayment } from '@/types/domain';
 import { getBillNetItemCount, getBillNetProfit, getBillNetTotal } from '@/features/bills/utils/bill-summary';
 import { calculateBillItemNetContribution, calculateLineProfit, calculateLineSubtotal } from '@/lib/utils/calculations';
-import { roundMoney } from '@/lib/utils/money';
+import { addMoney, multiplyMoney, roundMoney, subtractMoney } from '@/lib/utils/money';
 import { localDateKey } from '@/lib/utils/date';
 import { netSplitField, normalizeBillSplit } from '@/lib/utils/bill-split';
 import { isMiscLine } from '@/lib/utils/misc-items';
@@ -243,12 +243,25 @@ export function summarizeProductSales(
   bills: Bill[],
   billItems: BillItem[],
   products: Product[],
+  // FIFO cost allocations, when available. For bills that carry them, product
+  // profit is costed from the exact lots consumed (net of returns); bills
+  // without allocations (created before FIFO) fall back to the bill item's
+  // unitBuyPriceAtSale snapshot.
+  allocations: BillItemCostAllocation[] = [],
 ): ProductSalesRow[] {
   const activeBills = bills.filter((bill) => bill.status !== 'voided');
   const activeBillIds = new Set(activeBills.map((bill) => bill.id));
   const billById = new Map(activeBills.map((bill) => [bill.id, bill]));
   const productById = new Map(products.map((product) => [product.id, product]));
   const rows = new Map<string, ProductSalesRow>();
+
+  // Group allocations by the bill item they belong to.
+  const allocationsByItem = new Map<string, BillItemCostAllocation[]>();
+  for (const allocation of allocations) {
+    const list = allocationsByItem.get(allocation.billItemId);
+    if (list) list.push(allocation);
+    else allocationsByItem.set(allocation.billItemId, [allocation]);
+  }
 
   billItems.forEach((item) => {
     if (!activeBillIds.has(item.billId)) return;
@@ -258,7 +271,19 @@ export function summarizeProductSales(
 
     const bill = billById.get(item.billId);
     const lineAmount = calculateLineSubtotal(netQuantity, item.unitSellPriceAtSale);
-    const lineProfit = calculateLineProfit(netQuantity, item.unitBuyPriceAtSale, item.unitSellPriceAtSale);
+    // Profit from exact FIFO cost when allocations exist for this line; else
+    // fall back to the legacy per-unit buy-price snapshot.
+    const itemAllocations = allocationsByItem.get(item.id);
+    let lineProfit: number;
+    if (itemAllocations && itemAllocations.length > 0) {
+      const netCost = itemAllocations.reduce((sum, allocation) => {
+        const netAllocQty = Math.max(0, allocation.quantity - (allocation.quantityReturned ?? 0));
+        return addMoney(sum, multiplyMoney(allocation.unitCost, netAllocQty));
+      }, 0);
+      lineProfit = subtractMoney(lineAmount, netCost);
+    } else {
+      lineProfit = calculateLineProfit(netQuantity, item.unitBuyPriceAtSale, item.unitSellPriceAtSale);
+    }
     // Allocate the bill's discount and tax proportionally to this line so
     // product-level revenue matches the bill totals reported on the sales page.
     const net = bill

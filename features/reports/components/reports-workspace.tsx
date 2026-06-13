@@ -215,6 +215,7 @@ export function ReportsWorkspace() {
     [],
   );
   const billItems = useLiveQuery(() => db.billItems.toArray(), []);
+  const costAllocations = useLiveQuery(() => db.billItemCostAllocations.toArray(), []);
   const products = useLiveQuery(() => db.products.toArray(), []);
   const purchases = useLiveQuery(
     () => db.purchases.orderBy("createdAt").reverse().toArray(),
@@ -293,8 +294,8 @@ export function ReportsWorkspace() {
     [filteredPurchases, filteredSupplierPayments],
   );
   const productSales = useMemo(
-    () => summarizeProductSales(filteredBills, billItems ?? [], products ?? []),
-    [filteredBills, billItems, products],
+    () => summarizeProductSales(filteredBills, billItems ?? [], products ?? [], costAllocations ?? []),
+    [filteredBills, billItems, products, costAllocations],
   );
   // Aggregate the متفرقات (misc) rows into a single revenue/quantity figure
   // for the headline stat card.

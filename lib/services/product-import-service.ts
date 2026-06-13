@@ -2,11 +2,12 @@ import { AppError, AppErrorCode } from '@/lib/errors/app-error';
 import { productSchema, type ProductSchema } from '@/features/products/schema';
 import { db } from '@/lib/db/schema';
 import { buildSyncQueueItem } from '@/lib/services/sync-queue-service';
+import { buildOpeningLot, IMPORT_OPENING_LOT_SOURCE_ID } from '@/lib/db/inventory-lot-migration';
 import { createId } from '@/lib/utils/id';
 import { nowIso } from '@/lib/utils/date';
 import { normalizeBarcode } from '@/lib/utils/barcode';
 import { parseCsv } from '@/lib/utils/product-csv';
-import type { Product, StockMovement } from '@/types/domain';
+import type { InventoryLot, Product, StockMovement } from '@/types/domain';
 import { assertSubscriptionCanWrite } from '@/lib/services/subscription-service';
 
 export interface ProductImportError {
@@ -237,7 +238,21 @@ export async function importProductsFromPreview(preview: ProductImportPreview): 
       syncStatus: 'pending',
     }));
 
-  await db.transaction('rw', db.products, db.stockMovements, db.syncQueue, async () => {
+  // An imported product with positive initial stock must get an opening
+  // inventory lot, or it shows stock but FIFO sale finds nothing to consume.
+  // Import always creates brand-new products (the duplicate-barcode guards
+  // above and below reject existing barcodes), so one lot per product carries
+  // no double-creation risk.
+  const lots: InventoryLot[] = products
+    .map((product) =>
+      buildOpeningLot(product, now, {
+        sourceId: IMPORT_OPENING_LOT_SOURCE_ID,
+        sourceLabel: 'Imported opening stock',
+      }),
+    )
+    .filter((lot): lot is InventoryLot => lot !== null);
+
+  await db.transaction('rw', db.products, db.stockMovements, db.inventoryLots, db.syncQueue, async () => {
     const existing = await db.products.where('barcode').anyOf(products.map((product) => product.barcode)).count();
     if (existing > 0) {
       throw new AppError(AppErrorCode.IMPORT_DUPLICATES);
@@ -245,9 +260,11 @@ export async function importProductsFromPreview(preview: ProductImportPreview): 
 
     await db.products.bulkAdd(products);
     if (movements.length > 0) await db.stockMovements.bulkAdd(movements);
+    if (lots.length > 0) await db.inventoryLots.bulkAdd(lots);
     await db.syncQueue.bulkPut([
       ...products.map((product) => buildSyncQueueItem({ entity: 'product', entityId: product.id, operation: 'create' })),
       ...movements.map((movement) => buildSyncQueueItem({ entity: 'stockMovement', entityId: movement.id, operation: 'create' })),
+      ...lots.map((lot) => buildSyncQueueItem({ entity: 'inventoryLot', entityId: lot.id, operation: 'create' })),
     ]);
   });
 

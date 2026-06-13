@@ -1,8 +1,9 @@
 import Dexie, { type Table } from 'dexie';
-import type { AuditEvent, Bill, BillItem, CashMovement, Customer, Expense, Product, Purchase, PurchaseItem, Settings, Shift, StockMovement, AuthCacheEntry, SyncQueueItem, CustomerPayment, Supplier, SupplierPayment, SyncConflict, PaymentMethod } from '@/types/domain';
+import type { AuditEvent, Bill, BillItem, BillItemCostAllocation, CashMovement, Customer, Expense, InventoryLot, Product, Purchase, PurchaseItem, Settings, Shift, StockMovement, AuthCacheEntry, SyncQueueItem, CustomerPayment, Supplier, SupplierPayment, SyncConflict, PaymentMethod } from '@/types/domain';
 import { deriveLegacySplit } from '@/lib/utils/bill-split';
 import { normalizeCustomerKey, normalizePhone } from '@/lib/utils/customer-key';
 import { createId } from '@/lib/utils/id';
+import { OPENING_LOT_SOURCE_ID, buildOpeningLot } from '@/lib/db/inventory-lot-migration';
 
 export class ShopkeeperDB extends Dexie {
   products!: Table<Product, string>;
@@ -23,6 +24,8 @@ export class ShopkeeperDB extends Dexie {
   auditEvents!: Table<AuditEvent, string>;
   cashMovements!: Table<CashMovement, string>;
   expenses!: Table<Expense, string>;
+  inventoryLots!: Table<InventoryLot, string>;
+  billItemCostAllocations!: Table<BillItemCostAllocation, string>;
 
   constructor() {
     super('shopkeeper-pos-db');
@@ -286,6 +289,42 @@ export class ShopkeeperDB extends Dexie {
           s.currency = 'ILS';
         }
       });
+    });
+
+    // v16: FIFO inventory costing. Adds two tables:
+    //   inventoryLots             — one batch of received stock at a known cost
+    //   billItemCostAllocations   — which lot(s) each sold bill item consumed
+    //
+    // Migration: create one opening-balance lot for every product that still
+    // has stock, so existing inventory has a cost basis for future FIFO sales.
+    // Products at 0 stock get nothing. The upgrade is idempotent — if an
+    // opening lot already exists for a product/source it is not duplicated, so
+    // a partially-applied upgrade can be safely re-run.
+    this.version(16).stores({
+      inventoryLots: 'id, productId, sourceType, sourceId, sourceItemId, receivedAt, status, syncStatus',
+      billItemCostAllocations: 'id, billId, billItemId, productId, inventoryLotId, createdAt, syncStatus',
+    }).upgrade(async (tx) => {
+      const productsTable = tx.table<Product, string>('products');
+      const lotsTable = tx.table<InventoryLot, string>('inventoryLots');
+      const now = new Date().toISOString();
+
+      // Which products already have an opening lot (idempotency guard).
+      const existingOpeningLots = await lotsTable
+        .where('sourceId')
+        .equals(OPENING_LOT_SOURCE_ID)
+        .toArray();
+      const productsWithOpeningLot = new Set(existingOpeningLots.map((lot) => lot.productId));
+
+      const products = await productsTable.toArray();
+      const newLots: InventoryLot[] = [];
+      for (const product of products) {
+        if (productsWithOpeningLot.has(product.id)) continue;
+        const lot = buildOpeningLot(product, now);
+        if (lot) newLots.push(lot);
+      }
+      if (newLots.length > 0) {
+        await lotsTable.bulkAdd(newLots);
+      }
     });
   }
 }

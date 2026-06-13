@@ -5,12 +5,13 @@ import { SETTINGS_ID, customerRepo } from "@/lib/db/repositories";
 import {
   calculateBillItemNetContribution,
   calculateBillTotals,
+  calculateBillTotalsFromActualCost,
   calculateChange,
   calculateLineProfit,
   calculateLineSubtotal,
 } from "@/lib/utils/calculations";
 import { nowIso } from "@/lib/utils/date";
-import { MONEY_EPSILON, addMoney, roundMoney } from "@/lib/utils/money";
+import { MONEY_EPSILON, addMoney, roundMoney, subtractMoney } from "@/lib/utils/money";
 import type { BillSplit } from "@/lib/utils/bill-split";
 import { createBillNumber, createId } from "@/lib/utils/id";
 import { buildSyncQueueItem, getSyncQueueId } from "@/lib/services/sync-queue-service";
@@ -18,11 +19,16 @@ import { assertPaymentMethodEnabled, effectiveTaxAmount } from "@/lib/services/s
 import { assertPermission } from "@/lib/services/permission-service";
 import { isMiscLine } from "@/lib/utils/misc-items";
 import { assertSubscriptionCanWrite } from "@/lib/services/subscription-service";
+import {
+  allocateFifoLotsForSale,
+  restoreAllocationsForReturn,
+} from "@/lib/services/inventory-lot-service";
 import type {
   Bill,
   BillDraftItem,
   BillFormValues,
   BillItem,
+  BillItemCostAllocation,
   Product,
   Settings,
   StockMovement,
@@ -200,6 +206,8 @@ export async function createFinalizedBill(input: {
       db.customers,
       db.shifts,
       db.syncQueue,
+      db.inventoryLots,
+      db.billItemCostAllocations,
     ],
     async () => {
       const settings = await db.settings.get(SETTINGS_ID);
@@ -255,38 +263,77 @@ export async function createFinalizedBill(input: {
         validateDraftLine(settings, line, product, requestedQuantities.get(line.productId) ?? line.quantity);
       }
 
-      const billItems: BillItem[] = input.items.map((item) => ({
-        id: createId("bill_item"),
-        billId,
-        originalProductId: item.productId,
-        barcodeAtSale: item.barcode,
-        productNameAtSale: item.name,
-        categoryAtSale: item.category,
-        itemKind: isMiscLine(item) ? "misc" : "product",
-        miscDescription: item.miscDescription,
-        quantitySold: item.quantity,
-        // Misc lines record buy = sell (no real cost) so profit nets to zero.
-        unitBuyPriceAtSale: isMiscLine(item) ? item.unitSellPrice : item.unitBuyPrice,
-        unitSellPriceAtSale: item.unitSellPrice,
-        lineSubtotal: calculateLineSubtotal(item.quantity, item.unitSellPrice),
-        lineProfit: isMiscLine(item)
-          ? 0
-          : calculateLineProfit(
-              item.quantity,
-              item.unitBuyPrice,
-              item.unitSellPrice,
-            ),
-        createdAt,
-      }));
+      // Build bill items. Real product lines are costed by consuming FIFO
+      // inventory lots — `unitBuyPriceAtSale` becomes the weighted-average
+      // actual cost of the units that left the shelf, and `lineProfit` is the
+      // line revenue minus the exact lot cost (NOT product.buyPrice). Misc
+      // lines have no recorded cost: buy = sell so they carry zero profit.
+      // Allocations run sequentially so two lines for the same product consume
+      // lots in order.
+      const billItems: BillItem[] = [];
+      const costAllocations: BillItemCostAllocation[] = [];
+      const consumedLotIds = new Set<string>();
 
-      const totals = calculateBillTotals(
-        input.items.map((item) => ({
+      for (const item of input.items) {
+        const billItemId = createId("bill_item");
+        const lineSubtotal = calculateLineSubtotal(item.quantity, item.unitSellPrice);
+
+        if (isMiscLine(item)) {
+          billItems.push({
+            id: billItemId,
+            billId,
+            originalProductId: item.productId,
+            barcodeAtSale: item.barcode,
+            productNameAtSale: item.name,
+            categoryAtSale: item.category,
+            itemKind: "misc",
+            miscDescription: item.miscDescription,
+            quantitySold: item.quantity,
+            unitBuyPriceAtSale: item.unitSellPrice,
+            unitSellPriceAtSale: item.unitSellPrice,
+            lineSubtotal,
+            lineProfit: 0,
+            createdAt,
+          });
+          continue;
+        }
+
+        const { allocations, totalCost, averageUnitCost } = await allocateFifoLotsForSale({
+          billId,
+          billItemId,
+          productId: item.productId,
           quantity: item.quantity,
-          // Misc lines carry no recorded cost — buy = sell so totalProfit
-          // nets to zero, matching the per-line lineProfit (kept consistent
-          // with the preview above rather than relying on the UI invariant).
-          unitBuyPrice: isMiscLine(item) ? item.unitSellPrice : item.unitBuyPrice,
-          unitSellPrice: item.unitSellPrice,
+          createdAt,
+        });
+        costAllocations.push(...allocations);
+        for (const allocation of allocations) consumedLotIds.add(allocation.inventoryLotId);
+
+        billItems.push({
+          id: billItemId,
+          billId,
+          originalProductId: item.productId,
+          barcodeAtSale: item.barcode,
+          productNameAtSale: item.name,
+          categoryAtSale: item.category,
+          itemKind: "product",
+          miscDescription: item.miscDescription,
+          quantitySold: item.quantity,
+          unitBuyPriceAtSale: averageUnitCost,
+          unitSellPriceAtSale: item.unitSellPrice,
+          lineSubtotal,
+          lineProfit: subtractMoney(lineSubtotal, totalCost),
+          createdAt,
+        });
+      }
+
+      // Totals from the actual per-line profits computed above. Amount math is
+      // cost-independent, so totalAmount matches the pre-transaction preview;
+      // only totalProfit now reflects real cost of goods sold.
+      const totals = calculateBillTotalsFromActualCost(
+        billItems.map((billItem) => ({
+          quantity: billItem.quantitySold,
+          unitSellPrice: billItem.unitSellPriceAtSale,
+          lineProfit: billItem.lineProfit,
         })),
         input.form.discountAmount,
         taxAmount,
@@ -447,6 +494,22 @@ export async function createFinalizedBill(input: {
             operation: "create",
           }),
         ),
+        // FIFO records: the consumed lots (now decremented) and the new cost
+        // allocations that prove which lots each line drew from.
+        ...Array.from(consumedLotIds).map((lotId) =>
+          buildSyncQueueItem({
+            entity: "inventoryLot",
+            entityId: lotId,
+            operation: "update",
+          }),
+        ),
+        ...costAllocations.map((allocation) =>
+          buildSyncQueueItem({
+            entity: "billItemCostAllocation",
+            entityId: allocation.id,
+            operation: "create",
+          }),
+        ),
       ];
       // Push the new (or renamed) customer ahead of the bill — sync-provider
       // priority puts customer before bill anyway. `created` covers brand-new
@@ -509,7 +572,7 @@ export async function voidBill(input: {
 
   await db.transaction(
     "rw",
-    [db.bills, db.billItems, db.products, db.stockMovements, db.shifts, db.syncQueue],
+    [db.bills, db.billItems, db.products, db.stockMovements, db.shifts, db.syncQueue, db.inventoryLots, db.billItemCostAllocations],
     async () => {
       const bill = await db.bills.get(input.billId);
       if (!bill) throw new AppError(AppErrorCode.BILL_NOT_FOUND);
@@ -531,6 +594,30 @@ export async function voidBill(input: {
       const products = (await db.products.bulkGet(productIds)).filter(
         (product): product is Product => Boolean(product),
       );
+
+      // Restore the remaining (non-returned) units of every real product line
+      // back to the exact lots they were drawn from. Old bills predate FIFO and
+      // have no allocations — those just restore the cached product stock below.
+      const restoredLotIds = new Set<string>();
+      const restoredAllocationIds = new Set<string>();
+      for (const item of items) {
+        if (isMiscLine(item)) continue;
+        const remainingQty = getRemainingItemQuantity(item);
+        if (remainingQty <= 0) continue;
+        const itemAllocations = await db.billItemCostAllocations
+          .where("billItemId")
+          .equals(item.id)
+          .toArray();
+        if (itemAllocations.length === 0) continue;
+        const restore = await restoreAllocationsForReturn({
+          billId: bill.id,
+          billItemId: item.id,
+          quantity: remainingQty,
+          updatedAt: now,
+        });
+        for (const lot of restore.updatedLots) restoredLotIds.add(lot.id);
+        for (const allocation of restore.updatedAllocations) restoredAllocationIds.add(allocation.id);
+      }
 
       const updatedProducts: Product[] = products.map((product) => {
         const restoreQuantity = items
@@ -602,6 +689,20 @@ export async function voidBill(input: {
             operation: "create",
           }),
         ),
+        ...Array.from(restoredLotIds).map((lotId) =>
+          buildSyncQueueItem({
+            entity: "inventoryLot",
+            entityId: lotId,
+            operation: "update",
+          }),
+        ),
+        ...Array.from(restoredAllocationIds).map((allocationId) =>
+          buildSyncQueueItem({
+            entity: "billItemCostAllocation",
+            entityId: allocationId,
+            operation: "update",
+          }),
+        ),
       ]);
     },
   );
@@ -636,7 +737,7 @@ export async function returnBillItem(input: {
 
   await db.transaction(
     "rw",
-    [db.bills, db.billItems, db.products, db.stockMovements, db.shifts, db.syncQueue],
+    [db.bills, db.billItems, db.products, db.stockMovements, db.shifts, db.syncQueue, db.inventoryLots, db.billItemCostAllocations],
     async () => {
       const [bill, item] = await Promise.all([
         db.bills.get(input.billId),
@@ -666,7 +767,43 @@ export async function returnBillItem(input: {
       auditShiftId = bill.shiftId;
 
       const now = nowIso();
-      const returnedValues = calculateReturnedLineValue(bill, item, quantity);
+
+      // Cost the return from the EXACT lots consumed by this line, when the
+      // bill carries FIFO allocations. A partial return across lots of
+      // different cost is otherwise impossible to value with a single line
+      // average. Old (pre-FIFO) bills have no allocations — fall back to the
+      // bill item's snapshot buy price.
+      let returnedValues: { amount: number; profit: number };
+      const restoredLotIds: string[] = [];
+      const restoredAllocationIds: string[] = [];
+      if (isMiscReturn) {
+        returnedValues = calculateReturnedLineValue(bill, item, quantity);
+      } else {
+        const itemAllocations = await db.billItemCostAllocations
+          .where("billItemId")
+          .equals(item.id)
+          .toArray();
+        if (itemAllocations.length === 0) {
+          returnedValues = calculateReturnedLineValue(bill, item, quantity);
+        } else {
+          const restore = await restoreAllocationsForReturn({
+            billId: bill.id,
+            billItemId: item.id,
+            quantity,
+            updatedAt: now,
+          });
+          const lineAmount = calculateLineSubtotal(quantity, item.unitSellPriceAtSale);
+          // Gross returned profit = returned revenue (before bill discount)
+          // minus the exact cost of the returned units. The bill-level
+          // discount/tax is then allocated proportionally below.
+          const grossLineProfit = subtractMoney(lineAmount, restore.returnedCost);
+          const net = calculateBillItemNetContribution(bill, lineAmount, grossLineProfit);
+          returnedValues = { amount: net.revenue, profit: net.profit };
+          for (const lot of restore.updatedLots) restoredLotIds.push(lot.id);
+          for (const allocation of restore.updatedAllocations) restoredAllocationIds.push(allocation.id);
+        }
+      }
+
       const nextReturnedQuantity = (item.quantityReturned ?? 0) + quantity;
       await db.billItems.update(item.id, {
         quantityReturned: nextReturnedQuantity,
@@ -740,6 +877,16 @@ export async function returnBillItem(input: {
             entityId: stockMovement.id,
             operation: "create",
           }),
+        );
+      }
+      for (const lotId of restoredLotIds) {
+        returnSyncJobs.push(
+          buildSyncQueueItem({ entity: "inventoryLot", entityId: lotId, operation: "update" }),
+        );
+      }
+      for (const allocationId of restoredAllocationIds) {
+        returnSyncJobs.push(
+          buildSyncQueueItem({ entity: "billItemCostAllocation", entityId: allocationId, operation: "update" }),
         );
       }
       await db.syncQueue.bulkPut(returnSyncJobs);

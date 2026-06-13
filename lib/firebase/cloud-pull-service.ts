@@ -10,7 +10,7 @@ import {
   mergedSequences,
 } from '@/lib/services/settings-sync-fields';
 import { normalizeBillSplit } from '@/lib/utils/bill-split';
-import type { AuditEvent, Bill, BillItem, CashMovement, Customer, CustomerPayment, Expense, Product, Purchase, PurchaseItem, Settings, Shift, StockMovement, Supplier, SupplierPayment, SyncEntity, SyncQueueItem } from '@/types/domain';
+import type { AuditEvent, Bill, BillItem, BillItemCostAllocation, CashMovement, Customer, CustomerPayment, Expense, InventoryLot, Product, Purchase, PurchaseItem, Settings, Shift, StockMovement, Supplier, SupplierPayment, SyncEntity, SyncQueueItem } from '@/types/domain';
 
 const PRODUCT_FIELDS: Array<keyof Product> = [
   'barcode', 'name', 'category', 'brand', 'unit', 'quantityInStock', 'buyPrice', 'sellPrice',
@@ -345,6 +345,85 @@ async function pullShifts(uid: string): Promise<void> {
   });
 }
 
+const INVENTORY_LOT_FIELDS: Array<keyof InventoryLot> = [
+  'quantityReceived', 'quantityRemaining', 'unitCost', 'status',
+];
+
+/**
+ * Pull FIFO inventory lots. Lots ARE mutable (every sale/return/void changes
+ * quantityRemaining + status), so this needs the same conflict guard products
+ * use: if the cloud lot is newer AND this device has a pending change to the
+ * same lot, raise an inventory conflict instead of silently overwriting one
+ * device's view of remaining stock (the offline-oversell case). Mirrors
+ * pullProducts — deliberately NOT wrapped in a Dexie transaction because
+ * saveConflict opens its own.
+ */
+async function pullInventoryLots(uid: string): Promise<void> {
+  const cloudLots = await pullCollection<InventoryLot>(uid, 'inventoryLots');
+  for (const cloud of cloudLots) {
+    const local = await db.inventoryLots.get(cloud.id);
+    if (!local) {
+      await db.inventoryLots.put({ ...cloud, syncStatus: 'synced', lastSyncError: undefined });
+      continue;
+    }
+
+    const pendingJob = await getPendingLocalJob('inventoryLot', local.id);
+    const fields = changedFields(
+      local as unknown as Record<string, unknown>,
+      cloud as unknown as Record<string, unknown>,
+      INVENTORY_LOT_FIELDS as string[],
+    );
+    if (fields.length === 0 || !isCloudNewer(local.syncedAt ?? pendingJob?.createdAt, cloud.syncedAt)) continue;
+
+    if (pendingJob) {
+      const conflictId = await saveConflict({
+        id: `conflict:inventoryLot:${local.id}:pull-cloud`,
+        entity: 'inventoryLot',
+        entityId: local.id,
+        operationId: getSyncQueueId('inventoryLot', local.id),
+        conflictType: 'inventory_overwrite',
+        severity: 'high',
+        cloudRecord: cloud as unknown as Record<string, unknown>,
+        localRecord: local as unknown as Record<string, unknown>,
+        changedFields: fields,
+      });
+      if (conflictId) {
+        await db.inventoryLots.update(local.id, { syncStatus: 'conflict', lastSyncError: 'Needs conflict review' });
+        await db.syncQueue.update(getSyncQueueId('inventoryLot', local.id), { status: 'conflict', lastError: 'Needs conflict review' });
+      }
+      continue;
+    }
+
+    await db.inventoryLots.put({ ...cloud, syncStatus: 'synced', lastSyncError: undefined });
+  }
+}
+
+/**
+ * Pull bill-item cost allocations. They change only via the parent bill's
+ * return/void (quantityReturned), so mirror billItems: insert if missing, and
+ * otherwise accept a newer cloud copy unless this device has a pending change
+ * to the allocation or its parent bill (that push will reconcile).
+ */
+async function pullBillItemCostAllocations(uid: string): Promise<void> {
+  const cloudAllocations = await pullCollection<BillItemCostAllocation>(uid, 'billItemCostAllocations');
+  if (cloudAllocations.length === 0) return;
+
+  await db.transaction('rw', [db.billItemCostAllocations, db.syncQueue], async () => {
+    for (const cloud of cloudAllocations) {
+      const local = await db.billItemCostAllocations.get(cloud.id);
+      if (!local) {
+        await db.billItemCostAllocations.put({ ...cloud, syncStatus: 'synced', lastSyncError: undefined });
+        continue;
+      }
+      const parentJob = await getPendingLocalJob('bill', cloud.billId);
+      const ownJob = await getPendingLocalJob('billItemCostAllocation', cloud.id);
+      if (parentJob || ownJob) continue;
+      if (!isCloudNewer(local.syncedAt, cloud.syncedAt)) continue;
+      await db.billItemCostAllocations.put({ ...cloud, syncStatus: 'synced', lastSyncError: undefined });
+    }
+  });
+}
+
 /**
  * Pull append-only history tables that have no merge conflicts and no
  * pending-job interactions: each cloud row is either already local (skip)
@@ -368,6 +447,10 @@ export async function pullCloudChangesBeforePush(uid: string): Promise<void> {
   await pullSuppliers(uid);
   await pullShifts(uid);
   await pullProducts(uid);
+  // FIFO records: lots after products (parent first), allocations after bills
+  // (pulled in pullAppendOnlyCollections above).
+  await pullInventoryLots(uid);
+  await pullBillItemCostAllocations(uid);
   await pullSettings(uid);
   // History-only tables added in sprint v12–v14. Append-only and never
   // mutated after creation, so a simple "insert if missing" loop is enough —

@@ -5,8 +5,12 @@ import { nowIso } from '@/lib/utils/date';
 import { buildSyncQueueItem } from '@/lib/services/sync-queue-service';
 import { logAudit } from '@/lib/services/audit-service';
 import { assertPermission, getCurrentPermissions } from '@/lib/services/permission-service';
-import type { Product, StockMovement, StockMovementType } from '@/types/domain';
+import type { InventoryLot, Product, StockMovement, StockMovementType } from '@/types/domain';
 import { assertSubscriptionCanWrite } from '@/lib/services/subscription-service';
+import {
+  consumeLotsForNegativeAdjustment,
+  createAdjustmentLot,
+} from '@/lib/services/inventory-lot-service';
 
 function requestSync(): void {
   if (typeof window !== 'undefined') {
@@ -46,14 +50,28 @@ export async function createProductWithInitialMovement(product: Product) {
       }]
     : [];
 
-  await db.transaction('rw', db.products, db.stockMovements, db.syncQueue, async () => {
+  await db.transaction('rw', db.products, db.stockMovements, db.inventoryLots, db.syncQueue, async () => {
     await db.products.put(productToSave);
     if (movements.length) await db.stockMovements.bulkAdd(movements);
+    // Under FIFO costing, initial stock must seed an inventory lot or the
+    // product could never be sold (sales consume lots, not quantityInStock).
+    let initialLot: InventoryLot | null = null;
+    if (product.quantityInStock > 0) {
+      initialLot = await createAdjustmentLot({
+        productId: product.id,
+        quantity: product.quantityInStock,
+        unitCost: safeBuyPrice,
+        sourceId: product.id,
+        sourceLabel: 'Initial stock',
+        createdAt,
+      });
+    }
     await db.syncQueue.bulkPut([
       buildSyncQueueItem({ entity: 'product', entityId: product.id, operation: 'create' }),
       ...movements.map((movement) =>
         buildSyncQueueItem({ entity: 'stockMovement', entityId: movement.id, operation: 'create' }),
       ),
+      ...(initialLot ? [buildSyncQueueItem({ entity: 'inventoryLot', entityId: initialLot.id, operation: 'create' })] : []),
     ]);
   });
   requestSync();
@@ -111,7 +129,7 @@ export async function adjustProductStock(
   // Captured inside the transaction for the post-commit audit log entry.
   let auditProductName = '';
 
-  await db.transaction('rw', db.products, db.stockMovements, db.syncQueue, async () => {
+  await db.transaction('rw', db.products, db.stockMovements, db.inventoryLots, db.syncQueue, async () => {
     const liveProduct = await db.products.get(product.id);
     if (!liveProduct) {
       throw new AppError(AppErrorCode.PRODUCT_NOT_FOUND);
@@ -121,6 +139,29 @@ export async function adjustProductStock(
     const nextQuantity = liveProduct.quantityInStock + quantityChange;
     if (nextQuantity < 0) {
       throw new AppError(AppErrorCode.STOCK_ADJ_NEGATIVE_RESULT);
+    }
+
+    // Keep FIFO lots in step with the cached stock count: a positive
+    // adjustment creates a lot (at the product's current cost), a negative
+    // one consumes oldest lots first.
+    const lotSyncIds: string[] = [];
+    if (quantityChange > 0) {
+      const lot = await createAdjustmentLot({
+        productId: product.id,
+        quantity: quantityChange,
+        unitCost: liveProduct.buyPrice,
+        sourceId: product.id,
+        sourceLabel: note?.trim() || 'Stock adjustment',
+        createdAt,
+      });
+      lotSyncIds.push(lot.id);
+    } else if (quantityChange < 0) {
+      const consumed = await consumeLotsForNegativeAdjustment({
+        productId: product.id,
+        quantity: -quantityChange,
+        updatedAt: createdAt,
+      });
+      for (const lot of consumed) lotSyncIds.push(lot.id);
     }
 
     const movement: StockMovement = {
@@ -146,6 +187,9 @@ export async function adjustProductStock(
     await db.syncQueue.bulkPut([
       buildSyncQueueItem({ entity: 'product', entityId: product.id, operation: 'update' }),
       buildSyncQueueItem({ entity: 'stockMovement', entityId: movement.id, operation: 'create' }),
+      ...lotSyncIds.map((lotId) =>
+        buildSyncQueueItem({ entity: 'inventoryLot', entityId: lotId, operation: quantityChange > 0 ? 'create' : 'update' }),
+      ),
     ]);
   });
   requestSync();
@@ -176,7 +220,7 @@ export async function receiveProductStock(
 
   let auditProductName = '';
 
-  await db.transaction('rw', db.products, db.stockMovements, db.syncQueue, async () => {
+  await db.transaction('rw', db.products, db.stockMovements, db.inventoryLots, db.syncQueue, async () => {
     const liveProduct = await db.products.get(product.id);
     if (!liveProduct) {
       throw new AppError(AppErrorCode.PRODUCT_NOT_FOUND);
@@ -190,12 +234,24 @@ export async function receiveProductStock(
       lastSyncError: undefined,
     };
 
-    if (typeof buyPrice === 'number' && Number.isFinite(buyPrice) && buyPrice >= 0) {
+    const hasNewCost = typeof buyPrice === 'number' && Number.isFinite(buyPrice) && buyPrice >= 0;
+    if (hasNewCost) {
       changes.buyPrice = buyPrice;
     }
     if (supplierName?.trim()) {
       changes.supplierName = supplierName.trim();
     }
+
+    // Received stock is a new FIFO lot costed at the entered cost (or the
+    // product's current buy price if none was provided).
+    const lot = await createAdjustmentLot({
+      productId: product.id,
+      quantity: quantityReceived,
+      unitCost: hasNewCost ? (buyPrice as number) : liveProduct.buyPrice,
+      sourceId: product.id,
+      sourceLabel: note.trim() || 'Received stock',
+      createdAt,
+    });
 
     const movement: StockMovement = {
       id: createId('move'),
@@ -214,6 +270,7 @@ export async function receiveProductStock(
     await db.syncQueue.bulkPut([
       buildSyncQueueItem({ entity: 'product', entityId: product.id, operation: 'update' }),
       buildSyncQueueItem({ entity: 'stockMovement', entityId: movement.id, operation: 'create' }),
+      buildSyncQueueItem({ entity: 'inventoryLot', entityId: lot.id, operation: 'create' }),
     ]);
   });
   requestSync();
@@ -241,7 +298,7 @@ export async function countProductStock(
   let auditDelta = 0;
   let auditProductName = product.name;
 
-  await db.transaction('rw', db.products, db.stockMovements, db.syncQueue, async () => {
+  await db.transaction('rw', db.products, db.stockMovements, db.inventoryLots, db.syncQueue, async () => {
     const liveProduct = await db.products.get(product.id);
     if (!liveProduct) {
       throw new AppError(AppErrorCode.PRODUCT_NOT_FOUND);
@@ -253,6 +310,28 @@ export async function countProductStock(
       return;
     }
     auditDelta = quantityChange;
+
+    // Reconcile lots with the counted total: count up adds a lot at the
+    // current cost, count down consumes oldest lots first.
+    const lotSyncIds: string[] = [];
+    if (quantityChange > 0) {
+      const lot = await createAdjustmentLot({
+        productId: product.id,
+        quantity: quantityChange,
+        unitCost: liveProduct.buyPrice,
+        sourceId: product.id,
+        sourceLabel: note.trim() || 'Stock count',
+        createdAt,
+      });
+      lotSyncIds.push(lot.id);
+    } else {
+      const consumed = await consumeLotsForNegativeAdjustment({
+        productId: product.id,
+        quantity: -quantityChange,
+        updatedAt: createdAt,
+      });
+      for (const lot of consumed) lotSyncIds.push(lot.id);
+    }
 
     const movement: StockMovement = {
       id: createId('move'),
@@ -276,6 +355,9 @@ export async function countProductStock(
     await db.syncQueue.bulkPut([
       buildSyncQueueItem({ entity: 'product', entityId: product.id, operation: 'update' }),
       buildSyncQueueItem({ entity: 'stockMovement', entityId: movement.id, operation: 'create' }),
+      ...lotSyncIds.map((lotId) =>
+        buildSyncQueueItem({ entity: 'inventoryLot', entityId: lotId, operation: quantityChange > 0 ? 'create' : 'update' }),
+      ),
     ]);
   });
   requestSync();

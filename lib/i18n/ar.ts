@@ -1172,14 +1172,14 @@ export const ar: TranslationDict = {
     quickAddFailed: "تعذر إنشاء المنتج.",
     noProductFoundForBarcode: "لا يوجد منتج للباركود {{barcode}}.",
     purchaseQuantity: "كمية الشراء",
-    buyPriceWillUpdate: "سيتم تحديث سعر شراء المنتج بعد الحفظ.",
+    buyPriceWillUpdate: "سيتم تحديث آخر تكلفة شراء للمنتج. يُحتسب الربح من دفعات المخزون وليس من هذا السعر.",
     reviewSellPrice: "راجع سعر البيع — هذه التكلفة قد تجعل الربح منخفضاً أو سالباً.",
     purchaseCostChanged: "تغيّر سعر الشراء",
     currentCost: "السعر الحالي",
     newCost: "السعر الجديد",
     sellPrice: "سعر البيع",
     estimatedMargin: "الهامش المتوقع",
-    buyPriceWillUpdateDetailed: "بعد الحفظ سيتم تحديث سعر شراء المنتج. لن يتغير سعر البيع تلقائياً.",
+    buyPriceWillUpdateDetailed: "بعد الحفظ سيتم تحديث آخر تكلفة شراء للمنتج. يُحتسب الربح من دفعات المخزون (FIFO)، لذا يحتفظ المخزون الأقدم بتكلفته الأصلية. لن يتغير سعر البيع تلقائياً.",
     lowMarginWarning: "يفضل مراجعة سعر البيع لأن الهامش منخفض أو سالب.",
     invoiceDetails: "تفاصيل الفاتورة",
     invoiceDetailsHelper: "اختياري",
@@ -1649,6 +1649,12 @@ export const ar: TranslationDict = {
       "الكمية المستلمة يجب أن تكون رقماً صحيحاً موجباً.",
     STOCK_COUNTED_QTY_INVALID:
       "الكمية المحصاة يجب أن تكون رقماً صحيحاً غير سالب.",
+    // FIFO inventory lots
+    INVENTORY_LOT_NOT_FOUND: "دفعة المخزون غير موجودة.",
+    INVENTORY_LOT_INSUFFICIENT_STOCK:
+      "لا يمكن إتمام العملية. الكمية المتاحة في دفعات المخزون أقل من الكمية المطلوبة.",
+    INVENTORY_LOT_OVER_ALLOCATED:
+      "لا يمكن إرجاع كمية أكبر مما تم سحبه من دفعة المخزون هذه.",
     // Payments
     CUSTOMER_REQUIRED: "العميل مطلوب.",
     SUPPLIER_REQUIRED: "المورد مطلوب.",

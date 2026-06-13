@@ -11,6 +11,10 @@ import { buildSyncQueueItem, getSyncQueueId } from "@/lib/services/sync-queue-se
 import { isMiscLine } from "@/lib/utils/misc-items";
 import type { BillSplit } from "@/lib/utils/bill-split";
 import { assertSubscriptionCanWrite } from '@/lib/services/subscription-service';
+import {
+  createPurchaseLots,
+  removePurchaseLotQuantity,
+} from "@/lib/services/inventory-lot-service";
 import type {
   PaymentMethod,
   Product,
@@ -181,6 +185,7 @@ export async function createFinalizedPurchase(input: {
       db.suppliers,
       db.shifts,
       db.syncQueue,
+      db.inventoryLots,
     ],
     async () => {
       const settings = await db.settings.get(SETTINGS_ID);
@@ -303,9 +308,11 @@ export async function createFinalizedPurchase(input: {
         syncStatus: "pending",
       };
 
-      // INCREASE stock and update buyPrice for each purchased product. The
-      // existing inventory model uses "latest cost wins" so future bills
-      // compute profit against the current buy price.
+      // INCREASE stock and refresh buyPrice for each purchased product. Under
+      // FIFO costing, buyPrice is now only the "last purchase cost / default
+      // cost for the next purchase" — it is NOT used to compute profit. Profit
+      // comes from the inventory lots created below, so future sales are costed
+      // against the actual cost of the units they consume.
       const updatedProducts: Product[] = products.map((product) => {
         const purchasedLines = input.items.filter((i) => i.productId === product.id);
         if (purchasedLines.length === 0) return product;
@@ -340,6 +347,10 @@ export async function createFinalizedPurchase(input: {
       await db.purchaseItems.bulkAdd(purchaseItems);
       await db.products.bulkPut(updatedProducts);
       await db.stockMovements.bulkAdd(stockMovements);
+
+      // One FIFO inventory lot per real product line — the cost basis future
+      // sales will consume oldest-first. Misc lines create no lot.
+      const createdLots = await createPurchaseLots({ purchase, purchaseItems, createdAt });
       await db.settings.update(settings.id, {
         nextPurchaseSequence: sequence + 1,
         updatedAt: createdAt,
@@ -380,6 +391,13 @@ export async function createFinalizedPurchase(input: {
           buildSyncQueueItem({
             entity: "stockMovement",
             entityId: movement.id,
+            operation: "create",
+          }),
+        ),
+        ...createdLots.map((lot) =>
+          buildSyncQueueItem({
+            entity: "inventoryLot",
+            entityId: lot.id,
             operation: "create",
           }),
         ),
@@ -452,7 +470,7 @@ export async function voidPurchase(input: {
 
   await db.transaction(
     "rw",
-    [db.purchases, db.purchaseItems, db.products, db.stockMovements, db.shifts, db.syncQueue],
+    [db.purchases, db.purchaseItems, db.products, db.stockMovements, db.shifts, db.syncQueue, db.inventoryLots],
     async () => {
       const purchase = await db.purchases.get(input.purchaseId);
       if (!purchase) throw new AppError(AppErrorCode.PURCHASE_NOT_FOUND);
@@ -478,15 +496,23 @@ export async function voidPurchase(input: {
         (product): product is Product => Boolean(product),
       );
 
-      // Block void if any product has fewer units in stock than were purchased.
-      // Partial reversal would silently misrepresent inventory and financial history.
-      for (const product of products) {
-        const removeQuantity = items
-          .filter((item) => item.originalProductId === product.id)
-          .reduce((sum, item) => sum + getRemainingPurchaseItemQuantity(item), 0);
-        if (removeQuantity > 0 && product.quantityInStock < removeQuantity) {
-          throw new AppError(AppErrorCode.PURCHASE_VOID_INSUFFICIENT_STOCK, { name: product.name, stock: product.quantityInStock, required: removeQuantity });
-        }
+      // Reverse the FIFO lots this purchase created. removePurchaseLotQuantity
+      // throws PURCHASE_VOID_INSUFFICIENT_STOCK (and rolls back the whole
+      // transaction) if ANY units from a lot were already sold — a void must
+      // never claw back stock that has left the shop. This replaces the old
+      // cached-stock check with a lot-accurate one.
+      const voidedLotIds = new Set<string>();
+      for (const item of items) {
+        if (isMiscLine(item)) continue;
+        const removeQuantity = getRemainingPurchaseItemQuantity(item);
+        if (removeQuantity <= 0) continue;
+        const updatedLots = await removePurchaseLotQuantity({
+          purchaseItemId: item.id,
+          quantity: removeQuantity,
+          updatedAt: now,
+          errorCode: AppErrorCode.PURCHASE_VOID_INSUFFICIENT_STOCK,
+        });
+        for (const lot of updatedLots) voidedLotIds.add(lot.id);
       }
 
       const updatedProducts: Product[] = products.map((product) => {
@@ -558,6 +584,13 @@ export async function voidPurchase(input: {
             operation: "create",
           }),
         ),
+        ...Array.from(voidedLotIds).map((lotId) =>
+          buildSyncQueueItem({
+            entity: "inventoryLot",
+            entityId: lotId,
+            operation: "update",
+          }),
+        ),
       ]);
     },
   );
@@ -597,7 +630,7 @@ export async function returnPurchaseItem(input: {
 
   await db.transaction(
     "rw",
-    [db.purchases, db.purchaseItems, db.products, db.stockMovements, db.shifts, db.syncQueue],
+    [db.purchases, db.purchaseItems, db.products, db.stockMovements, db.shifts, db.syncQueue, db.inventoryLots],
     async () => {
       const [purchase, item] = await Promise.all([
         db.purchases.get(input.purchaseId),
@@ -662,7 +695,19 @@ export async function returnPurchaseItem(input: {
         : roundMoney(calculatedReturnedAmount);
 
       let stockMovement: StockMovement | null = null;
+      const returnedLotIds: string[] = [];
       if (!isMiscReturn && product) {
+        // Remove the returned units from this purchase item's FIFO lot(s).
+        // Throws PURCHASE_RETURN_INSUFFICIENT_STOCK (rolling back) if those
+        // units were already sold — we can only return unsold stock.
+        const updatedLots = await removePurchaseLotQuantity({
+          purchaseItemId: item.id,
+          quantity,
+          updatedAt: now,
+          errorCode: AppErrorCode.PURCHASE_RETURN_INSUFFICIENT_STOCK,
+        });
+        for (const lot of updatedLots) returnedLotIds.push(lot.id);
+
         stockMovement = {
           id: createId("move"),
           productId: item.originalProductId,
@@ -710,6 +755,11 @@ export async function returnPurchaseItem(input: {
             entityId: stockMovement.id,
             operation: "create",
           }),
+        );
+      }
+      for (const lotId of returnedLotIds) {
+        returnSyncJobs.push(
+          buildSyncQueueItem({ entity: "inventoryLot", entityId: lotId, operation: "update" }),
         );
       }
       await db.syncQueue.bulkPut(returnSyncJobs);

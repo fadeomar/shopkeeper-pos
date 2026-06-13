@@ -18,6 +18,8 @@ import {
   syncCustomerPaymentsToCloud,
   syncSupplierPaymentsToCloud,
   syncSuppliersToCloud,
+  syncInventoryLotsToCloud,
+  syncBillItemCostAllocationsToCloud,
 } from '@/lib/firebase/sync-service';
 import {
   getPendingSyncJobs,
@@ -107,6 +109,10 @@ function jobPriority(job: SyncQueueItem): number {
       return isSequenceJob(job) ? 8 : 10;
     case 'product':
       return 11;
+    // FIFO records depend on product (lots) and bill (allocations) — after both.
+    case 'inventoryLot':
+    case 'billItemCostAllocation':
+      return 12;
     // Append-only history with no foreign-key dependencies — last.
     case 'auditEvent':
       return 13;
@@ -194,6 +200,10 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
         await db.cashMovements.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
       } else if (job.entity === 'expense') {
         await db.expenses.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
+      } else if (job.entity === 'inventoryLot') {
+        await db.inventoryLots.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
+      } else if (job.entity === 'billItemCostAllocation') {
+        await db.billItemCostAllocations.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
       }
     }
     return;
@@ -392,6 +402,26 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
       if (syncedAt) {
         await db.expenses.update(job.entityId, { syncStatus: 'synced', syncedAt, lastSyncError: undefined });
       }
+    } else if (job.entity === 'inventoryLot') {
+      const lot = await db.inventoryLots.get(job.entityId);
+      if (!lot) {
+        await markSynced(job.id);
+        return;
+      }
+      const syncedAt = await syncInventoryLotsToCloud(uid, [lot]);
+      if (syncedAt) {
+        await db.inventoryLots.update(job.entityId, { syncStatus: 'synced', syncedAt, lastSyncError: undefined });
+      }
+    } else if (job.entity === 'billItemCostAllocation') {
+      const allocation = await db.billItemCostAllocations.get(job.entityId);
+      if (!allocation) {
+        await markSynced(job.id);
+        return;
+      }
+      const syncedAt = await syncBillItemCostAllocationsToCloud(uid, [allocation]);
+      if (syncedAt) {
+        await db.billItemCostAllocations.update(job.entityId, { syncStatus: 'synced', syncedAt, lastSyncError: undefined });
+      }
     }
 
     await markSynced(job.id);
@@ -424,6 +454,10 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
       await db.cashMovements.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
     } else if (job.entity === 'expense') {
       await db.expenses.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
+    } else if (job.entity === 'inventoryLot') {
+      await db.inventoryLots.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
+    } else if (job.entity === 'billItemCostAllocation') {
+      await db.billItemCostAllocations.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
     }
   }
 }
@@ -458,6 +492,10 @@ async function markE2EJobEntitySynced(job: SyncQueueItem, syncedAt: string): Pro
     await db.cashMovements.update(job.entityId, patch);
   } else if (job.entity === 'expense') {
     await db.expenses.update(job.entityId, patch);
+  } else if (job.entity === 'inventoryLot') {
+    await db.inventoryLots.update(job.entityId, patch);
+  } else if (job.entity === 'billItemCostAllocation') {
+    await db.billItemCostAllocations.update(job.entityId, patch);
   }
 }
 

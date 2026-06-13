@@ -131,7 +131,7 @@ export function resolveRolePermissions(
 }
 
 export type SyncStatus = 'pending' | 'syncing' | 'synced' | 'failed' | 'conflict' | 'blocked';
-export type SyncEntity = 'bill' | 'product' | 'settings' | 'stockMovement' | 'customerPayment' | 'customer' | 'shift' | 'supplier' | 'purchase' | 'supplierPayment' | 'auditEvent' | 'cashMovement' | 'expense';
+export type SyncEntity = 'bill' | 'product' | 'settings' | 'stockMovement' | 'customerPayment' | 'customer' | 'shift' | 'supplier' | 'purchase' | 'supplierPayment' | 'auditEvent' | 'cashMovement' | 'expense' | 'inventoryLot' | 'billItemCostAllocation';
 export type SyncOperation = 'create' | 'update' | 'delete' | 'upsert';
 
 export interface SyncQueueItem {
@@ -479,6 +479,88 @@ export interface StockMovement {
   referenceId: string;
   note?: string;
   createdAt: string;
+  syncStatus?: SyncStatus;
+  syncedAt?: string;
+  lastSyncError?: string;
+}
+
+/**
+ * FIFO inventory costing — an `InventoryLot` is one physically-received batch
+ * of a product at a known unit cost. Every real purchase line, the migration
+ * opening balance, and positive stock adjustments create a lot. Sales consume
+ * lots oldest-first (FIFO) so profit is computed against the actual cost of the
+ * units that left the shelf — not the product's latest `buyPrice`.
+ *
+ * `quantityRemaining` is the unsold/unreturned quantity still costed to this
+ * lot. A lot becomes `depleted` when it reaches 0, and `voided` when a purchase
+ * void/return fully reverses it before any of it was sold.
+ */
+export type InventoryLotSourceType =
+  | 'opening_balance'
+  | 'purchase'
+  | 'stock_adjustment';
+
+export type InventoryLotStatus =
+  | 'open'
+  | 'depleted'
+  | 'voided';
+
+export interface InventoryLot {
+  id: string;
+  productId: string;
+
+  sourceType: InventoryLotSourceType;
+  // For 'purchase': purchase.id. For 'opening_balance': the migration tag.
+  // For 'stock_adjustment': the originating reference id.
+  sourceId: string;
+  // For 'purchase': the originating purchaseItem.id (lets purchase return/void
+  // find exactly the lot(s) it created).
+  sourceItemId?: string;
+  // Human-readable label captured at creation (purchase number, "Opening
+  // balance", etc.) — survives deletion of the source record.
+  sourceLabel?: string;
+
+  receivedAt: string;
+  quantityReceived: number;
+  quantityRemaining: number;
+  unitCost: number;
+
+  status: InventoryLotStatus;
+
+  createdAt: string;
+  updatedAt: string;
+
+  syncStatus?: SyncStatus;
+  syncedAt?: string;
+  lastSyncError?: string;
+}
+
+/**
+ * Exact cost snapshot of which lot(s) a single bill item consumed. Created at
+ * sale time alongside the bill item. `quantityReturned` tracks how much of this
+ * specific allocation has been restored to its lot by returns/voids, so partial
+ * returns can be costed against the precise lot they came from rather than a
+ * line average. `lineCost = quantity * unitCost`, money-rounded.
+ *
+ * Old bills (created before FIFO) have no allocations — reporting falls back to
+ * `BillItem.unitBuyPriceAtSale` for those.
+ */
+export interface BillItemCostAllocation {
+  id: string;
+  billId: string;
+  billItemId: string;
+  productId: string;
+  inventoryLotId: string;
+
+  quantity: number;
+  quantityReturned?: number;
+
+  unitCost: number;
+  lineCost: number;
+
+  createdAt: string;
+  updatedAt: string;
+
   syncStatus?: SyncStatus;
   syncedAt?: string;
   lastSyncError?: string;

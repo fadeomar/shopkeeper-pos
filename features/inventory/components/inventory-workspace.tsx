@@ -9,7 +9,7 @@ import { settingsRepo } from "@/lib/db/repositories";
 import { isLowStock } from "@/lib/utils/stock";
 import { RecordSyncBadge } from "@/components/sync/record-sync-badge";
 import { countProductStock } from "@/lib/services/inventory-service";
-import { formatCurrency } from "@/lib/utils/money";
+import { addMoney, formatCurrency, multiplyMoney, roundMoney } from "@/lib/utils/money";
 import { Card } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
 import { Button } from "@/components/ui/button";
@@ -65,6 +65,7 @@ export function InventoryWorkspace() {
     () => db.stockMovements.orderBy("createdAt").reverse().limit(75).toArray(),
     [],
   );
+  const inventoryLots = useLiveQuery(() => db.inventoryLots.toArray(), []);
   const settings = useLiveQuery(() => settingsRepo.get(), []);
 
   const [mode, setMode] = useState<InventoryModalMode>(null);
@@ -102,13 +103,22 @@ export function InventoryWorkspace() {
     .sort((a, b) => String(a.expiryDate).localeCompare(String(b.expiryDate)));
 
   const currency = settings?.currency ?? "ILS";
-  const stockValue = activeProducts.reduce(
-    (sum, product) => sum + product.quantityInStock * product.buyPrice,
-    0,
+  // Inventory cost value comes from FIFO lots — sum(quantityRemaining ×
+  // unitCost) across non-voided lots — NOT quantityInStock × latest buyPrice,
+  // which mis-values stock whenever older remaining lots cost differently.
+  const stockValue = useMemo(
+    () =>
+      (inventoryLots ?? []).reduce((sum, lot) => {
+        if (lot.status === "voided" || lot.quantityRemaining <= 0) return sum;
+        return addMoney(sum, multiplyMoney(lot.unitCost, lot.quantityRemaining));
+      }, 0),
+    [inventoryLots],
   );
-  const retailValue = activeProducts.reduce(
-    (sum, product) => sum + product.quantityInStock * product.sellPrice,
-    0,
+  const retailValue = roundMoney(
+    activeProducts.reduce(
+      (sum, product) => addMoney(sum, multiplyMoney(product.sellPrice, product.quantityInStock)),
+      0,
+    ),
   );
 
   function openModal(
