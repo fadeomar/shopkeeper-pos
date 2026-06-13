@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/lib/db/schema';
 import { calculateInventoryCostValue } from '@/lib/services/inventory-lot-service';
+import { summarizeProductSales } from '@/features/reports/utils/report-summary';
 import {
   makeBillDraftItem,
   makeBillForm,
@@ -179,6 +180,34 @@ describe('weighted products', () => {
     // Returned profit costed at lot B's 3.5/kg: 10×(5−3.5) = 15.
     expect(bill?.returnedProfit).toBe(15);
     expect(bill?.status).toBe('partially_returned');
+  });
+
+  it('reports weighted profit from actual lot cost (per kg ÷ grams factor), not 1000× off', async () => {
+    const product = await seedProduct(makeWeightProduct());
+    await buyWeight(product, 50, 3);
+    const live1 = (await db.products.get('tomatoes')) as Product;
+    await buyWeight(live1, 70, 3.5);
+
+    const live2 = (await db.products.get('tomatoes')) as Product;
+    await createFinalizedBill({
+      items: [makeBillDraftItem(live2, { saleType: 'weight', quantity: 60, baseQuantity: 60000, unitSellPrice: 5 })],
+      form: makeBillForm({ paidAmount: 300 }),
+    });
+
+    const [bills, billItems, products, allocations] = await Promise.all([
+      db.bills.toArray(),
+      db.billItems.toArray(),
+      db.products.toArray(),
+      db.billItemCostAllocations.toArray(),
+    ]);
+    const rows = summarizeProductSales(bills, billItems, products, allocations);
+    const row = rows.find((r) => r.key === 'tomatoes');
+
+    expect(row?.revenue).toBe(300);
+    expect(row?.profit).toBe(115); // NOT 300 − 185000
+    expect(row?.quantity).toBe(60); // kg
+    expect(row?.baseQuantity).toBe(60000); // grams
+    expect(row?.saleType).toBe('weight');
   });
 
   it('void restores every gram to its original lot', async () => {

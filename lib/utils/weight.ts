@@ -115,6 +115,20 @@ export function formatStockDisplay(
 }
 
 /**
+ * Format a sold/returned line quantity for receipts, bill detail, and reports:
+ * a kilogram weight ("0.75 kg") when the line is weight-based, otherwise the
+ * plain count. `baseQuantity` is the integer grams; `count` is the pricing
+ * quantity used for unit lines.
+ */
+export function formatWeightOrCount(
+  saleType: ProductSaleType | undefined,
+  baseQuantity: number | undefined,
+  count: number,
+): string {
+  return saleType === 'weight' ? formatWeightForCart(baseQuantity ?? 0) : String(count);
+}
+
+/**
  * Money for a weighted line: price-per-kg × kilograms sold. Integer-safe by
  * routing through `multiplyMoney` (cents × fractional-kg, then rounded).
  *   250 g  @ 8 ₪/kg → 2.00

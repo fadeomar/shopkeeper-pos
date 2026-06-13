@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { useLocale } from "@/components/providers/locale-context";
 import { useToast } from "@/components/ui/toast";
 import { formatCurrency } from "@/lib/utils/money";
+import { formatWeightOrCount } from "@/lib/utils/weight";
 import { formatDateTime } from "@/lib/utils/date";
 import { getBillNetTotal } from "@/features/bills/utils/bill-summary";
 import { buildReceiptText } from "@/features/bills/utils/receipt-format";
@@ -170,8 +171,9 @@ export function ReceiptView({
               <div className="mt-0.5 flex justify-between gap-3 text-slate-500">
                 <span>{item.barcodeAtSale}</span>
                 <span>
-                  {item.quantitySold} ×{" "}
+                  {formatWeightOrCount(item.saleType, item.baseQuantitySold, item.quantitySold)} ×{" "}
                   {formatCurrency(item.unitSellPriceAtSale, currency)}
+                  {item.saleType === "weight" ? ` ${t("weight.perKgSuffix")}` : ""}
                 </span>
               </div>
             </div>

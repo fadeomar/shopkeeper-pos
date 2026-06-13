@@ -6,6 +6,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db/schema";
 import { settingsRepo } from "@/lib/db/repositories";
 import { formatCurrency, roundMoney } from "@/lib/utils/money";
+import { formatWeightOrCount } from "@/lib/utils/weight";
 import { downloadCSV } from "@/lib/utils/export-csv";
 import { Card } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
@@ -73,7 +74,7 @@ function ProductRows({
               {formatCurrency(row.revenue, currency)}
             </p>
             <p className="text-xs text-slate-500">
-              {t("reports.qty")}: {row.quantity}
+              {t("reports.qty")}: {formatWeightOrCount(row.saleType, row.baseQuantity, row.quantity)}
               {showProfit ? ` · ${formatCurrency(row.profit, currency)}` : ""}
             </p>
           </div>

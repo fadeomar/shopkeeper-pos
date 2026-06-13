@@ -1,7 +1,8 @@
-import type { Bill, BillItem, BillItemCostAllocation, CashMovement, Expense, ExpenseCategory, PaymentMethod, Product, Purchase, SupplierPayment } from '@/types/domain';
+import type { Bill, BillItem, BillItemCostAllocation, CashMovement, Expense, ExpenseCategory, PaymentMethod, Product, ProductSaleType, Purchase, SupplierPayment } from '@/types/domain';
 import { getBillNetItemCount, getBillNetProfit, getBillNetTotal } from '@/features/bills/utils/bill-summary';
 import { calculateBillItemNetContribution, calculateLineProfit, calculateLineSubtotal } from '@/lib/utils/calculations';
 import { addMoney, multiplyMoney, roundMoney, subtractMoney } from '@/lib/utils/money';
+import { baseUnitsPerPricingUnit, lotBaseUnitFor } from '@/lib/utils/weight';
 import { localDateKey } from '@/lib/utils/date';
 import { netSplitField, normalizeBillSplit } from '@/lib/utils/bill-split';
 import { isMiscLine } from '@/lib/utils/misc-items';
@@ -19,7 +20,11 @@ export interface ProductSalesRow {
   name: string;
   barcode: string;
   category: string;
+  // For weight rows, `quantity` is kilograms sold and `baseQuantity` the grams;
+  // `currentStock`/`minimumStockAlert` are grams. saleType drives display.
+  saleType?: ProductSaleType;
   quantity: number;
+  baseQuantity?: number;
   revenue: number;
   profit: number;
   currentStock?: number;
@@ -274,11 +279,14 @@ export function summarizeProductSales(
     // Profit from exact FIFO cost when allocations exist for this line; else
     // fall back to the legacy per-unit buy-price snapshot.
     const itemAllocations = allocationsByItem.get(item.id);
+    // Allocation quantities are in base units (grams for weight); unitCost is
+    // per pricing unit (per kg), so divide by the factor before costing.
+    const costFactor = baseUnitsPerPricingUnit(lotBaseUnitFor(item.saleType));
     let lineProfit: number;
     if (itemAllocations && itemAllocations.length > 0) {
       const netCost = itemAllocations.reduce((sum, allocation) => {
         const netAllocQty = Math.max(0, allocation.quantity - (allocation.quantityReturned ?? 0));
-        return addMoney(sum, multiplyMoney(allocation.unitCost, netAllocQty));
+        return addMoney(sum, multiplyMoney(allocation.unitCost, netAllocQty / costFactor));
       }, 0);
       lineProfit = subtractMoney(lineAmount, netCost);
     } else {
@@ -300,7 +308,9 @@ export function summarizeProductSales(
       name: isMisc ? item.productNameAtSale.split(' - ')[0] : item.productNameAtSale,
       barcode: isMisc ? '—' : item.barcodeAtSale,
       category: item.categoryAtSale,
+      saleType: product?.saleType ?? item.saleType,
       quantity: 0,
+      baseQuantity: 0,
       revenue: 0,
       profit: 0,
       currentStock: product?.quantityInStock,
@@ -308,11 +318,19 @@ export function summarizeProductSales(
       isMisc,
     };
 
+    // Net base units (grams for weight) for accurate weight display.
+    const netBase =
+      item.saleType === 'weight'
+        ? Math.max(0, (item.baseQuantitySold ?? 0) - (item.baseQuantityReturned ?? 0))
+        : netQuantity;
+
     existing.quantity += netQuantity;
+    existing.baseQuantity = (existing.baseQuantity ?? 0) + netBase;
     existing.revenue = roundMoney(existing.revenue + net.revenue);
     existing.profit = roundMoney(existing.profit + (isMisc ? 0 : net.profit));
     existing.currentStock = product?.quantityInStock ?? existing.currentStock;
     existing.minimumStockAlert = product?.minimumStockAlert ?? existing.minimumStockAlert;
+    if (!existing.saleType && product?.saleType) existing.saleType = product.saleType;
     rows.set(key, existing);
   });
 
