@@ -30,6 +30,7 @@ import {
   useRef,
   useState,
   type InputHTMLAttributes,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
 import clsx from "clsx";
@@ -149,6 +150,12 @@ export const NumberField = forwardRef<HTMLInputElement, NumberFieldProps>(
     useImperativeHandle(forwardedRef, () => innerRef.current as HTMLInputElement);
     const { t } = useLocale();
 
+    // Select-all-on-focus is done synchronously inside `handleFocus` (see
+    // there). The only follow-up we need is to stop the mouseup that ends a
+    // focusing click from collapsing that selection back to a caret — this
+    // ref arms a one-shot suppression for exactly that mouseup.
+    const suppressNextMouseUp = useRef(false);
+
     // Internal string buffer — the source of truth WHILE the field is focused.
     // When unfocused, we render the parent's numeric value formatted for display.
     // This split is what lets users backspace to empty without the value
@@ -203,6 +210,7 @@ export const NumberField = forwardRef<HTMLInputElement, NumberFieldProps>(
     }
 
     function handleBlur(e: React.FocusEvent<HTMLInputElement>) {
+      suppressNextMouseUp.current = false;
       setFocused(false);
       const parsed = parseNumeric(draft);
       if (!Number.isFinite(parsed)) {
@@ -222,12 +230,26 @@ export const NumberField = forwardRef<HTMLInputElement, NumberFieldProps>(
       setFocused(true);
       // Select-all on focus mirrors the cashier-friendly behavior of
       // physical till keypads: tap the field, type the new value, done.
-      // We do this on a microtask so the click that brought focus to the
-      // field finishes positioning the caret first.
-      requestAnimationFrame(() => {
-        innerRef.current?.select();
-      });
+      // Do it SYNCHRONOUSLY — a deferred select (requestAnimationFrame)
+      // raced the first keystroke: if typing began before the frame fired,
+      // the old value was never selected and the new digits appended
+      // (e.g. "2.00" + "51.75" -> "2.0051.75"). The selection is in place
+      // immediately, so the first keystroke always replaces it.
+      e.target.select();
+      // When focus came from a pointer, the mouseup that follows would
+      // collapse the selection to a caret. Arm a one-shot suppression so
+      // the select-all survives a focusing click.
+      suppressNextMouseUp.current = true;
       onFocus?.(e);
+    }
+
+    function handleMouseUp(e: ReactMouseEvent<HTMLInputElement>) {
+      if (suppressNextMouseUp.current) {
+        suppressNextMouseUp.current = false;
+        // Keep the focus select-all intact; subsequent clicks (field already
+        // focused) don't re-arm this, so normal caret placement still works.
+        e.preventDefault();
+      }
     }
 
     function step1(direction: 1 | -1) {
@@ -348,6 +370,7 @@ export const NumberField = forwardRef<HTMLInputElement, NumberFieldProps>(
           onChange={handleInput}
           onFocus={handleFocus}
           onBlur={handleBlur}
+          onMouseUp={handleMouseUp}
           onKeyDown={handleKeyDown}
           onWheel={handleWheel}
           className={clsx(

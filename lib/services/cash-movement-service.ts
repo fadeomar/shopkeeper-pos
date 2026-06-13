@@ -91,7 +91,7 @@ export async function recordCashMovement(input: RecordCashMovementInput): Promis
     category: 'cash',
     action: signedAmount > 0 ? 'cash_in' : 'cash_out',
     entityId: movement.id,
-    entityLabel: input.referenceLabel || input.type,
+    entityLabel: movement.referenceLabel || movement.type,
     summary: `${input.type}: ${signedAmount > 0 ? '+' : ''}${signedAmount}`,
     reason: movement.reason,
     shiftId: movement.shiftId,

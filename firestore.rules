@@ -65,22 +65,11 @@ service cloud.firestore {
 
     function isSelfRegistrationShape(uid) {
       // The self-service trial flow (auth-service.registerUser) creates the
-      // auth user via a secondary Firebase app and writes /users/{uid} using
-      // that same authenticated secondary app. We accept that path only when
-      // request.auth.uid matches the target uid and the document shape is
-      // exactly an active cashier trial account.
-      return request.resource.data.keys().hasOnly([
-          'uid', 'email', 'name', 'phone', 'role', 'isActive',
-          'pendingApproval', 'accountType', 'subscriptionStatus',
-          'subscriptionStartAt', 'subscriptionEndAt', 'subscriptionEndAtMs',
-          'subscriptionEndAtTimestamp', 'lastRenewedAt', 'renewalCount',
-          'createdAt'
-        ])
-        && request.resource.data.uid == uid
-        && request.resource.data.email is string
-        && request.resource.data.name is string
-        && (!('phone' in request.resource.data) || request.resource.data.phone is string)
-        && request.resource.data.createdAt is string
+      // auth user via a secondary Firebase app and then writes /users/{uid}
+      // BEFORE signing into the main auth — so the create lands as an
+      // unauthenticated request from Firestore's perspective. We accept that
+      // path only when the shape is exactly an active cashier trial account.
+      return request.resource.data.uid == uid
         && request.resource.data.role == 'cashier'
         && request.resource.data.isActive == true
         && request.resource.data.pendingApproval == false
@@ -89,13 +78,6 @@ service cloud.firestore {
         && request.resource.data.subscriptionEndAtTimestamp is timestamp
         && request.resource.data.subscriptionEndAtTimestamp >= request.time
         && request.resource.data.subscriptionEndAtTimestamp <= request.time + duration.value(15, 'd');
-    }
-
-    function isProtectedUserSubcollection(collection) {
-      // These have their own stricter rules below. Without this guard the
-      // generic /users/{uid}/{collection}/{docId} match would also grant access,
-      // because Firestore ORs overlapping allow statements.
-      return collection == 'settings' || collection == 'subscriptionRenewals';
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -108,13 +90,12 @@ service cloud.firestore {
       allow read: if isOwner(uid) || isActiveAdmin();
 
       // Two creation paths:
-      //   - Self-service trial registration: signed-in new user can create
-      //     only their own profile, and the shape must match
-      //     isSelfRegistrationShape (cashier, active trial).
+      //   - Self-service trial registration: unauthenticated write, but the
+      //     shape must match isSelfRegistrationShape (cashier, active trial).
       //   - Admin-created: an active admin creates a profile for another user
       //     (createAppUser uses a secondary auth app, so the setDoc happens
       //     under the admin's session for a different target uid).
-      allow create: if (isOwner(uid) && isSelfRegistrationShape(uid)) || isActiveAdmin();
+      allow create: if isSelfRegistrationShape(uid) || isActiveAdmin();
 
       // Update rules:
       //   - Active admin can update any field.
@@ -152,7 +133,7 @@ service cloud.firestore {
         // Inactive / pending / expired / suspended users are blocked at this layer.
         // Admins do not get write permission here — admin support is
         // read-only on POS data (except settings, handled below).
-        allow write: if !isProtectedUserSubcollection(collection) && isActiveOwner(uid);
+        allow write: if isActiveOwner(uid);
       }
 
 

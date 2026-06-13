@@ -38,6 +38,9 @@ jobs:
       - name: Strict typecheck (unused locals + parameters)
         run: npx tsc --noEmit --noUnusedLocals --noUnusedParameters
 
+      - name: Unit tests
+        run: npm run test
+
       - name: Production build
         # Firebase config is read at module-init time. Real keys aren't needed
         # for the build itself — it does no network calls — but the shape must

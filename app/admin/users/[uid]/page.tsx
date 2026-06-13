@@ -7,13 +7,7 @@ import type { Route } from "next";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useAuth } from "@/components/providers/auth-context";
 import { useLocale } from "@/components/providers/locale-context";
-import {
-  fetchUserDoc,
-  markUserContacted,
-  renewUserSubscription,
-  suspendUserSubscription,
-  updateUserStatus,
-} from "@/lib/firebase/auth-service";
+import { fetchUserDoc, updateUserStatus } from "@/lib/firebase/auth-service";
 import { auth } from "@/lib/firebase/config";
 import {
   fetchUserBills,
@@ -37,11 +31,6 @@ import {
   type UserSupportSnapshot,
 } from "@/lib/firebase/admin-service";
 import { downloadCSV } from "@/lib/utils/export-csv";
-import {
-  getSubscriptionAccessState,
-  subscriptionDaysRemaining,
-  subscriptionExpiryDateLabel,
-} from "@/lib/services/subscription-service";
 import { Button } from "@/components/ui/button";
 import { DataTable, useDataTableLabels } from "@/components/ui/data-table";
 import { SectionCard } from "@/components/ui/section-card";
@@ -101,7 +90,6 @@ export default function UserDetailPage() {
   const [resetLink, setResetLink] = useState("");
   const [resetLinkLoading, setResetLinkLoading] = useState(false);
   const [resetLinkError, setResetLinkError] = useState("");
-  const [accountAction, setAccountAction] = useState<"" | "renew1" | "renew3" | "suspend" | "contacted">("");
 
   useEffect(() => {
     if (!uid) return;
@@ -173,50 +161,6 @@ export default function UserDetailPage() {
       setResetLinkError(err instanceof Error ? err.message : "Unknown error.");
     } finally {
       setResetLinkLoading(false);
-    }
-  }
-
-  async function renewSubscription(months: 1 | 3) {
-    if (!profile) return;
-    setAccountAction(months === 1 ? "renew1" : "renew3");
-    setError("");
-    try {
-      const next = await renewUserSubscription(profile.uid, months);
-      setProfile(next);
-      setSupport((prev) => prev ? { ...prev, warnings: prev.warnings.filter((warning) => !warning.toLowerCase().includes("subscription")) } : prev);
-    } catch {
-      setError(t("admin.errorRenewSubscription"));
-    } finally {
-      setAccountAction("");
-    }
-  }
-
-  async function suspendSubscription() {
-    if (!profile) return;
-    setAccountAction("suspend");
-    setError("");
-    try {
-      await suspendUserSubscription(profile.uid);
-      setProfile({ ...profile, subscriptionStatus: "suspended", subscriptionNote: "Suspended by admin", lastRenewedAt: new Date().toISOString() });
-    } catch {
-      setError(t("admin.errorSuspendSubscription"));
-    } finally {
-      setAccountAction("");
-    }
-  }
-
-  async function markContacted() {
-    if (!profile) return;
-    setAccountAction("contacted");
-    setError("");
-    try {
-      const contactedAt = new Date().toISOString();
-      await markUserContacted(profile.uid);
-      setProfile({ ...profile, contactedAt });
-    } catch {
-      setError(t("admin.errorContacted"));
-    } finally {
-      setAccountAction("");
     }
   }
 
@@ -560,17 +504,6 @@ export default function UserDetailPage() {
   ];
 
   const displayStatus = userDisplayStatus(profile);
-  const subscriptionState = getSubscriptionAccessState(profile);
-  const daysLeft = subscriptionDaysRemaining(profile);
-  const subscriptionLabel = subscriptionState === "legacy"
-    ? t("admin.legacyAccount")
-    : subscriptionState === "trial"
-      ? t("admin.trialAccount")
-      : subscriptionState === "suspended"
-        ? t("admin.suspended")
-        : subscriptionState === "expired"
-          ? t("admin.expired")
-          : t("common.active");
 
   return (
     <PageShell size="wide">
@@ -640,26 +573,8 @@ export default function UserDetailPage() {
                 </p>
               )}
               <p className="text-xs text-slate-400">
-                {t("admin.joined")} {profile.createdAt.slice(0, 10)}
+                Joined {profile.createdAt.slice(0, 10)}
               </p>
-              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-                <span className="inline-flex rounded-full bg-slate-100 px-2 py-1 font-medium text-slate-600">
-                  {t("admin.subscription")}: {subscriptionLabel}
-                </span>
-                {profile.subscriptionEndAt && subscriptionState !== "legacy" && (
-                  <span className="inline-flex rounded-full bg-slate-100 px-2 py-1 text-slate-500">
-                    {t("admin.expires")} {subscriptionExpiryDateLabel(profile)}
-                  </span>
-                )}
-                {daysLeft !== null && subscriptionState !== "legacy" && (
-                  <span className={`inline-flex rounded-full px-2 py-1 font-medium ${daysLeft <= 0 ? "bg-danger-soft text-danger" : daysLeft <= 7 ? "bg-warning-soft text-warning" : "bg-success-soft text-success"}`}>
-                    {daysLeft <= 0 ? t("admin.expired") : t("admin.daysLeft", { count: daysLeft })}
-                  </span>
-                )}
-                <span className="inline-flex rounded-full bg-slate-100 px-2 py-1 text-slate-500">
-                  {profile.contactedAt ? t("admin.contacted") : t("admin.notContacted")}
-                </span>
-              </div>
             </div>
           </div>
 
@@ -668,48 +583,20 @@ export default function UserDetailPage() {
               onClick={() => void loadAll(profile.uid)}
               className="px-4 py-2 text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-xl transition-colors"
             >
-              {t("admin.refreshHealth")}
+              Refresh
             </button>
             <button
               onClick={() => void exportBackupJSON()}
               className="px-4 py-2 text-sm font-medium bg-info-soft text-info hover:bg-info-soft/80 rounded-xl transition-colors"
             >
-              {t("admin.exportBackupJSON")}
+              Export backup JSON
             </button>
             <button
               onClick={() => void generateResetLink()}
               disabled={resetLinkLoading}
               className="px-4 py-2 text-sm font-medium bg-warning-soft text-warning hover:bg-warning-soft/80 rounded-xl transition-colors disabled:opacity-60"
             >
-              {resetLinkLoading ? "…" : t("admin.generateResetLink")}
-            </button>
-            <button
-              onClick={() => void renewSubscription(1)}
-              disabled={accountAction !== ""}
-              className="px-4 py-2 text-sm font-medium bg-success-soft text-success hover:bg-success-soft/80 rounded-xl transition-colors disabled:opacity-60"
-            >
-              {accountAction === "renew1" ? "…" : t("admin.renewOneMonth")}
-            </button>
-            <button
-              onClick={() => void renewSubscription(3)}
-              disabled={accountAction !== ""}
-              className="px-4 py-2 text-sm font-medium bg-success-soft text-success hover:bg-success-soft/80 rounded-xl transition-colors disabled:opacity-60"
-            >
-              {accountAction === "renew3" ? "…" : t("admin.renewThreeMonths")}
-            </button>
-            <button
-              onClick={() => void suspendSubscription()}
-              disabled={accountAction !== "" || subscriptionState === "suspended"}
-              className="px-4 py-2 text-sm font-medium bg-danger-soft text-danger hover:bg-danger-soft/80 rounded-xl transition-colors disabled:opacity-60"
-            >
-              {accountAction === "suspend" ? "…" : t("admin.suspendSubscription")}
-            </button>
-            <button
-              onClick={() => void markContacted()}
-              disabled={accountAction !== ""}
-              className="px-4 py-2 text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-xl transition-colors disabled:opacity-60"
-            >
-              {accountAction === "contacted" ? "…" : t("admin.markContacted")}
+              {resetLinkLoading ? "…" : "Generate password reset link"}
             </button>
             {displayStatus === "pending" && (
               <button
@@ -717,7 +604,7 @@ export default function UserDetailPage() {
                 disabled={toggling}
                 className="px-4 py-2 text-sm font-medium bg-success-soft text-success hover:bg-success-soft/80 rounded-xl transition-colors disabled:opacity-60"
               >
-                {t("admin.approve")}
+                Approve
               </button>
             )}
             {displayStatus !== "pending" && (
@@ -733,8 +620,8 @@ export default function UserDetailPage() {
                 {toggling
                   ? "…"
                   : profile.isActive
-                    ? t("admin.deactivate")
-                    : t("admin.reactivate")}
+                    ? "Deactivate"
+                    : "Reactivate"}
               </button>
             )}
           </div>
@@ -748,7 +635,7 @@ export default function UserDetailPage() {
             {resetLink && (
               <div className="space-y-1">
                 <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">
-                  {t("admin.resetLinkHeading")}
+                  Password reset link (share with user via WhatsApp or SMS):
                 </p>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 break-all select-all">
@@ -761,11 +648,12 @@ export default function UserDetailPage() {
                     }
                     className="shrink-0 px-3 py-2 text-xs font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg transition-colors"
                   >
-                    {t("admin.resetLinkCopy")}
+                    Copy
                   </button>
                 </div>
                 <p className="text-xs text-warning">
-                  {t("admin.resetLinkExpiry")}
+                  Link expires after first use or 1 hour. Generate a new one if
+                  needed.
                 </p>
               </div>
             )}
@@ -796,30 +684,13 @@ export default function UserDetailPage() {
               value={support.productCount}
             />
             <StatCard
-              label={t("admin.cloudPurchases")}
-              value={support.purchaseCount}
-            />
-            <StatCard
               label={t("admin.netSales")}
               value={support.totalRevenue.toFixed(2)}
-            />
-            <StatCard
-              label={t("admin.purchaseCost")}
-              value={support.purchaseCost.toFixed(2)}
-            />
-            <StatCard
-              label={t("admin.expenses")}
-              value={support.expenseTotal.toFixed(2)}
             />
             <StatCard
               label={t("admin.customerDebt")}
               value={support.creditDebt.toFixed(2)}
               tone={support.creditDebt > 0 ? "warning" : undefined}
-            />
-            <StatCard
-              label={t("admin.supplierDebt")}
-              value={support.supplierDebt.toFixed(2)}
-              tone={support.supplierDebt > 0 ? "warning" : undefined}
             />
             <StatCard
               label={t("admin.lowStock")}
@@ -869,30 +740,6 @@ export default function UserDetailPage() {
                   value={String(support.customerPaymentCount)}
                 />
                 <ReadRow
-                  label={t("admin.supplierPayments")}
-                  value={String(support.supplierPaymentCount)}
-                />
-                <ReadRow
-                  label={t("admin.suppliers")}
-                  value={String(support.supplierCount)}
-                />
-                <ReadRow
-                  label={t("admin.purchaseItems")}
-                  value={String(support.purchaseItemCount)}
-                />
-                <ReadRow
-                  label={t("admin.cashMovements")}
-                  value={String(support.cashMovementCount)}
-                />
-                <ReadRow
-                  label={t("admin.expenses")}
-                  value={String(support.expenseCount)}
-                />
-                <ReadRow
-                  label={t("admin.syncConflicts")}
-                  value={String(support.syncConflictCount)}
-                />
-                <ReadRow
                   label={t("admin.settingsUpdated")}
                   value={
                     support.settingsUpdatedAt
@@ -922,7 +769,7 @@ export default function UserDetailPage() {
 
           <section className="bg-white border border-slate-200 rounded-2xl p-5">
             <h2 className="text-sm font-semibold text-slate-700 mb-3">
-              {t("admin.paymentSnapshot")}
+              Payment Snapshot
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {salesByMethod.map(([label, value]) => (
@@ -940,7 +787,8 @@ export default function UserDetailPage() {
 
       {support && support.billCount === 0 && support.productCount === 0 && (
         <div className="bg-warning-soft border border-warning/20 rounded-2xl px-5 py-4 text-sm text-warning">
-{t("admin.noSellerData")}
+          No seller data has synced yet. Ask the user to open the app online and
+          run sync once.
         </div>
       )}
 
@@ -949,7 +797,7 @@ export default function UserDetailPage() {
         data={bills}
         title={
           <>
-            {t("admin.recentBills")} {" "}
+            Recent Bills{" "}
             <span className="font-normal text-slate-400">({bills.length})</span>
           </>
         }
@@ -958,10 +806,10 @@ export default function UserDetailPage() {
             onClick={exportBillsCSV}
             className="text-xs font-medium text-info transition-colors hover:text-info/80"
           >
-            {t("admin.exportCSV")}
+            Export CSV
           </button>
         }
-        emptyTitle={t("admin.noSellerData")}
+        emptyTitle="No bills synced yet"
         pageSize={10}
         labels={tableLabels}
       />

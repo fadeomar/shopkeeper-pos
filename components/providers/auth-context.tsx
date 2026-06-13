@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { onAuthChange, fetchUserDoc, signOut } from '@/lib/firebase/auth-service';
 import { db } from '@/lib/db/schema';
 import { getActiveUid, getLocalDataSummary, prepareRuntimeDbForUid, setActiveUid } from '@/lib/services/account-data-service';
@@ -23,6 +23,46 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+const E2E_AUTH_STORAGE_KEY = 'shopkeeper-e2e-auth-v1';
+const E2E_AUTH_ENABLED = process.env.NEXT_PUBLIC_E2E_AUTH === '1';
+
+type E2ETestAuthPayload = Partial<Pick<AuthCacheEntry, 'uid' | 'email' | 'name' | 'phone' | 'role'>>;
+
+function readE2ETestUser(): AuthCacheEntry | null {
+  if (!E2E_AUTH_ENABLED || typeof window === 'undefined') return null;
+  const raw = window.localStorage.getItem(E2E_AUTH_STORAGE_KEY);
+  if (!raw) return null;
+
+  try {
+    const payload = JSON.parse(raw) as E2ETestAuthPayload;
+    const now = new Date();
+    const subscriptionEnd = new Date(now);
+    subscriptionEnd.setFullYear(subscriptionEnd.getFullYear() + 1);
+    const uid = payload.uid?.trim() || 'e2e-cashier';
+    return {
+      uid,
+      email: payload.email?.trim() || `${uid}@example.test`,
+      name: payload.name?.trim() || 'E2E Cashier',
+      phone: payload.phone,
+      role: payload.role ?? 'cashier',
+      isActive: true,
+      pendingApproval: false,
+      createdAt: now.toISOString(),
+      accountType: 'standard',
+      subscriptionStatus: 'active',
+      subscriptionStartAt: now.toISOString(),
+      subscriptionEndAt: subscriptionEnd.toISOString(),
+      subscriptionEndAtMs: subscriptionEnd.getTime(),
+      lastRenewedAt: now.toISOString(),
+      renewalCount: 1,
+      cachedAt: now.toISOString(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+
 function resolveStatus(user: AuthCacheEntry): Exclude<AuthStatus, 'loading' | 'unauthenticated'> {
   if (user.pendingApproval ?? false) return 'pending';
   if (!user.isActive) return 'inactive';
@@ -41,16 +81,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const { push } = useToast();
   const { t } = useLocale();
 
-  const refreshProfileFromCloud = useCallback(async (uid: string): Promise<AuthCacheEntry | null> => {
-    const userDoc = await fetchUserDoc(uid);
-    if (!userDoc) return null;
-    const entry: AuthCacheEntry = { ...userDoc, cachedAt: new Date().toISOString() };
+
+  const resolveE2ETestUser = useCallback(async (entry: AuthCacheEntry) => {
+    if (!db.isOpen()) {
+      try { await db.open(); } catch { /* non-fatal */ }
+    }
+
+    try { await prepareRuntimeDbForUid(entry.uid); } catch (e) { console.warn('[auth:e2e] account data handoff failed:', e); }
     try { await db.authCache.put(entry); } catch { /* cache write failed, non-fatal */ }
-    try { setActiveUid(uid); } catch { /* non-fatal */ }
+    try { setActiveUid(entry.uid); } catch { /* non-fatal */ }
     setAuthError('');
     setUser(entry);
     setStatus(resolveStatus(entry));
-    return entry;
   }, []);
 
   const resolveUser = useCallback(async (uid: string) => {
@@ -93,8 +135,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      const entry = await refreshProfileFromCloud(uid);
-      if (entry) return;
+      const userDoc = await fetchUserDoc(uid);
+      if (userDoc) {
+        const entry: AuthCacheEntry = { ...userDoc, cachedAt: new Date().toISOString() };
+        try { await db.authCache.put(entry); } catch { /* cache write failed, non-fatal */ }
+        try { setActiveUid(uid); } catch { /* non-fatal */ }
+        setAuthError('');
+        setUser(entry);
+        setStatus(resolveStatus(entry));
+        return;
+      }
       console.warn('[auth] No Firestore profile found for uid:', uid);
     } catch (e) {
       console.warn('[auth] fetchUserDoc failed:', e);
@@ -116,9 +166,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     setStatus('unauthenticated');
     setAuthError('No profile found for this account. Ask your admin to create your profile through the app, then try again.');
-  }, [push, refreshProfileFromCloud, t]);
+  }, [push, t]);
 
   useEffect(() => {
+    const e2eUser = readE2ETestUser();
+    if (e2eUser) {
+      setStatus('loading');
+      void resolveE2ETestUser(e2eUser);
+      return;
+    }
+
     setStatus('loading');
 
     // Safety timeout: if Firebase Auth doesn't fire within 10 s (e.g. SDK hung,
@@ -148,9 +205,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       clearTimeout(fallbackTimer);
       unsub();
     };
-  }, [resolveUser]);
+  }, [resolveUser, resolveE2ETestUser]);
 
   const logout = useCallback(async () => {
+    if (E2E_AUTH_ENABLED && typeof window !== 'undefined') {
+      window.localStorage.removeItem(E2E_AUTH_STORAGE_KEY);
+    }
     await signOut();
     setUser(null);
     setAuthError('');
@@ -160,55 +220,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const refreshStatus = useCallback(async () => {
     if (!user) return;
     try {
-      await refreshProfileFromCloud(user.uid);
-    } catch { /* offline — silently ignore, user can try again */ }
-  }, [refreshProfileFromCloud, user]);
-
-  const lastAutoRefreshAt = useRef(0);
-
-  useEffect(() => {
-    if (!user?.uid) return;
-    const uid = user.uid;
-
-    async function autoRefresh(force = false) {
-      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
-      const now = Date.now();
-      if (!force && now - lastAutoRefreshAt.current < 30_000) return;
-      lastAutoRefreshAt.current = now;
-      try {
-        await refreshProfileFromCloud(uid);
-      } catch {
-        // Offline/permission/network blips should not log the cashier out.
-        // The cached profile remains the source of truth until a refresh succeeds.
+      const userDoc = await fetchUserDoc(user.uid);
+      if (userDoc) {
+        const entry: AuthCacheEntry = { ...userDoc, cachedAt: new Date().toISOString() };
+        try { await db.authCache.put(entry); } catch { /* non-fatal */ }
+        setUser(entry);
+        setStatus(resolveStatus(entry));
       }
-    }
-
-    function handleVisibilityChange() {
-      if (typeof document === 'undefined') return;
-      if (document.visibilityState !== 'visible') return;
-      void autoRefresh(false);
-    }
-
-    function handleFocus() {
-      void autoRefresh(false);
-    }
-
-    function handleOnline() {
-      void autoRefresh(true);
-    }
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('focus', handleFocus);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    const interval = window.setInterval(() => void autoRefresh(false), 5 * 60_000);
-
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('focus', handleFocus);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.clearInterval(interval);
-    };
-  }, [refreshProfileFromCloud, user?.uid]);
+    } catch { /* offline — silently ignore, user can try again */ }
+  }, [user]);
 
   return (
     <AuthContext.Provider value={{ status, user, isAdmin: user?.role === 'owner', authError, logout, refreshStatus }}>

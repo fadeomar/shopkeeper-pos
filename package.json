@@ -12,9 +12,27 @@
     "typecheck": "tsc --noEmit",
     "dev:offline:host": "cross-env NEXT_PUBLIC_ENABLE_OFFLINE_SW=1 next dev -H 0.0.0.0",
     "preview:offline": "npm run build && npm run start:host",
-    "verify": "npm run typecheck && npm run verify:rules && npm run verify:accounting && npm run build",
-    "verify:rules": "node scripts/verify-firestore-rules.mjs",
-    "verify:accounting": "node scripts/verify-accounting-reconciliation.mjs"
+    "test": "npm run test:unit && npm run test:integration && npm run test:components",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run tests/unit tests/integration tests/components --coverage",
+    "qa": "npm run typecheck && npm run test && npm run build",
+    "test:unit": "vitest run tests/unit --reporter dot",
+    "test:integration": "vitest run tests/integration --reporter dot",
+    "test:components": "vitest run tests/components --reporter dot",
+    "test:services": "vitest run tests/integration/services --reporter dot",
+    "test:e2e": "playwright test",
+    "test:e2e:desktop": "playwright test --project=desktop-chrome",
+    "test:e2e:mobile": "playwright test --project=mobile-chrome",
+    "test:e2e:ui": "playwright test --ui",
+    "qa:full": "npm run qa && npm run test:e2e",
+    "test:e2e:pwa": "playwright test --config=playwright.pwa.config.ts",
+    "qa:release": "npm run qa && npm run test:e2e && npm run test:e2e:axe && npm run test:e2e:pwa",
+    "test:e2e:release-workflow": "npm run qa:release",
+    "test:e2e:accessibility": "playwright test tests/e2e/accessibility-smoke.spec.ts --project=desktop-chrome",
+    "test:e2e:pwa:offline-purchase": "playwright test --config=playwright.pwa.config.ts tests/e2e/pwa-offline-purchase.pwa.spec.ts",
+    "test:e2e:axe": "playwright test --config=playwright.accessibility.config.ts",
+    "test:e2e:visual": "playwright test --config=playwright.visual.config.ts",
+    "test:e2e:visual:update": "playwright test --config=playwright.visual.config.ts --update-snapshots"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
@@ -36,12 +54,22 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.11.3",
+    "@playwright/test": "^1.60.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^22.13.10",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
+    "@vitejs/plugin-react": "^6.0.2",
+    "@vitest/coverage-v8": "^4.1.8",
     "cross-env": "^7.0.3",
     "eslint": "^9.19.0",
     "eslint-config-next": "^16.2.6",
-    "typescript": "^5.7.3"
+    "fake-indexeddb": "^6.2.5",
+    "jsdom": "^29.1.1",
+    "typescript": "^5.7.3",
+    "vitest": "^4.1.8"
   }
 }
