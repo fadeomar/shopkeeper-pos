@@ -326,6 +326,16 @@ export class ShopkeeperDB extends Dexie {
         await lotsTable.bulkAdd(newLots);
       }
     });
+
+    // v17: weight-based products. Adds a saleType index to products so the
+    // inventory UI can filter weighted vs unit products. No data migration:
+    // a product with no saleType is treated as 'unit' everywhere, so existing
+    // rows keep their meaning (quantityInStock stays a piece count, sellPrice
+    // a per-piece price). The other new weight fields (baseUnit on lots,
+    // baseQuantity* on bill/purchase items) are stored un-indexed on the row.
+    this.version(17).stores({
+      products: 'id, &barcode, name, category, brand, supplierName, status, quantityInStock, minimumStockAlert, dateAdded, lastUpdated, saleType',
+    });
   }
 }
 
