@@ -37,6 +37,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MoneyInput, MoneyInputRHF } from "@/components/ui/money-input";
 import { QuantityStepper } from "@/components/pos/quantity-stepper";
+import { NumberField } from "@/components/ui/number-field";
+import { formatStockDisplay, gramsToKg, kgToGrams } from "@/lib/utils/weight";
 import { PaymentMethodControl } from "@/components/pos/payment-method-control";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { CircleCheck, Phone, Search, Store, UserPlus, X } from "lucide-react";
@@ -450,12 +452,13 @@ export function PurchaseEntryScreen() {
   }
 
   function suggestRestockQuantity(product: Product): number {
-    return Math.max(
-      1,
-      Math.ceil(
-        (product.minimumStockAlert ?? 0) - (product.quantityInStock ?? 0),
-      ),
-    );
+    // For weight products the stock/threshold are grams; convert the deficit to
+    // kilograms (the entry unit). Default to 1 kg / 1 piece when not low.
+    const deficitBase = (product.minimumStockAlert ?? 0) - (product.quantityInStock ?? 0);
+    if (product.saleType === "weight") {
+      return Math.max(1, gramsToKg(Math.max(0, deficitBase)) || 1);
+    }
+    return Math.max(1, Math.ceil(deficitBase));
   }
 
   // Smart default for the line cost: selecting a product shows its buy price
@@ -676,16 +679,25 @@ export function PurchaseEntryScreen() {
   }
 
   function addProductToDraft(product: Product, quantity: number, unitCost: number) {
-    const qty = Math.max(1, Math.trunc(quantity || 0));
+    const isWeight = product.saleType === "weight";
+    // Weight buys kilograms (fractional ok); unit buys whole pieces.
+    const qty = isWeight
+      ? Math.max(0, quantity || 0)
+      : Math.max(1, Math.trunc(quantity || 0));
     const cost = Math.max(0, unitCost || product.buyPrice);
     setDraftItems((cur) => {
       const existing = cur.find((i) => i.productId === product.id);
       if (existing) {
-        return cur.map((i) =>
-          i.productId === product.id
-            ? { ...i, quantity: i.quantity + qty, unitCost: cost }
-            : i,
-        );
+        return cur.map((i) => {
+          if (i.productId !== product.id) return i;
+          const nextQty = i.quantity + qty;
+          return {
+            ...i,
+            quantity: nextQty,
+            baseQuantity: isWeight ? kgToGrams(nextQty) : undefined,
+            unitCost: cost,
+          };
+        });
       }
       return [
         ...cur,
@@ -694,7 +706,9 @@ export function PurchaseEntryScreen() {
           barcode: product.barcode,
           name: product.name,
           category: product.category,
+          saleType: isWeight ? "weight" : undefined,
           currentStock: product.quantityInStock,
+          baseQuantity: isWeight ? kgToGrams(qty) : undefined,
           quantity: qty,
           unitCost: cost,
           unitSellPriceBefore: product.sellPrice,
@@ -775,9 +789,15 @@ export function PurchaseEntryScreen() {
       cur.map((i) => {
         if (i.productId !== productIdToUpdate) return i;
         const next = { ...i, ...patch };
-        next.quantity = Number.isFinite(next.quantity)
-          ? Math.max(1, Math.trunc(next.quantity))
-          : 1;
+        if (next.saleType === "weight") {
+          // Weight quantity is kilograms (fractional); keep grams in sync.
+          next.quantity = Number.isFinite(next.quantity) ? Math.max(0, next.quantity) : 0;
+          next.baseQuantity = kgToGrams(next.quantity);
+        } else {
+          next.quantity = Number.isFinite(next.quantity)
+            ? Math.max(1, Math.trunc(next.quantity))
+            : 1;
+        }
         next.unitCost = Number.isFinite(next.unitCost)
           ? Math.max(0, next.unitCost)
           : 0;
@@ -860,7 +880,7 @@ export function PurchaseEntryScreen() {
         <span className="tabular-nums text-slate-500">
           {isMiscLine(row.original)
             ? t("purchases.nonStock")
-            : row.original.currentStock}
+            : formatStockDisplay(row.original.saleType, row.original.currentStock)}
         </span>
       ),
     },
@@ -869,6 +889,24 @@ export function PurchaseEntryScreen() {
       header: t("purchases.qty"),
       cell: ({ row }) => {
         const item = row.original;
+        // Weight lines buy kilograms (fractional) — a decimal field with a kg
+        // suffix instead of a 1-step counter.
+        if (item.saleType === "weight") {
+          return (
+            <div className="flex items-center gap-1">
+              <NumberField
+                value={item.quantity}
+                onValueChange={(v) => updateLine(item.productId, { quantity: v })}
+                precision="decimal"
+                min={0}
+                onKeyDown={dismissKeyboardOnEnter}
+                className="w-[120px]"
+                fullWidth={false}
+              />
+              <span className="text-xs text-slate-400">{t("weight.kgUnit")}</span>
+            </div>
+          );
+        }
         return (
           <QuantityStepper
             value={item.quantity}
@@ -885,16 +923,21 @@ export function PurchaseEntryScreen() {
       cell: ({ row }) => {
         const item = row.original;
         return (
-          <MoneyInput
-            value={item.unitCost}
-            onValueChange={(v) => updateLine(item.productId, { unitCost: v })}
-            currency={currency}
-            min={0}
-            onKeyDown={dismissKeyboardOnEnter}
-            inputSize="sm"
-            className="w-36"
-            fullWidth={false}
-          />
+          <div className="flex items-center gap-1">
+            <MoneyInput
+              value={item.unitCost}
+              onValueChange={(v) => updateLine(item.productId, { unitCost: v })}
+              currency={currency}
+              min={0}
+              onKeyDown={dismissKeyboardOnEnter}
+              inputSize="sm"
+              className="w-36"
+              fullWidth={false}
+            />
+            {item.saleType === "weight" && (
+              <span className="text-xs text-slate-400">{t("weight.perKgSuffix")}</span>
+            )}
+          </div>
         );
       },
     },
@@ -974,12 +1017,26 @@ export function PurchaseEntryScreen() {
               emptyMessage={t("products.noProducts")}
               disabled={!products?.length}
             />
-            <QuantityStepper
-              value={newLineQty}
-              onChange={setNewLineQty}
-              min={1}
-              className="w-[140px]"
-            />
+            {selectedProductForLine?.saleType === "weight" ? (
+              <div className="flex items-center gap-1">
+                <NumberField
+                  value={newLineQty}
+                  onValueChange={setNewLineQty}
+                  precision="decimal"
+                  min={0}
+                  className="w-[120px]"
+                  fullWidth={false}
+                />
+                <span className="text-xs text-slate-400">{t("weight.kgUnit")}</span>
+              </div>
+            ) : (
+              <QuantityStepper
+                value={newLineQty}
+                onChange={setNewLineQty}
+                min={1}
+                className="w-[140px]"
+              />
+            )}
             <MoneyInput
               value={newLineCost}
               onValueChange={(value) => {
@@ -1082,7 +1139,7 @@ export function PurchaseEntryScreen() {
                           {t("purchases.currentStock")}:{" "}
                           {isMiscLine(item)
                             ? t("purchases.nonStock")
-                            : item.currentStock}
+                            : formatStockDisplay(item.saleType, item.currentStock)}
                         </p>
                       </div>
                       <button
@@ -1099,16 +1156,29 @@ export function PurchaseEntryScreen() {
                     <div className="grid grid-cols-2 gap-2 mb-2">
                       <label className="flex flex-col gap-1">
                         <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">
-                          {t("purchases.qty")}
+                          {item.saleType === "weight" ? t("weight.purchaseQtyKg") : t("purchases.qty")}
                         </span>
-                        <QuantityStepper
-                          value={item.quantity}
-                          onChange={(v) =>
-                            updateLine(item.productId, { quantity: v })
-                          }
-                          min={1}
-                          className="w-full"
-                        />
+                        {item.saleType === "weight" ? (
+                          <NumberField
+                            value={item.quantity}
+                            onValueChange={(v) =>
+                              updateLine(item.productId, { quantity: v })
+                            }
+                            precision="decimal"
+                            min={0}
+                            onKeyDown={dismissKeyboardOnEnter}
+                            fullWidth
+                          />
+                        ) : (
+                          <QuantityStepper
+                            value={item.quantity}
+                            onChange={(v) =>
+                              updateLine(item.productId, { quantity: v })
+                            }
+                            min={1}
+                            className="w-full"
+                          />
+                        )}
                       </label>
                       <label className="flex flex-col gap-1">
                         <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">
