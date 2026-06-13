@@ -55,7 +55,13 @@ import { blurInputOnEnter } from "@/lib/utils/dismiss-on-enter";
 import { PaymentMethodControl } from "@/components/pos/payment-method-control";
 import { QuantityStepper } from "@/components/pos/quantity-stepper";
 import { QuickProductModal } from "./quick-product-modal";
+import { WeightEditorModal } from "./weight-editor-modal";
 import { ReceiptView } from "./receipt-view";
+import {
+  formatStockDisplay,
+  formatWeightForCart,
+  gramsToKg,
+} from "@/lib/utils/weight";
 import { normalizeBarcode } from "@/lib/utils/barcode";
 import { createId } from "@/lib/utils/id";
 import { isMiscLine, MISC_ITEM_BARCODE } from "@/lib/utils/misc-items";
@@ -319,6 +325,12 @@ export function PosScreen() {
   }
 
   const [draftItems, setDraftItems] = useState<BillDraftItem[]>([]);
+  // Open weight picker for a weight product being added or edited in the cart.
+  const [weightEditor, setWeightEditor] = useState<{
+    product: Product;
+    itemId?: string;
+    initialGrams?: number;
+  } | null>(null);
   const staleDraftChecked = useRef(false);
   const [barcodeQuery, setBarcodeQuery] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -459,6 +471,23 @@ export function PosScreen() {
         live.sellPrice !== item.unitSellPrice ||
         live.buyPrice !== item.unitBuyPrice;
       if (priceChanged) priceCount += 1;
+
+      if (item.saleType === "weight") {
+        // Weight lines track grams; cap against live stock (grams) and keep the
+        // kg quantity in sync. No min-1 clamp — a 0.75 kg line stays 0.75 kg.
+        const base = item.baseQuantity ?? 0;
+        const cappedBase = Math.min(base, live.quantityInStock);
+        if (cappedBase < base) stockCount += 1;
+        acc.push({
+          ...item,
+          unitSellPrice: live.sellPrice,
+          unitBuyPrice: live.buyPrice,
+          availableStock: live.quantityInStock,
+          baseQuantity: cappedBase,
+          quantity: gramsToKg(cappedBase),
+        });
+        return acc;
+      }
 
       const cappedQty = Math.min(item.quantity, live.quantityInStock);
       if (cappedQty < item.quantity) stockCount += 1;
@@ -756,6 +785,18 @@ export function PosScreen() {
     // from the just-completed bill — collapse the success panel immediately.
     if (lastFinalized) setLastFinalized(null);
 
+    // Weight products don't add a piece — open the weight picker instead. The
+    // product itself drives the UI; there is no global "weight mode".
+    if (product.saleType === "weight") {
+      const existingLine = draftItems.find((i) => i.productId === product.id);
+      setWeightEditor({
+        product,
+        itemId: existingLine?.productId,
+        initialGrams: existingLine?.baseQuantity,
+      });
+      return;
+    }
+
     const existing = draftItems.find((i) => i.productId === product.id);
 
     if (existing) {
@@ -784,6 +825,44 @@ export function PosScreen() {
     if (options?.focusBarcode !== false) {
       setTimeout(() => barcodeInputRef.current?.focus(), 0);
     }
+  }
+
+  // Commit a weight (grams) from the weight picker into the cart. One line per
+  // weight product; confirming sets that line's weight exactly (so reopening
+  // the picker edits rather than stacks).
+  function commitWeight(grams: number) {
+    const editor = weightEditor;
+    if (!editor) return;
+    const { product } = editor;
+    if (lastFinalized) setLastFinalized(null);
+    setDraftItems((cur) => {
+      const exists = cur.some((i) => i.productId === product.id);
+      const line: BillDraftItem = {
+        productId: product.id,
+        barcode: product.barcode,
+        name: product.name,
+        category: product.category,
+        saleType: "weight",
+        availableStock: product.quantityInStock, // grams
+        quantity: gramsToKg(grams), // kg, drives money math
+        baseQuantity: grams, // integer grams, drives inventory
+        unitBuyPrice: product.buyPrice, // per kg
+        unitSellPrice: product.sellPrice, // per kg
+      };
+      return exists
+        ? cur.map((i) => (i.productId === product.id ? line : i))
+        : [...cur, line];
+    });
+    push(t("billing.itemAdded", { name: product.name }));
+    setWeightEditor(null);
+    setTimeout(() => barcodeInputRef.current?.focus(), 0);
+  }
+
+  // Reopen the weight picker for an existing weighted cart line, prefilled.
+  function openWeightEditor(item: BillDraftItem) {
+    const product = products?.find((p) => p.id === item.productId);
+    if (!product) return;
+    setWeightEditor({ product, itemId: item.productId, initialGrams: item.baseQuantity });
   }
 
   function promptQuickAddProduct(barcode: string) {
@@ -972,7 +1051,7 @@ export function PosScreen() {
         <span className="tabular-nums text-slate-500">
           {isMiscLine(row.original)
             ? t("billing.nonStock")
-            : row.original.availableStock}
+            : formatStockDisplay(row.original.saleType, row.original.availableStock)}
         </span>
       ),
     },
@@ -981,6 +1060,21 @@ export function PosScreen() {
       header: t("billing.qty"),
       cell: ({ row }) => {
         const item = row.original;
+        // Weight lines show the chosen weight with an edit affordance instead
+        // of a 1-step counter (you don't increment tomatoes by the piece).
+        if (item.saleType === "weight") {
+          return (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="tabular-nums"
+              onClick={() => openWeightEditor(item)}
+            >
+              {formatWeightForCart(item.baseQuantity ?? 0)}
+            </Button>
+          );
+        }
         return (
           <QuantityStepper
             value={item.quantity}
@@ -1012,6 +1106,7 @@ export function PosScreen() {
         ) : (
           <span className="tabular-nums text-slate-700" dir="ltr">
             {formatCurrency(row.original.unitSellPrice, currency)}
+            {row.original.saleType === "weight" ? ` ${t("weight.perKgSuffix")}` : ""}
           </span>
         ),
     },
@@ -1244,7 +1339,7 @@ export function PosScreen() {
                         <p className="font-bold text-slate-800 tabular-nums">
                           {isMiscLine(item)
                             ? t("billing.nonStock")
-                            : item.availableStock}
+                            : formatStockDisplay(item.saleType, item.availableStock)}
                         </p>
                       </div>
                       <div className="rounded-xl bg-slate-50 p-2">
@@ -1268,6 +1363,7 @@ export function PosScreen() {
                             dir="ltr"
                           >
                             {formatCurrency(item.unitSellPrice, currency)}
+                            {item.saleType === "weight" ? ` ${t("weight.perKgSuffix")}` : ""}
                           </p>
                         )}
                       </div>
@@ -1291,20 +1387,32 @@ export function PosScreen() {
                     </div>
                     <div className="mt-3 flex items-center justify-between gap-3">
                       <span className="text-sm font-medium text-slate-600">
-                        {t("billing.qty")}
+                        {item.saleType === "weight" ? t("weight.label") : t("billing.qty")}
                       </span>
-                      <NumberField
-                        value={item.quantity}
-                        onValueChange={(v) => updateQuantity(item.productId, v)}
-                        precision="integer"
-                        min={1}
-                        max={isMiscLine(item) ? undefined : item.availableStock}
-                        showStepper
-                        align="center"
-                        onKeyDown={dismissKeyboardOnEnter}
-                        className="w-[170px]"
-                        fullWidth={false}
-                      />
+                      {item.saleType === "weight" ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          className="tabular-nums"
+                          onClick={() => openWeightEditor(item)}
+                        >
+                          {formatWeightForCart(item.baseQuantity ?? 0)} · {t("weight.editWeight")}
+                        </Button>
+                      ) : (
+                        <NumberField
+                          value={item.quantity}
+                          onValueChange={(v) => updateQuantity(item.productId, v)}
+                          precision="integer"
+                          min={1}
+                          max={isMiscLine(item) ? undefined : item.availableStock}
+                          showStepper
+                          align="center"
+                          onKeyDown={dismissKeyboardOnEnter}
+                          className="w-[170px]"
+                          fullWidth={false}
+                        />
+                      )}
                     </div>
                   </div>
                 ))}
@@ -1973,6 +2081,19 @@ export function PosScreen() {
         description={t("billing.scanProductDesc")}
         onDetected={handleScanForBill}
         continuous
+      />
+
+      {/* ── Weight picker (weight products only) ───────────────────────────── */}
+      <WeightEditorModal
+        open={Boolean(weightEditor)}
+        product={weightEditor?.product ?? null}
+        initialGrams={weightEditor?.initialGrams}
+        currency={currency}
+        onConfirm={commitWeight}
+        onClose={() => {
+          setWeightEditor(null);
+          setTimeout(() => barcodeInputRef.current?.focus(), 0);
+        }}
       />
     </>
   );
