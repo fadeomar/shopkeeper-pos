@@ -13,6 +13,7 @@ import {
 import { createId } from "@/lib/utils/id";
 import { localDateKey } from "@/lib/utils/date";
 import { normalizeBarcode } from "@/lib/utils/barcode";
+import { gramsToKg, kgToGrams } from "@/lib/utils/weight";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NumberFieldRHF } from "@/components/ui/number-field-rhf";
@@ -77,6 +78,7 @@ function buildEmptyDefaults(settings?: Settings): ProductSchema {
     category: stored.category ?? "General",
     brand: "",
     unit: stored.unit ?? "pcs",
+    saleType: "unit",
     quantityInStock: 0,
     buyPrice: 0,
     sellPrice: 0,
@@ -90,6 +92,33 @@ function buildEmptyDefaults(settings?: Settings): ProductSchema {
     shelfLocation: "",
     notes: "",
     status: "active",
+  };
+}
+
+/**
+ * Map a stored Product into editable form values. Weight products store stock
+ * and threshold in grams but are edited in kilograms, so convert those two
+ * fields for display; prices are already per-kg.
+ */
+function productToFormValues(product: Product): ProductSchema {
+  const isWeight = product.saleType === "weight";
+  return {
+    barcode: product.barcode,
+    name: product.name,
+    category: product.category,
+    brand: product.brand ?? "",
+    unit: product.unit,
+    saleType: isWeight ? "weight" : "unit",
+    quantityInStock: isWeight ? gramsToKg(product.quantityInStock) : product.quantityInStock,
+    buyPrice: product.buyPrice,
+    sellPrice: product.sellPrice,
+    minimumStockAlert: isWeight ? gramsToKg(product.minimumStockAlert) : product.minimumStockAlert,
+    supplierName: product.supplierName ?? "",
+    dateAdded: product.dateAdded,
+    expiryDate: product.expiryDate ?? "",
+    shelfLocation: product.shelfLocation ?? "",
+    notes: product.notes ?? "",
+    status: product.status,
   };
 }
 
@@ -125,9 +154,11 @@ export function ProductForm({ product, onSaved, onCancel, onOpenExisting }: Prop
 
   const form = useForm<ProductSchema>({
     resolver: zodResolver(productSchema),
-    defaultValues: product ?? buildEmptyDefaults(settings),
+    defaultValues: product ? productToFormValues(product) : buildEmptyDefaults(settings),
   });
 
+  const saleType = form.watch("saleType");
+  const isWeight = saleType === "weight";
   const sellPrice = form.watch("sellPrice");
   const buyPrice = form.watch("buyPrice");
   const watchedBarcode = form.watch("barcode");
@@ -143,7 +174,7 @@ export function ProductForm({ product, onSaved, onCancel, onOpenExisting }: Prop
 
   useEffect(() => {
     if (product) {
-      form.reset(product);
+      form.reset(productToFormValues(product));
       return;
     }
     if (!form.formState.isDirty) {
@@ -166,10 +197,20 @@ export function ProductForm({ product, onSaved, onCancel, onOpenExisting }: Prop
       return;
     }
     const now = new Date().toISOString();
+    const valueIsWeight = values.saleType === "weight";
+    // Weight stock/threshold are entered in kg; persist them as integer grams.
+    // Prices stay per-kg. Stored saleType drives all downstream weight math.
+    const minimumStockAlertBase = valueIsWeight
+      ? kgToGrams(values.minimumStockAlert)
+      : values.minimumStockAlert;
     if (product) {
       const changes: Partial<Product> = {
         ...values,
+        // saleType can't be flipped on an existing product (the selector is
+        // locked on edit) — keep the stored one so stock/lots stay consistent.
+        saleType: product.saleType,
         quantityInStock: product.quantityInStock,
+        minimumStockAlert: minimumStockAlertBase,
         lastUpdated: now,
       };
       // Without cost permission, never send buyPrice — this guarantees an edit
@@ -181,6 +222,9 @@ export function ProductForm({ product, onSaved, onCancel, onOpenExisting }: Prop
       const created: Product = {
         id: createId("prod"),
         ...values,
+        saleType: valueIsWeight ? "weight" : "unit",
+        quantityInStock: valueIsWeight ? kgToGrams(values.quantityInStock) : values.quantityInStock,
+        minimumStockAlert: minimumStockAlertBase,
         // Cost is permission-gated; non-privileged roles create with 0 cost.
         // The service enforces this too, so this is just an explicit mirror.
         buyPrice: canEditCost ? values.buyPrice : 0,
@@ -203,6 +247,47 @@ export function ProductForm({ product, onSaved, onCancel, onOpenExisting }: Prop
       onSubmit={form.handleSubmit(onSubmit)}
     >
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="sm:col-span-2 flex flex-col gap-1.5">
+          <span className="text-sm font-medium text-slate-700">
+            {t("weight.sellingMethod")}
+          </span>
+          <div
+            className="flex gap-2"
+            role="group"
+            aria-label={t("weight.sellingMethod")}
+          >
+            <Button
+              type="button"
+              variant={isWeight ? "secondary" : "primary"}
+              aria-pressed={!isWeight}
+              disabled={Boolean(product)}
+              className="flex-1"
+              onClick={() => {
+                form.setValue("saleType", "unit", { shouldDirty: true });
+                form.setValue("unit", "pcs", { shouldDirty: true });
+              }}
+            >
+              {t("weight.piece")}
+            </Button>
+            <Button
+              type="button"
+              variant={isWeight ? "primary" : "secondary"}
+              aria-pressed={isWeight}
+              disabled={Boolean(product)}
+              className="flex-1"
+              onClick={() => {
+                form.setValue("saleType", "weight", { shouldDirty: true });
+                form.setValue("unit", "kg", { shouldDirty: true });
+              }}
+            >
+              {t("weight.weight")}
+            </Button>
+          </div>
+          {isWeight && (
+            <span className="text-xs text-slate-500">{t("weight.deductHelp")}</span>
+          )}
+        </div>
+
         <FormField label={t("products.name")} error={e.name?.message}>
           <Input {...form.register("name")} />
         </FormField>
@@ -246,18 +331,20 @@ export function ProductForm({ product, onSaved, onCancel, onOpenExisting }: Prop
           <Input {...form.register("brand")} />
         </FormField>
 
-        <FormField label={t("products.unit")}>
-          <Input {...form.register("unit")} />
-        </FormField>
+        {!isWeight && (
+          <FormField label={t("products.unit")}>
+            <Input {...form.register("unit")} />
+          </FormField>
+        )}
 
         <FormField
-          label={t("products.quantityInStock")}
+          label={isWeight ? t("weight.currentStockKg") : t("products.quantityInStock")}
           error={product ? t("products.stockEditNote") : undefined}
         >
           <NumberFieldRHF
             name="quantityInStock"
             control={form.control}
-            precision="integer"
+            precision={isWeight ? "decimal" : "integer"}
             min={0}
             disabled={Boolean(product)}
             className={clsx(Boolean(product) && "opacity-50")}
@@ -265,7 +352,7 @@ export function ProductForm({ product, onSaved, onCancel, onOpenExisting }: Prop
         </FormField>
 
         {canEditCost ? (
-          <FormField label={t("products.buyPrice")}>
+          <FormField label={isWeight ? t("weight.costPerKg") : t("products.buyPrice")}>
             <MoneyInputRHF
               name="buyPrice"
               control={form.control}
@@ -277,14 +364,17 @@ export function ProductForm({ product, onSaved, onCancel, onOpenExisting }: Prop
           // Cost is hidden for roles without canEditCost, but we surface a clear
           // note so creating a product without a cost is an explicit, visible
           // outcome rather than a silent buyPrice = 0.
-          <FormField label={t("products.buyPrice")}>
+          <FormField label={isWeight ? t("weight.costPerKg") : t("products.buyPrice")}>
             <div className="flex min-h-11 items-center rounded-xl bg-slate-50 border border-slate-100 px-3 text-xs text-slate-500">
               {t("products.buyPriceLocked")}
             </div>
           </FormField>
         )}
 
-        <FormField label={t("products.sellPrice")}>
+        <FormField
+          label={isWeight ? t("weight.sellPricePerKg") : t("products.sellPrice")}
+          error={e.sellPrice?.message}
+        >
           <MoneyInputRHF
             name="sellPrice"
             control={form.control}
@@ -293,11 +383,14 @@ export function ProductForm({ product, onSaved, onCancel, onOpenExisting }: Prop
           />
         </FormField>
 
-        <FormField label={t("products.minimumStockAlert")}>
+        <FormField
+          label={isWeight ? t("weight.lowStockKg") : t("products.minimumStockAlert")}
+          error={e.minimumStockAlert?.message}
+        >
           <NumberFieldRHF
             name="minimumStockAlert"
             control={form.control}
-            precision="integer"
+            precision={isWeight ? "decimal" : "integer"}
             min={0}
           />
         </FormField>

@@ -313,6 +313,31 @@ export interface TranslationDict {
     addFirstProduct: string;
     openFirstShift: string;
   };
+  weight: {
+    sellingMethod: string;
+    piece: string;
+    weight: string;
+    sellPricePerKg: string;
+    currentStockKg: string;
+    lowStockKg: string;
+    purchaseQtyKg: string;
+    costPerKg: string;
+    deductHelp: string;
+    badge: string;
+    available: string;
+    label: string;
+    customWeight: string;
+    chooseWeight: string;
+    addToCart: string;
+    editWeight: string;
+    exceedsStock: string;
+    perKgSuffix: string;
+    pieceUnit: string;
+    kgUnit: string;
+    gramUnit: string;
+    requirePositivePricePerKg: string;
+    requireNonNegativeStock: string;
+  };
   products: {
     title: string;
     subtitle: string;

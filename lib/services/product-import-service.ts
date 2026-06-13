@@ -38,7 +38,9 @@ type ProductField = keyof ProductSchema;
 
 type HeaderMap = Map<string, number>;
 
-const FIELD_ALIASES: Record<ProductField, string[]> = {
+// saleType is intentionally excluded — CSV import creates unit products only
+// (weighted products are set up through the product form in this release).
+const FIELD_ALIASES: Record<Exclude<ProductField, 'saleType'>, string[]> = {
   barcode: ['barcode', 'bar code', 'sku'],
   name: ['name', 'product name', 'product'],
   category: ['category', 'cat'],
@@ -73,7 +75,7 @@ function buildHeaderMap(headers: string[]): HeaderMap {
   return map;
 }
 
-function getCell(row: string[], headers: HeaderMap, field: ProductField): string {
+function getCell(row: string[], headers: HeaderMap, field: Exclude<ProductField, 'saleType'>): string {
   const aliases = FIELD_ALIASES[field];
   for (const alias of aliases) {
     const index = headers.get(normalizeHeader(alias)) ?? headers.get(compactHeader(alias));
