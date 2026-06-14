@@ -17,7 +17,10 @@ export default defineConfig({
     globals: false,
     setupFiles: ['./tests/setup/vitest.setup.ts'],
     include: ['tests/**/*.{test,spec}.{ts,tsx}'],
-    exclude: ['node_modules', '.next', 'coverage', 'dist'],
+    // tests/rules/** run against the Firestore emulator with the REAL SDK; they
+    // have their own runner (vitest.rules.config.ts + `npm run test:rules`) and
+    // must be excluded here, where `firebase/firestore` is mocked.
+    exclude: ['node_modules', '.next', 'coverage', 'dist', 'tests/rules/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],

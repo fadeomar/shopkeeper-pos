@@ -28,7 +28,14 @@ import type { RolePermissions, UserRole } from "@/types/domain";
 export async function getCurrentPermissions(): Promise<RolePermissions> {
   let role: UserRole | null = null;
   try {
-    const uid = auth.currentUser?.uid ?? (process.env.NEXT_PUBLIC_E2E_AUTH === "1" ? getActiveUid() : null);
+    // Resolve the uid offline-safely. `auth.currentUser` is null whenever the
+    // session was booted from the trusted offline session (flaky mobile/PWA
+    // Firebase Auth restoration) — in that case fall back to the active uid set
+    // during the trusted-session boot. This is the SAME trust basis the offline
+    // session already runs on (validated 30-day trusted session + authCache), so
+    // it is not an escalation hole; without it an offline cashier resolves to
+    // NO_PERMISSIONS and is wrongly blocked from discounts/voids/returns.
+    const uid = auth.currentUser?.uid ?? getActiveUid();
     if (uid) {
       const entry = await db.authCache.get(uid);
       if (isUserRole(entry?.role)) role = entry.role;

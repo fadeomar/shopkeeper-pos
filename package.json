@@ -17,6 +17,7 @@
     "test:coverage": "vitest run tests/unit tests/integration tests/components --coverage",
     "qa": "npm run typecheck && npm run test && npm run build",
     "verify:rules": "node scripts/verify-firestore-rules.mjs",
+    "test:rules": "firebase emulators:exec --only firestore --project shopkeeper-rules-test \"vitest run --config vitest.rules.config.ts\"",
     "verify:accounting": "node scripts/verify-accounting-reconciliation.mjs",
     "verify": "npm run typecheck && npm run verify:rules && npm run verify:accounting",
     "test:unit": "vitest run tests/unit --reporter dot",
@@ -59,6 +60,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.3",
+    "@firebase/rules-unit-testing": "^4.0.1",
     "@playwright/test": "^1.60.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
