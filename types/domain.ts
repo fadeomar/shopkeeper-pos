@@ -216,6 +216,8 @@ export interface AppUser {
 
 export interface AuthCacheEntry extends AppUser {
   cachedAt: string;
+  lastOnlineValidatedAt?: string;
+  offlineSessionExpiresAt?: string;
 }
 export type BillStatus = 'finalized' | 'voided' | 'partially_returned' | 'returned';
 export type PaymentMethod = 'cash' | 'card' | 'mixed' | 'credit';

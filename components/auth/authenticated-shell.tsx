@@ -220,7 +220,7 @@ function AdminShell({ children }: { children: React.ReactNode }) {
 // daily auto-sync, and new-device cloud restore detection.
 
 function CashierShell({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const { t } = useLocale();
   const { settings, setSettings } = useSettings();
   const uid = user?.uid;
@@ -228,20 +228,19 @@ function CashierShell({ children }: { children: React.ReactNode }) {
   // Restore flow state
   const [cloudMeta, setCloudMeta] = useState<SyncMeta | null>(null);
   const [restoreChecked, setRestoreChecked] = useState(E2E_AUTH_ENABLED);
-  const [restoreSkipped, setRestoreSkipped] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [restoreStep, setRestoreStep] = useState("");
   const [restoreError, setRestoreError] = useState("");
-  // Fresh-device cloud data is restored silently (no choice prompt). The modal
-  // only appears as a fallback if that silent restore fails.
+  // Fresh-device cloud data is restored silently. If the automatic restore fails,
+  // show a retry/sign-out recovery dialog only — never a scary "start empty" choice.
   const [autoRestoring, setAutoRestoring] = useState(false);
   const checkRan = useRef<string | null>(null);
 
   // One-time new-device detection per uid (resets if uid ever changes).
   // While the check runs, we close the sync-gate so background runSync ticks
   // don't pull cloud rows into a still-being-decided local DB. The gate
-  // reopens in every branch of runRestoreCheck (success, skip, no-meta, or
-  // error) via the finally.
+  // reopens in every branch of runRestoreCheck (success, no-meta, or error)
+  // via the finally.
   useEffect(() => {
     if (E2E_AUTH_ENABLED || !uid || checkRan.current === uid) return;
     checkRan.current = uid;
@@ -284,21 +283,15 @@ function CashierShell({ children }: { children: React.ReactNode }) {
         const meta: SyncMeta = {
           lastSyncedAt:
             decision.cloudSummary.lastCloudChangeAt ?? new Date().toISOString(),
-          // RestoreModal reads each count defensively (?? 0); the classifier's
-          // entityCounts is the same shape as SyncMeta.recordCounts.
+          // Keep count metadata available for support/debug events if the
+          // automatic restore fails and the user needs to retry.
           recordCounts: (decision.cloudSummary.entityCounts ??
             {}) as SyncMeta["recordCounts"],
         };
-        const skippedBackup = readSkippedRestoreMeta(userId);
-        if (skippedBackup === meta.lastSyncedAt) {
-          setRestoreSkipped(true);
-          setRestoreChecked(true);
-          return;
-        }
         // No real conflict — restore silently behind a loading screen. Keep
-        // `cloudMeta` so the manual modal can take over if the silent restore
-        // fails. Awaited here so the sync gate (closed by the caller) stays shut
-        // for the whole fetch+clear+write sequence.
+        // `cloudMeta` so a retry-only recovery dialog can take over if the
+        // silent restore fails. Awaited here so the sync gate stays shut for the
+        // whole fetch+clear+write sequence.
         setCloudMeta(meta);
         setAutoRestoring(true);
         await runSilentRestore(userId);
@@ -310,28 +303,9 @@ function CashierShell({ children }: { children: React.ReactNode }) {
     setRestoreChecked(true);
   }
 
-  function readSkippedRestoreMeta(userId: string): string | null {
-    try {
-      return localStorage.getItem(`shopkeeper_restore_skipped_${userId}`);
-    } catch {
-      return null;
-    }
-  }
-
-  function rememberSkippedRestore(userId: string, meta: SyncMeta | null) {
-    if (!meta) return;
-    try {
-      localStorage.setItem(
-        `shopkeeper_restore_skipped_${userId}`,
-        meta.lastSyncedAt,
-      );
-    } catch {
-      /* non-fatal */
-    }
-  }
-
   function clearSkippedRestore(userId: string) {
     try {
+      // Remove any legacy "start empty" skip decision created by older builds.
       localStorage.removeItem(`shopkeeper_restore_skipped_${userId}`);
     } catch {
       /* non-fatal */
@@ -372,10 +346,10 @@ function CashierShell({ children }: { children: React.ReactNode }) {
   }
 
   // Silent fresh-device restore. On success the page reloads into a populated
-  // local DB; on failure we drop the auto flag so the manual RestoreModal
-  // renders with the error and the user can retry or start empty. restoreFromCloud
-  // only clears local data inside a transaction that rolls back on failure, so a
-  // mid-restore network error never leaves local half-deleted.
+  // local DB; on failure we drop the auto flag so the retry/sign-out recovery
+  // dialog renders with the error. restoreFromCloud only clears local data inside
+  // a transaction that rolls back on failure, so a mid-restore network error
+  // never leaves local half-deleted.
   async function runSilentRestore(userId: string) {
     try {
       await restoreFromCloud(userId, setRestoreStep);
@@ -400,7 +374,6 @@ function CashierShell({ children }: { children: React.ReactNode }) {
     setRestoreError("");
     try {
       await restoreFromCloud(uid, setRestoreStep);
-      setRestoreSkipped(false);
       clearSkippedRestore(uid);
       setRestoreStep("Preparing app reload…");
       await clearAppCaches();
@@ -418,16 +391,9 @@ function CashierShell({ children }: { children: React.ReactNode }) {
     }
   }
 
-  function handleSkipRestore() {
-    if (uid) rememberSkippedRestore(uid, cloudMeta);
-    setRestoreSkipped(true);
-    setCloudMeta(null);
-    setRestoreChecked(true);
-  }
-
   // Reconnect handler + daily auto-sync (only after restore decision)
   useEffect(() => {
-    if (E2E_AUTH_ENABLED || !uid || !restoreChecked || restoreSkipped) return;
+    if (E2E_AUTH_ENABLED || !uid || !restoreChecked) return;
 
     const pullLatestSettings = async () => {
       const pulled = await pullSettingsFromCloud(uid);
@@ -460,7 +426,7 @@ function CashierShell({ children }: { children: React.ReactNode }) {
     }
 
     return () => window.removeEventListener("online", handleOnline);
-  }, [uid, restoreChecked, restoreSkipped, setSettings]);
+  }, [uid, restoreChecked, setSettings]);
 
   return (
     <>
@@ -524,12 +490,11 @@ function CashierShell({ children }: { children: React.ReactNode }) {
             )}
             {cloudMeta && !autoRestoring && (
               <RestoreModal
-                meta={cloudMeta}
                 restoring={restoring}
                 step={restoreStep}
                 error={restoreError}
                 onRestore={handleRestore}
-                onSkip={handleSkipRestore}
+                onSignOut={() => void logout()}
               />
             )}
             {children}
@@ -546,50 +511,21 @@ function CashierShell({ children }: { children: React.ReactNode }) {
 // ─── Restore modal ────────────────────────────────────────────────────────────
 
 function RestoreModal({
-  meta,
   restoring,
   step,
   error,
   onRestore,
-  onSkip,
+  onSignOut,
 }: {
-  meta: SyncMeta;
   restoring: boolean;
   step: string;
   error: string;
   onRestore: () => void;
-  onSkip: () => void;
+  onSignOut: () => void;
 }) {
   const { t } = useLocale();
   const uid = useId();
   const titleId = `restore-title-${uid}`;
-  const counts = meta.recordCounts;
-  const restoreStats = [
-    { value: counts.bills ?? 0, label: t("auth.restoreStatBills") },
-    { value: counts.products ?? 0, label: t("auth.restoreStatProducts") },
-    { value: counts.purchases ?? 0, label: t("auth.restoreStatPurchases") },
-    {
-      value: (counts.customers ?? 0) + (counts.customerPayments ?? 0),
-      label: t("auth.restoreStatCustomers"),
-    },
-    {
-      value: (counts.suppliers ?? 0) + (counts.supplierPayments ?? 0),
-      label: t("auth.restoreStatSuppliers"),
-    },
-    {
-      value: (counts.cashMovements ?? 0) + (counts.expenses ?? 0),
-      label: t("auth.restoreStatPayments"),
-    },
-    {
-      value: counts.stockMovements ?? 0,
-      label: t("auth.restoreStatMovements"),
-    },
-  ].filter((stat) => stat.value > 0);
-  const date = new Date(meta.lastSyncedAt).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
 
   useEffect(() => lockBodyScroll(), []);
 
@@ -604,57 +540,33 @@ function RestoreModal({
         aria-labelledby={titleId}
         className="relative max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto rounded-2xl border border-border-default bg-surface p-6 shadow-xl"
       >
-        <button
-          type="button"
-          aria-label={t("auth.closeRestorePrompt")}
-          onClick={onSkip}
-          disabled={restoring}
-          className="absolute end-3 top-3 rounded-full bg-danger-soft/50 p-2 text-danger/75 transition-colors hover:bg-danger-soft hover:text-danger disabled:opacity-40"
-        >
+        <div className="w-12 h-12 bg-warning-soft rounded-full flex items-center justify-center mx-auto mb-4">
           <svg
-            className="h-4 w-4"
-            viewBox="0 0 20 20"
-            fill="currentColor"
-            aria-hidden="true"
-          >
-            <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-          </svg>
-        </button>
-        {/* Icon */}
-        <div className="w-12 h-12 bg-brand-soft rounded-full flex items-center justify-center mx-auto mb-4">
-          <svg
-            className="w-6 h-6 text-brand"
+            className="w-6 h-6 text-warning"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
+            aria-hidden="true"
           >
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
               strokeWidth={2}
-              d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"
+              d="M12 9v3.75m0 3.75h.008v.008H12V16.5zM10.29 3.86L1.82 18a1.5 1.5 0 001.29 2.25h17.78A1.5 1.5 0 0022.18 18L13.71 3.86a2 2 0 00-3.42 0z"
             />
           </svg>
         </div>
 
         <h2
           id={titleId}
-          className="text-base font-bold text-slate-800 text-center mb-1"
+          className="text-base font-bold text-slate-800 text-center mb-2"
         >
-          {t("auth.useExistingTitle")}
+          {t("auth.restoreFailedTitle")}
         </h2>
         <p className="text-sm text-slate-500 text-center mb-4">
-          {t("auth.useExistingDesc", { date })}
+          {t("auth.restoreFailedDesc")}
         </p>
 
-        {/* Counts */}
-        <div className="grid grid-cols-2 gap-2 mb-5 sm:grid-cols-3">
-          {restoreStats.map((stat) => (
-            <Stat key={stat.label} value={stat.value} label={stat.label} />
-          ))}
-        </div>
-
-        {/* Progress / error */}
         {restoring && step && (
           <p className="text-xs text-info text-center mb-3 animate-pulse">
             {step}
@@ -677,33 +589,23 @@ function RestoreModal({
           </div>
         )}
 
-        {/* Actions */}
         <div className="flex flex-col gap-2">
           <button
             onClick={onRestore}
             disabled={restoring}
             className="w-full py-2.5 bg-brand hover:bg-brand-hover disabled:opacity-60 text-white text-sm font-medium rounded-xl transition-colors"
           >
-            {restoring ? t("auth.syncing") : t("auth.syncCloudData")}
+            {restoring ? t("auth.syncing") : t("auth.retryRestore")}
           </button>
           <button
-            onClick={onSkip}
+            onClick={onSignOut}
             disabled={restoring}
             className="w-full py-2 text-slate-500 hover:text-slate-700 text-sm transition-colors disabled:opacity-40"
           >
-            {t("auth.startEmpty")}
+            {t("auth.signOut")}
           </button>
         </div>
       </div>
-    </div>
-  );
-}
-
-function Stat({ value, label }: { value: number; label: string }) {
-  return (
-    <div className="text-center">
-      <p className="text-lg font-bold text-slate-800 tabular-nums">{value}</p>
-      <p className="text-xs text-slate-400">{label}</p>
     </div>
   );
 }

@@ -289,6 +289,25 @@ export const ar: TranslationDict = {
     cacheUnavailable: "الكاش غير متاح",
     installed: "تطبيق مثبت",
     installable: "قابل للتثبيت",
+    installApp: "تثبيت التطبيق",
+    installHelp: "طريقة التثبيت",
+    installModalTitle: "تثبيت Asas POS",
+    installModalDesc: "أضف Asas POS إلى هذا الجهاز للوصول السريع وتجربة أفضل بدون إنترنت.",
+    installInAppBrowserWarning: "يبدو أنك داخل متصفح تطبيق مثل واتساب أو فيسبوك. افتح الصفحة في Safari أو Chrome أولاً، ثم ثبّت التطبيق.",
+    installIosIntro: "على iPhone و iPad لا يظهر تنبيه تثبيت تلقائي مثل أندرويد. ثبّت التطبيق يدويًا من Safari.",
+    installIosStep1: "افتح Asas POS من Safari.",
+    installIosStep2: "اضغط زر المشاركة أسفل Safari.",
+    installIosStep3: "اختر Add to Home Screen أو إضافة إلى الشاشة الرئيسية.",
+    installIosStep4: "اضغط Add، ثم افتح Asas POS من الأيقونة الجديدة على الشاشة الرئيسية.",
+    installAndroidIntro: "على Android يظهر Chrome غالبًا نافذة تثبيت. إذا لم تظهر، استخدم قائمة المتصفح.",
+    installAndroidStep1: "افتح Asas POS من Chrome.",
+    installAndroidStep2: "اضغط قائمة المتصفح، ثم Install app أو Add to Home screen.",
+    installAndroidStep3: "أكد التثبيت، ثم افتح Asas POS من أيقونة التطبيق.",
+    installDesktopIntro: "على الكمبيوتر، يمكن التثبيت من شريط العنوان أو قائمة المتصفح عندما يكون التطبيق مؤهلاً.",
+    installDesktopStep1: "افتح Asas POS من Chrome أو Edge.",
+    installDesktopStep2: "اضغط أيقونة التثبيت في شريط العنوان، أو افتح قائمة المتصفح.",
+    installDesktopStep3: "اختر تثبيت Asas POS، ثم ثبّته على شريط المهام إذا احتجت.",
+    installOfflineBenefit: "بعد التثبيت، استخدم التطبيق من هذه الأيقونة حتى يبقى الكاش والجلسة المحفوظة مرتبطين بنفس مساحة الجهاز.",
     updateAvailable: "تحديث متاح",
     reload: "إعادة تحميل للتطبيق",
   },
@@ -315,6 +334,10 @@ export const ar: TranslationDict = {
     noMovements: "لا توجد حركات مخزون حتى الآن.",
     demoInserted: "تم تهيئة البيانات التجريبية.",
     demoExists: "البيانات التجريبية موجودة مسبقاً.",
+    demoConfirmTitle: "إضافة بيانات تجريبية؟",
+    demoConfirmDesc:
+      "المنتجات والحركات التجريبية مخصصة للتدريب فقط. استخدمها في حساب فارغ للتجربة، وليس بعد إدخال بيانات محلك الحقيقية.",
+    demoConfirmAction: "إضافة البيانات التجريبية",
     emptyTitle: "مرحباً بك في Asas POS",
     emptyDesc: "ابدأ بإضافة منتجاتك، ثم افتح دواماً لتبدأ البيع.",
     addFirstProduct: "أضف منتجات",
@@ -936,6 +959,11 @@ export const ar: TranslationDict = {
     version: "إصدار التطبيق",
     pwaShortcutHelp:
       "إذا بقي اسم الاختصار القديم على الهاتف، احذف اختصار التطبيق وثبّت التطبيق من جديد بعد فتح آخر نسخة.",
+    installApp: "تثبيت هذا الجهاز",
+    installAppDesc:
+      "اجعل التثبيت واضحًا على iPhone و Android والكمبيوتر بدل انتظار إشارة المتصفح.",
+    installAppNote:
+      "ثبّت التطبيق على هذا الجهاز نفسه لأفضل تجربة صباحية وبدون إنترنت. مستخدمو iPhone سيظهر لهم شرح Safari.",
     cloudBackup: "النسخ الاحتياطي السحابي",
     cloudBackupDesc:
       "انسخ بيانات الجهاز المحلية إلى السحابة لاستعادتها على جهاز جديد. تتم المزامنة يومياً عند الاتصال.",
@@ -1056,6 +1084,14 @@ export const ar: TranslationDict = {
   auth: {
     previousAccountUnsynced:
       "الحساب السابق على هذا الجهاز كان لديه {{count}} تغيير غير متزامن — محفوظ محلياً وسيُزامن عند تسجيل ذلك الحساب الدخول هنا مرة أخرى.",
+    offlineSessionRestored:
+      "تم فتح التطبيق من الجلسة المحفوظة على هذا الجهاز. سيتم التحقق عند عودة الإنترنت.",
+    offlineSessionExpired:
+      "انتهت صلاحية الجلسة المحفوظة على هذا الجهاز. اتصل بالإنترنت وسجّل الدخول مرة أخرى.",
+    offlineLoginRequiresFirstOnlineLogin:
+      "تحتاج إلى اتصال بالإنترنت لأول تسجيل دخول على هذا الجهاز.",
+    offlineSessionVerificationPending:
+      "تعمل الآن بدون إنترنت من جلسة محفوظة. ستتم مزامنة التغييرات عند عودة الاتصال.",
     signIn: "تسجيل الدخول",
     signInToContinue: "سجّل دخولك للمتابعة",
     requestAccess: "طلب الوصول",
@@ -1142,6 +1178,10 @@ export const ar: TranslationDict = {
     closeRestorePrompt: "إغلاق نافذة الاستعادة",
     appLoading: "جارٍ تحميل Asas POS…",
     preparingStoreData: "جاري تجهيز بيانات المتجر…",
+    restoreFailedTitle: "تعذر تجهيز بياناتك",
+    restoreFailedDesc:
+      "لم نتمكن من تحميل بيانات هذا الحساب على هذا الجهاز. حاول مرة أخرى عند توفر اتصال مستقر، أو سجّل الخروج وأعد المحاولة لاحقاً.",
+    retryRestore: "إعادة المحاولة",
     restoreStatBills: "فاتورة",
     restoreStatProducts: "منتج",
     restoreStatPurchases: "مشتريات",

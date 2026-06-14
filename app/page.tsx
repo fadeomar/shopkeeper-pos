@@ -2,13 +2,17 @@
 
 import Link from "next/link";
 import clsx from "clsx";
+import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db/schema";
 import { settingsRepo } from "@/lib/db/repositories";
 import { seedDemoData } from "@/lib/db/seed";
+import { getLocalDataSummary } from "@/lib/services/account-data-service";
+import { isDemoDataUiEnabled } from "@/lib/config/feature-flags";
 import { addMoney, formatCurrency, multiplyMoney } from "@/lib/utils/money";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageShell } from "@/components/ui/page-shell";
@@ -36,6 +40,9 @@ export default function DashboardPage() {
   const inventoryLots = useLiveQuery(() => db.inventoryLots.toArray(), []);
   const settings = useLiveQuery(() => settingsRepo.get(), []);
   const supplierLedger = useLiveQuery(() => getSupplierLedger(), []);
+  const localSummary = useLiveQuery(() => getLocalDataSummary(), []);
+  const [demoConfirmOpen, setDemoConfirmOpen] = useState(false);
+  const [demoLoading, setDemoLoading] = useState(false);
   const { push } = useToast();
 
   const liveProducts = products?.filter((p) => p.status === "active") ?? [];
@@ -64,11 +71,20 @@ export default function DashboardPage() {
   );
   const currency = settings?.currency ?? "ILS";
 
+  const isBusinessEmpty = localSummary?.hasBusinessData === false;
+  const canShowDemoDataAction = isDemoDataUiEnabled() && isBusinessEmpty;
+
   async function initializeDemo() {
-    const result = await seedDemoData();
-    push(
-      result.inserted ? t("dashboard.demoInserted") : t("dashboard.demoExists"),
-    );
+    setDemoLoading(true);
+    try {
+      const result = await seedDemoData();
+      push(
+        result.inserted ? t("dashboard.demoInserted") : t("dashboard.demoExists"),
+      );
+    } finally {
+      setDemoLoading(false);
+      setDemoConfirmOpen(false);
+    }
   }
 
   const stats: Array<{ label: string; value: string | number; tone: StatTone }> = [
@@ -104,15 +120,6 @@ export default function DashboardPage() {
           icon={<LayoutDashboard size={24} aria-hidden />}
           actions={
             <>
-              {process.env.NODE_ENV === "development" && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={initializeDemo}
-                >
-                  {t("dashboard.initDemo")}
-                </Button>
-              )}
               <Link
                 href="/billing"
                 className={clsx(
@@ -167,7 +174,27 @@ export default function DashboardPage() {
                 <Play size={16} strokeWidth={2.5} aria-hidden />
                 {t("dashboard.openFirstShift")}
               </Link>
+              {canShowDemoDataAction && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setDemoConfirmOpen(true)}
+                >
+                  {t("dashboard.initDemo")}
+                </Button>
+              )}
             </div>
+            <ConfirmDialog
+              open={demoConfirmOpen}
+              title={t("dashboard.demoConfirmTitle")}
+              description={t("dashboard.demoConfirmDesc")}
+              confirmLabel={t("dashboard.demoConfirmAction")}
+              cancelLabel={t("common.cancel")}
+              tone="warning"
+              loading={demoLoading}
+              onConfirm={initializeDemo}
+              onCancel={() => setDemoConfirmOpen(false)}
+            />
           </Card>
         )}
 

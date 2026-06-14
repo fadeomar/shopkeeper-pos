@@ -285,6 +285,25 @@ export interface TranslationDict {
     cacheUnavailable?: string;
     installed: string;
     installable: string;
+    installApp: string;
+    installHelp: string;
+    installModalTitle: string;
+    installModalDesc: string;
+    installInAppBrowserWarning: string;
+    installIosIntro: string;
+    installIosStep1: string;
+    installIosStep2: string;
+    installIosStep3: string;
+    installIosStep4: string;
+    installAndroidIntro: string;
+    installAndroidStep1: string;
+    installAndroidStep2: string;
+    installAndroidStep3: string;
+    installDesktopIntro: string;
+    installDesktopStep1: string;
+    installDesktopStep2: string;
+    installDesktopStep3: string;
+    installOfflineBenefit: string;
     updateAvailable: string;
     reload: string;
   };
@@ -308,6 +327,9 @@ export interface TranslationDict {
     noMovements: string;
     demoInserted: string;
     demoExists: string;
+    demoConfirmTitle: string;
+    demoConfirmDesc: string;
+    demoConfirmAction: string;
     emptyTitle: string;
     emptyDesc: string;
     addFirstProduct: string;
@@ -891,6 +913,9 @@ export interface TranslationDict {
     about: string;
     version: string;
     pwaShortcutHelp: string;
+    installApp: string;
+    installAppDesc: string;
+    installAppNote: string;
     cloudBackup: string;
     cloudBackupDesc: string;
     syncNow: string;
@@ -997,6 +1022,10 @@ export interface TranslationDict {
   };
   auth: {
     previousAccountUnsynced: string;
+    offlineSessionRestored: string;
+    offlineSessionExpired: string;
+    offlineLoginRequiresFirstOnlineLogin: string;
+    offlineSessionVerificationPending: string;
     signIn: string;
     signInToContinue: string;
     requestAccess: string;
@@ -1073,6 +1102,9 @@ export interface TranslationDict {
     closeRestorePrompt: string;
     appLoading: string;
     preparingStoreData: string;
+    restoreFailedTitle: string;
+    restoreFailedDesc: string;
+    retryRestore: string;
     restoreStatBills: string;
     restoreStatProducts: string;
     restoreStatPurchases: string;

@@ -290,6 +290,25 @@ export const en: TranslationDict = {
     cacheUnavailable: "Offline cache disabled",
     installed: "Installed app",
     installable: "Installable PWA",
+    installApp: "Install app",
+    installHelp: "How to install",
+    installModalTitle: "Install Asas POS",
+    installModalDesc: "Add Asas POS to this device for faster access and a better offline-first workflow.",
+    installInAppBrowserWarning: "You appear to be inside an in-app browser. Open this page in Safari or Chrome first, then install the app.",
+    installIosIntro: "iPhone and iPad do not show the same automatic install prompt. Install it manually from Safari.",
+    installIosStep1: "Open Asas POS in Safari.",
+    installIosStep2: "Tap the Share button at the bottom of Safari.",
+    installIosStep3: "Choose Add to Home Screen.",
+    installIosStep4: "Tap Add, then open Asas POS from the new home-screen icon.",
+    installAndroidIntro: "On Android, Chrome usually shows an install prompt. If it does not, use the browser menu.",
+    installAndroidStep1: "Open Asas POS in Chrome.",
+    installAndroidStep2: "Tap the browser menu, then Install app or Add to Home screen.",
+    installAndroidStep3: "Confirm, then open Asas POS from the app icon.",
+    installDesktopIntro: "On desktop, install from the address bar or browser menu when the app is eligible.",
+    installDesktopStep1: "Open Asas POS in Chrome or Edge.",
+    installDesktopStep2: "Click the install icon in the address bar, or open the browser menu.",
+    installDesktopStep3: "Choose Install Asas POS, then pin it if needed.",
+    installOfflineBenefit: "After installation, keep using the app from this icon so offline cache and saved sessions stay tied to the same device workspace.",
     updateAvailable: "Update available",
     reload: "Reload to apply",
   },
@@ -316,6 +335,10 @@ export const en: TranslationDict = {
     noMovements: "No stock movements yet.",
     demoInserted: "Demo data initialized.",
     demoExists: "Demo data already exists.",
+    demoConfirmTitle: "Add demo data?",
+    demoConfirmDesc:
+      "Demo products and sample transactions are for testing only. Use this only on an empty training account, not after adding real store data.",
+    demoConfirmAction: "Add demo data",
     emptyTitle: "Welcome to Asas POS",
     emptyDesc:
       "Start by adding your products, then open a shift to begin selling.",
@@ -946,6 +969,11 @@ export const en: TranslationDict = {
     version: "App version",
     pwaShortcutHelp:
       "If your phone still shows the old shortcut name, uninstall the old app shortcut and install it again after opening the latest version.",
+    installApp: "Install this device",
+    installAppDesc:
+      "Make installation obvious on iPhone, Android, and desktop instead of waiting for the browser badge.",
+    installAppNote:
+      "Install the app on this exact device for the best morning/offline workflow. iPhone users will see Safari instructions.",
     cloudBackup: "Cloud Backup",
     cloudBackupDesc:
       "Back up your local data to the cloud. Used to restore on a new device. Auto-syncs daily while online.",
@@ -1066,6 +1094,14 @@ export const en: TranslationDict = {
   auth: {
     previousAccountUnsynced:
       "Previous account on this device had {{count}} unsynced change(s) — saved locally and will sync when that account signs in here again.",
+    offlineSessionRestored:
+      "Opened from this device's saved session. We will verify again when internet is available.",
+    offlineSessionExpired:
+      "The saved session on this device has expired. Connect to the internet and sign in again.",
+    offlineLoginRequiresFirstOnlineLogin:
+      "You need an internet connection for the first sign-in on this device.",
+    offlineSessionVerificationPending:
+      "Working offline from a saved session. Changes will sync after reconnecting.",
     signIn: "Sign in",
     signInToContinue: "Sign in to continue",
     requestAccess: "Request access",
@@ -1153,6 +1189,10 @@ export const en: TranslationDict = {
     closeRestorePrompt: "Close restore prompt",
     appLoading: "Loading Asas POS…",
     preparingStoreData: "Preparing store data…",
+    restoreFailedTitle: "Could not prepare your data",
+    restoreFailedDesc:
+      "We could not load this account's cloud data onto this device. Try again on a stable connection, or sign out and retry later.",
+    retryRestore: "Try again",
     restoreStatBills: "bills",
     restoreStatProducts: "products",
     restoreStatPurchases: "purchases",

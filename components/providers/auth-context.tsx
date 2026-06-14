@@ -1,9 +1,18 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { onAuthChange, fetchUserDoc, signOut } from '@/lib/firebase/auth-service';
 import { db } from '@/lib/db/schema';
 import { getActiveUid, getLocalDataSummary, prepareRuntimeDbForUid, setActiveUid } from '@/lib/services/account-data-service';
+import {
+  clearTrustedSession,
+  getStoredTrustedSession,
+  getValidTrustedSession,
+  hasTrustedSessionExpired,
+  rememberTrustedSession,
+  TRUSTED_SESSION_TTL_MS,
+  type TrustedSessionResult,
+} from '@/lib/services/local-auth-session-service';
 import { useToast } from '@/components/ui/toast';
 import { useLocale } from '@/components/providers/locale-context';
 import type { AuthCacheEntry } from '@/types/domain';
@@ -71,6 +80,16 @@ function resolveStatus(user: AuthCacheEntry): Exclude<AuthStatus, 'loading' | 'u
   return 'authenticated';
 }
 
+function buildOnlineValidatedEntry(user: Omit<AuthCacheEntry, 'cachedAt'> | AuthCacheEntry, now: Date): AuthCacheEntry {
+  const lastOnlineValidatedAt = now.toISOString();
+  return {
+    ...user,
+    cachedAt: lastOnlineValidatedAt,
+    lastOnlineValidatedAt,
+    offlineSessionExpiresAt: new Date(now.getTime() + TRUSTED_SESSION_TTL_MS).toISOString(),
+  };
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Render a usable login screen as the initial HTML. Firebase Auth only knows
   // the real session after client-side hydration; if hydration fails on a
@@ -78,6 +97,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>('unauthenticated');
   const [user, setUser] = useState<AuthCacheEntry | null>(null);
   const [authError, setAuthError] = useState('');
+  const restoredToastShownRef = useRef(false);
   const { push } = useToast();
   const { t } = useLocale();
 
@@ -94,6 +114,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(entry);
     setStatus(resolveStatus(entry));
   }, []);
+
+  const getLocalSessionError = useCallback(() => {
+    const stored = getStoredTrustedSession();
+    if (stored && hasTrustedSessionExpired(stored)) return t('auth.offlineSessionExpired');
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return t('auth.offlineLoginRequiresFirstOnlineLogin');
+    return '';
+  }, [t]);
+
+  const bootFromTrustedSession = useCallback(async (local?: TrustedSessionResult, toast = true) => {
+    const trusted = local ?? await getValidTrustedSession();
+    if (!trusted) return false;
+
+    try { await prepareRuntimeDbForUid(trusted.session.uid); } catch (e) { console.warn('[auth] trusted session account data handoff failed:', e); }
+    setAuthError('');
+    setUser(trusted.user);
+    setStatus(resolveStatus(trusted.user));
+
+    if (toast && !restoredToastShownRef.current) {
+      restoredToastShownRef.current = true;
+      push(t('auth.offlineSessionRestored'));
+    }
+    return true;
+  }, [push, t]);
 
   const resolveUser = useCallback(async (uid: string) => {
     // Ensure Dexie is open (DbBootstrap may not have mounted yet)
@@ -137,36 +180,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const userDoc = await fetchUserDoc(uid);
       if (userDoc) {
-        const entry: AuthCacheEntry = { ...userDoc, cachedAt: new Date().toISOString() };
-        try { await db.authCache.put(entry); } catch { /* cache write failed, non-fatal */ }
-        try { setActiveUid(uid); } catch { /* non-fatal */ }
+        const entry = buildOnlineValidatedEntry(userDoc, new Date());
+        await rememberTrustedSession(entry);
         setAuthError('');
         setUser(entry);
         setStatus(resolveStatus(entry));
         return;
       }
       console.warn('[auth] No Firestore profile found for uid:', uid);
+      await clearTrustedSession('profile_missing');
+      await signOut();
+      setUser(null);
+      setStatus('unauthenticated');
+      setAuthError('No profile found for this account. Ask your admin to create your profile through the app, then try again.');
+      return;
     } catch (e) {
       console.warn('[auth] fetchUserDoc failed:', e);
     }
 
-    // Belt-and-suspenders: Dexie cache when Firestore misses (offline, doc never fetched)
-    try {
-      const cached = await db.authCache.get(uid);
-      if (cached) {
-        setAuthError('');
-        setUser(cached);
-        setStatus(resolveStatus(cached));
-        return;
-      }
-    } catch { /* Dexie unavailable */ }
+    // Firebase still has a user, but Firestore could not be reached (offline,
+    // blocked network, or a transient SDK failure). Do not force sign-out here.
+    // Only trust the Dexie auth cache when it is backed by a valid 30-day local
+    // trusted-session metadata record for this exact uid.
+    const local = await getValidTrustedSession();
+    if (local && local.session.uid === uid) {
+      await bootFromTrustedSession(local);
+      return;
+    }
 
-    // JWT exists but no local record — sign out and show a clear error
-    await signOut();
     setUser(null);
     setStatus('unauthenticated');
-    setAuthError('No profile found for this account. Ask your admin to create your profile through the app, then try again.');
-  }, [push, t]);
+    setAuthError(getLocalSessionError() || t('auth.loginFailed'));
+  }, [bootFromTrustedSession, getLocalSessionError, push, t]);
 
   useEffect(() => {
     const e2eUser = readE2ETestUser();
@@ -176,24 +221,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    let cancelled = false;
     setStatus('loading');
 
+    const tryTrustedSession = async (showErrorWhenMissing: boolean) => {
+      const local = await getValidTrustedSession();
+      if (cancelled) return false;
+      if (local) return bootFromTrustedSession(local);
+      if (showErrorWhenMissing) setAuthError(getLocalSessionError());
+      return false;
+    };
+
+    // Offline-first boot: if this device has a still-valid saved session, open
+    // the POS immediately and let Firebase/Firestore refresh the profile later.
+    void tryTrustedSession(false);
+
     // Safety timeout: if Firebase Auth doesn't fire within 10 s (e.g. SDK hung,
-    // IndexedDB blocked, very slow mobile network) fall back to the login screen
-    // rather than showing a spinner forever.
+    // IndexedDB blocked, very slow mobile network) try the local trusted session
+    // before showing the login screen.
     const fallbackTimer = setTimeout(() => {
-      setStatus((prev) => {
-        if (prev === 'loading') {
-          console.warn('[auth] onAuthStateChanged did not fire within 10 s — falling back to unauthenticated');
-          return 'unauthenticated';
-        }
-        return prev;
-      });
+      void (async () => {
+        console.warn('[auth] onAuthStateChanged did not fire within 10s — attempting trusted local session before showing login');
+        const restored = await tryTrustedSession(true);
+        if (cancelled || restored) return;
+        setUser(null);
+        setStatus((prev) => (prev === 'loading' ? 'unauthenticated' : prev));
+      })();
     }, 10_000);
 
     const unsub = onAuthChange(async (firebaseUser) => {
       clearTimeout(fallbackTimer);
+      if (cancelled) return;
       if (!firebaseUser) {
+        const restored = await tryTrustedSession(true);
+        if (cancelled || restored) return;
         setUser(null);
         setStatus('unauthenticated');
         return;
@@ -202,15 +263,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     return () => {
+      cancelled = true;
       clearTimeout(fallbackTimer);
       unsub();
     };
-  }, [resolveUser, resolveE2ETestUser]);
+  }, [resolveUser, resolveE2ETestUser, bootFromTrustedSession, getLocalSessionError]);
 
   const logout = useCallback(async () => {
     if (E2E_AUTH_ENABLED && typeof window !== 'undefined') {
       window.localStorage.removeItem(E2E_AUTH_STORAGE_KEY);
     }
+    await clearTrustedSession('explicit_sign_out');
     await signOut();
     setUser(null);
     setAuthError('');
@@ -222,8 +285,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const userDoc = await fetchUserDoc(user.uid);
       if (userDoc) {
-        const entry: AuthCacheEntry = { ...userDoc, cachedAt: new Date().toISOString() };
-        try { await db.authCache.put(entry); } catch { /* non-fatal */ }
+        const entry = buildOnlineValidatedEntry(userDoc, new Date());
+        await rememberTrustedSession(entry);
         setUser(entry);
         setStatus(resolveStatus(entry));
       }

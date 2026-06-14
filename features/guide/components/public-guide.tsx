@@ -16,6 +16,7 @@ import { useLocale } from "@/components/providers/locale-context";
 import { Accordion, AccordionItem } from "@/components/ui/accordion";
 import { OfflineMatrix } from "@/features/guide/components/offline-matrix";
 import { SupportContactCard } from "@/features/guide/components/support-contact-card";
+import { PwaInstallAction } from "@/components/pwa/pwa-install-action";
 import { buildWhatsappUrl } from "@/lib/config/support";
 import {
   CartIcon,
@@ -222,7 +223,10 @@ export function PublicGuide() {
       {/* PWA install */}
       <section className="flex flex-col gap-3">
         <SectionTitle>{t("guide.public.installTitle")}</SectionTitle>
-        <p className="text-sm text-slate-500">{t("guide.public.installSubtitle")}</p>
+        <div className="flex flex-col gap-3 rounded-2xl border border-info/20 bg-info-soft p-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-info">{t("guide.public.installSubtitle")}</p>
+          <PwaInstallAction />
+        </div>
         <Accordion>
           {installs.map((it, i) => (
             <AccordionItem

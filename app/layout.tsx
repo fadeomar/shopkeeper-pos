@@ -40,7 +40,7 @@ export const metadata: Metadata = {
       { url: '/favicon.ico', sizes: 'any' },
       { url: '/icons/icon-192.svg', type: 'image/svg+xml' },
     ],
-    apple: '/icons/icon-192.png',
+    apple: '/apple-touch-icon.png',
   },
   manifest: '/manifest.webmanifest',
 };
@@ -63,7 +63,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     >
       {/* Runs before React hydration so lang/dir is correct even if hydration stalls offline */}
       <head>
-        <script dangerouslySetInnerHTML={{ __html: `(function(){try{var l=localStorage.getItem('shopkeeper-pos-locale');if(l==='ar'){var d=document.documentElement;d.lang='ar';d.dir='rtl';}}catch(e){}})()` }} />
+        <script dangerouslySetInnerHTML={{ __html: `(function(){try{var k='shopkeeper-pos-locale';var l=localStorage.getItem(k);if(l!=='ar'&&l!=='en'){var m=document.cookie.match(new RegExp('(?:^|; )'+k+'=([^;]+)'));l=m?decodeURIComponent(m[1]):'';}if(l!=='ar'&&l!=='en'){l=(navigator.language||'').toLowerCase().indexOf('ar')===0?'ar':'en';}var d=document.documentElement;d.lang=l;d.dir=l==='ar'?'rtl':'ltr';}catch(e){}})()` }} />
       </head>
       <body className="bg-app min-h-dvh text-fg" suppressHydrationWarning>
         <LocaleProvider>
