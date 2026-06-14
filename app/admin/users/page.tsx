@@ -524,16 +524,19 @@ function SubscriptionCell({ user }: { user: AppUser }) {
       : state === "trial"
         ? "warning"
         : "danger";
+  // The status badge expresses only subscription HEALTH; the account badge
+  // below expresses the TYPE (legacy / trial / standard). Don't repeat the type
+  // here, or a legacy account renders two identical "Legacy account" badges (and
+  // a trial two identical "Trial account" badges). active/legacy/trial all read
+  // as "Active" — their distinct type/tone is carried by the account badge.
   const statusLabel =
     state === "expired"
       ? t("admin.expired")
       : state === "suspended"
         ? t("admin.suspended")
-        : state === "trial"
-          ? t("admin.trialAccount")
-          : state === "legacy"
-            ? t("admin.legacyAccount")
-            : t("common.active");
+        : state === "inactive"
+          ? t("common.inactive")
+          : t("common.active");
 
   return (
     <div className="min-w-[180px] space-y-1">
