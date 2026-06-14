@@ -108,8 +108,10 @@ service cloud.firestore {
       allow read: if isOwner(uid) || isActiveAdmin();
 
       // Two creation paths:
-      //   - Self-service trial registration: unauthenticated write, but the
-      //     shape must match isSelfRegistrationShape (cashier, active trial).
+      //   - Self-service trial registration: the new user creates their OWN
+      //     profile (authenticated as request.auth.uid == uid via the
+      //     secondary Firebase app), and the shape must match
+      //     isSelfRegistrationShape (cashier, active trial).
       //   - Admin-created: an active admin creates a profile for another user
       //     (createAppUser uses a secondary auth app, so the setDoc happens
       //     under the admin's session for a different target uid).

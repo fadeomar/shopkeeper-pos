@@ -49,10 +49,30 @@ If 11 or 12 fail, capture the two devices' `settings` docs + sync queue and repo
 
 ## B. Firestore rules validation (owner/admin fix)
 
-Why: `firestore.rules` now treats role `owner` (not `admin`) as admin-capable.
-Validate before deploy.
+Why: `firestore.rules` now treats role `owner` (not `admin`) as admin-capable,
+and self-service trial registration is now an **authenticated** create
+(`request.auth.uid == uid`, gated by `isSelfRegistrationShape`). Validate before
+deploy.
 
-### Option 1 — emulator (preferred)
+### Option 0 — automated rule tests (preferred, covers self-registration)
+```bash
+npm run test:rules     # firebase emulators:exec --only firestore + vitest
+```
+Covers the trial self-registration threat model in
+`tests/rules/self-registration.rules.test.ts`: a signed-in new user can create
+only their own active trial cashier profile; unauthenticated creates, cross-uid
+creates, self-granted `owner` role, self-activated paid subscriptions,
+>15-day subscription windows, and smuggled extra keys are all denied.
+
+One-time setup (the Firestore emulator is a Java process):
+- Install a JDK 11+ (`java -version` must resolve on PATH).
+- `firebase-tools` is invoked via the local CLI; no login needed for the
+  emulator. The emulator jar downloads automatically on first run.
+
+The quick `npm run verify:rules` smoke check only greps the rules text — it does
+**not** exercise the emulator. Run `npm run test:rules` for real enforcement.
+
+### Option 1 — emulator (manual)
 ```bash
 firebase emulators:start --only firestore
 ```
@@ -118,7 +138,7 @@ In the manual **Release QA** workflow, set `run_visual=true` only after visual b
 ---
 ## Done-before-production checklist
 - [ ] A. Offline→online multi-device sync test passes (incl. sequence + settings)
-- [ ] B. Firestore rules validated (owner can admin; cashier can't)
+- [ ] B. Firestore rules validated — `npm run test:rules` green (owner can admin; cashier can't; trial self-registration constrained)
 - [ ] C. `npm ci && typecheck && build` green in CI
 - [ ] D. Release QA workflow green or documented with accepted known failures
 - [ ] Axe accessibility gate has no serious/critical violations
