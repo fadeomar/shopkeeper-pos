@@ -1,7 +1,8 @@
-import type { Bill, BillItem, CashMovement, Expense, ExpenseCategory, PaymentMethod, Product, Purchase, SupplierPayment } from '@/types/domain';
+import type { Bill, BillItem, BillItemCostAllocation, CashMovement, Expense, ExpenseCategory, PaymentMethod, Product, ProductSaleType, Purchase, SupplierPayment } from '@/types/domain';
 import { getBillNetItemCount, getBillNetProfit, getBillNetTotal } from '@/features/bills/utils/bill-summary';
 import { calculateBillItemNetContribution, calculateLineProfit, calculateLineSubtotal } from '@/lib/utils/calculations';
-import { roundMoney } from '@/lib/utils/money';
+import { addMoney, multiplyMoney, roundMoney, subtractMoney } from '@/lib/utils/money';
+import { baseUnitsPerPricingUnit, lotBaseUnitFor } from '@/lib/utils/weight';
 import { localDateKey } from '@/lib/utils/date';
 import { netSplitField, normalizeBillSplit } from '@/lib/utils/bill-split';
 import { isMiscLine } from '@/lib/utils/misc-items';
@@ -19,7 +20,11 @@ export interface ProductSalesRow {
   name: string;
   barcode: string;
   category: string;
+  // For weight rows, `quantity` is kilograms sold and `baseQuantity` the grams;
+  // `currentStock`/`minimumStockAlert` are grams. saleType drives display.
+  saleType?: ProductSaleType;
   quantity: number;
+  baseQuantity?: number;
   revenue: number;
   profit: number;
   currentStock?: number;
@@ -243,12 +248,25 @@ export function summarizeProductSales(
   bills: Bill[],
   billItems: BillItem[],
   products: Product[],
+  // FIFO cost allocations, when available. For bills that carry them, product
+  // profit is costed from the exact lots consumed (net of returns); bills
+  // without allocations (created before FIFO) fall back to the bill item's
+  // unitBuyPriceAtSale snapshot.
+  allocations: BillItemCostAllocation[] = [],
 ): ProductSalesRow[] {
   const activeBills = bills.filter((bill) => bill.status !== 'voided');
   const activeBillIds = new Set(activeBills.map((bill) => bill.id));
   const billById = new Map(activeBills.map((bill) => [bill.id, bill]));
   const productById = new Map(products.map((product) => [product.id, product]));
   const rows = new Map<string, ProductSalesRow>();
+
+  // Group allocations by the bill item they belong to.
+  const allocationsByItem = new Map<string, BillItemCostAllocation[]>();
+  for (const allocation of allocations) {
+    const list = allocationsByItem.get(allocation.billItemId);
+    if (list) list.push(allocation);
+    else allocationsByItem.set(allocation.billItemId, [allocation]);
+  }
 
   billItems.forEach((item) => {
     if (!activeBillIds.has(item.billId)) return;
@@ -258,7 +276,22 @@ export function summarizeProductSales(
 
     const bill = billById.get(item.billId);
     const lineAmount = calculateLineSubtotal(netQuantity, item.unitSellPriceAtSale);
-    const lineProfit = calculateLineProfit(netQuantity, item.unitBuyPriceAtSale, item.unitSellPriceAtSale);
+    // Profit from exact FIFO cost when allocations exist for this line; else
+    // fall back to the legacy per-unit buy-price snapshot.
+    const itemAllocations = allocationsByItem.get(item.id);
+    // Allocation quantities are in base units (grams for weight); unitCost is
+    // per pricing unit (per kg), so divide by the factor before costing.
+    const costFactor = baseUnitsPerPricingUnit(lotBaseUnitFor(item.saleType));
+    let lineProfit: number;
+    if (itemAllocations && itemAllocations.length > 0) {
+      const netCost = itemAllocations.reduce((sum, allocation) => {
+        const netAllocQty = Math.max(0, allocation.quantity - (allocation.quantityReturned ?? 0));
+        return addMoney(sum, multiplyMoney(allocation.unitCost, netAllocQty / costFactor));
+      }, 0);
+      lineProfit = subtractMoney(lineAmount, netCost);
+    } else {
+      lineProfit = calculateLineProfit(netQuantity, item.unitBuyPriceAtSale, item.unitSellPriceAtSale);
+    }
     // Allocate the bill's discount and tax proportionally to this line so
     // product-level revenue matches the bill totals reported on the sales page.
     const net = bill
@@ -275,7 +308,9 @@ export function summarizeProductSales(
       name: isMisc ? item.productNameAtSale.split(' - ')[0] : item.productNameAtSale,
       barcode: isMisc ? '—' : item.barcodeAtSale,
       category: item.categoryAtSale,
+      saleType: product?.saleType ?? item.saleType,
       quantity: 0,
+      baseQuantity: 0,
       revenue: 0,
       profit: 0,
       currentStock: product?.quantityInStock,
@@ -283,11 +318,19 @@ export function summarizeProductSales(
       isMisc,
     };
 
+    // Net base units (grams for weight) for accurate weight display.
+    const netBase =
+      item.saleType === 'weight'
+        ? Math.max(0, (item.baseQuantitySold ?? 0) - (item.baseQuantityReturned ?? 0))
+        : netQuantity;
+
     existing.quantity += netQuantity;
+    existing.baseQuantity = (existing.baseQuantity ?? 0) + netBase;
     existing.revenue = roundMoney(existing.revenue + net.revenue);
     existing.profit = roundMoney(existing.profit + (isMisc ? 0 : net.profit));
     existing.currentStock = product?.quantityInStock ?? existing.currentStock;
     existing.minimumStockAlert = product?.minimumStockAlert ?? existing.minimumStockAlert;
+    if (!existing.saleType && product?.saleType) existing.saleType = product.saleType;
     rows.set(key, existing);
   });
 

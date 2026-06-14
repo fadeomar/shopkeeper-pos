@@ -11,6 +11,12 @@ import {
 import { firestore } from "./config";
 import { db } from "@/lib/db/schema";
 import { setRestoreInProgress } from "@/lib/services/sync-gate";
+import { getLocalDataSummary } from "@/lib/services/account-data-service";
+import {
+  buildOpeningLot,
+  RESTORE_OPENING_LOT_SOURCE_ID,
+} from "@/lib/db/inventory-lot-migration";
+import { buildSyncQueueItem } from "@/lib/services/sync-queue-service";
 import { createBillNumber } from "@/lib/utils/id";
 import { mergedSequences } from "@/lib/services/settings-sync-fields";
 import { normalizeBillSplit } from "@/lib/utils/bill-split";
@@ -19,9 +25,11 @@ import type {
   AuditEvent,
   Bill,
   BillItem,
+  BillItemCostAllocation,
   CashMovement,
   Customer,
   Expense,
+  InventoryLot,
   Product,
   Purchase,
   PurchaseItem,
@@ -308,6 +316,52 @@ function normalizeExpense(
   } as Expense;
 }
 
+function normalizeInventoryLot(
+  snapshot: QueryDocumentSnapshot<DocumentData>,
+  syncedAt: string,
+): InventoryLot {
+  const lot = withDocId<InventoryLot>(snapshot) as Partial<InventoryLot> & {
+    id: string;
+  };
+  return {
+    ...lot,
+    productId: lot.productId || "",
+    sourceType: lot.sourceType ?? "opening_balance",
+    sourceId: lot.sourceId || "",
+    quantityReceived: Math.max(0, finiteNumber(lot.quantityReceived)),
+    quantityRemaining: Math.max(0, finiteNumber(lot.quantityRemaining)),
+    unitCost: Math.max(0, finiteNumber(lot.unitCost)),
+    status: lot.status ?? "open",
+    receivedAt: lot.receivedAt || lot.createdAt || syncedAt,
+    createdAt: lot.createdAt || syncedAt,
+    updatedAt: lot.updatedAt || lot.createdAt || syncedAt,
+    ...syncedMeta(syncedAt),
+  } as InventoryLot;
+}
+
+function normalizeBillItemCostAllocation(
+  snapshot: QueryDocumentSnapshot<DocumentData>,
+  syncedAt: string,
+): BillItemCostAllocation {
+  const allocation = withDocId<BillItemCostAllocation>(
+    snapshot,
+  ) as Partial<BillItemCostAllocation> & { id: string };
+  return {
+    ...allocation,
+    billId: allocation.billId || "",
+    billItemId: allocation.billItemId || "",
+    productId: allocation.productId || "",
+    inventoryLotId: allocation.inventoryLotId || "",
+    quantity: Math.max(0, finiteNumber(allocation.quantity)),
+    quantityReturned: Math.max(0, finiteNumber(allocation.quantityReturned)),
+    unitCost: Math.max(0, finiteNumber(allocation.unitCost)),
+    lineCost: Math.max(0, finiteNumber(allocation.lineCost)),
+    createdAt: allocation.createdAt || syncedAt,
+    updatedAt: allocation.updatedAt || allocation.createdAt || syncedAt,
+    ...syncedMeta(syncedAt),
+  } as BillItemCostAllocation;
+}
+
 function normalizeShift(
   snapshot: QueryDocumentSnapshot<DocumentData>,
   syncedAt: string,
@@ -543,6 +597,39 @@ function ensureRestoredSettings(
       maxPurchaseSequence + 1,
     ),
   }));
+}
+
+/**
+ * Legacy-data safety net: older cloud backups predate FIFO and have products
+ * with positive stock but no inventory lots. After such a restore the product
+ * shows stock yet a FIFO sale finds nothing to consume. For each restored
+ * product that has stock but NO lots at all, synthesize one opening lot costed
+ * at the product's buyPrice.
+ *
+ * Idempotent by construction: the trigger is "product has zero lots". Once the
+ * synthesized lot is pushed to the cloud, a later restore pulls it back, the
+ * product then has a lot, and no second one is created. Products that already
+ * carry lots (any status) are left untouched so we never double-count stock.
+ */
+export function buildLegacyOpeningLots(
+  products: Product[],
+  existingLots: InventoryLot[],
+  now: string,
+): InventoryLot[] {
+  const productIdsWithLots = new Set(existingLots.map((lot) => lot.productId));
+  const synthesized: InventoryLot[] = [];
+  for (const product of products) {
+    if ((Number(product.quantityInStock) || 0) <= 0) continue;
+    if (productIdsWithLots.has(product.id)) continue;
+    const lot = buildOpeningLot(product, now, {
+      sourceId: RESTORE_OPENING_LOT_SOURCE_ID,
+      sourceLabel: "Opening balance (legacy restore)",
+    });
+    // syncStatus stays 'pending' (set by buildOpeningLot) so the lot is pushed
+    // to the cloud — restored cloud rows are 'synced', but this one is new.
+    if (lot) synthesized.push(lot);
+  }
+  return synthesized;
 }
 
 function appendRestoreNote(existing: string | undefined, note: string): string {
@@ -808,32 +895,20 @@ export async function fetchSyncMeta(uid: string): Promise<SyncMeta | null> {
 }
 
 /**
- * Returns true if the local DB has no business data in ANY table —
- * not just bills and products. We can't gate restore on bills/products
- * alone because accounts can have data in customers, suppliers, purchases,
- * shifts, cash movements, expenses, or payments without ever touching the
- * sell-side. Checking every business table prevents the restore prompt
- * from being skipped on those accounts.
+ * Returns true if the local DB has no meaningful business data in ANY table.
+ *
+ * Delegates to the single shared source of truth — getLocalDataSummary's
+ * `hasBusinessData` — so "is this device empty?" has exactly ONE definition
+ * across the app (the startup classifier uses the same signal). That summary
+ * counts every business entity, including the FIFO tables `inventoryLots` and
+ * `billItemCostAllocations`, so a device that holds only lot/allocation data is
+ * correctly treated as NON-empty (and is never falsely offered a fresh restore).
+ * Non-business rows (settings, sync metadata, device id, caches) are excluded.
  */
 export async function isLocalDbEmpty(): Promise<boolean> {
   try {
-    if (!db.isOpen()) await db.open();
-    const counts = await Promise.all([
-      db.bills.count(),
-      db.products.count(),
-      db.customers.count(),
-      db.suppliers.count(),
-      db.purchases.count(),
-      db.purchaseItems.count(),
-      db.supplierPayments.count(),
-      db.customerPayments.count(),
-      db.stockMovements.count(),
-      db.shifts.count(),
-      db.cashMovements.count().catch(() => 0),
-      db.expenses.count().catch(() => 0),
-      db.auditEvents.count().catch(() => 0),
-    ]);
-    return counts.every((c) => c === 0);
+    const summary = await getLocalDataSummary();
+    return !summary.hasBusinessData;
   } catch {
     return false; // if DB is broken, don't offer restore
   }
@@ -954,6 +1029,18 @@ async function doRestoreFromCloud(
     normalizeExpense(snapshot, restoredAt),
   );
 
+  onProgress?.("Fetching inventory lots…");
+  const inventoryLots = await readUserCollection(uid, "inventoryLots", (snapshot) =>
+    normalizeInventoryLot(snapshot, restoredAt),
+  );
+
+  onProgress?.("Fetching cost allocations…");
+  const billItemCostAllocations = await readUserCollection(
+    uid,
+    "billItemCostAllocations",
+    (snapshot) => normalizeBillItemCostAllocation(snapshot, restoredAt),
+  );
+
   const productRepair = repairDuplicateProductBarcodes({
     products: cloudProducts,
     billItems: cloudBillItems,
@@ -963,6 +1050,21 @@ async function doRestoreFromCloud(
   if (productRepair.duplicateProductIds.length) {
     onProgress?.(
       `Repairing duplicate product barcodes (${productRepair.duplicateBarcodes.slice(0, 3).join(", ")})…`,
+    );
+  }
+
+  // Legacy-data safety net: synthesize opening lots for restored products that
+  // have stock but no lots (pre-FIFO cloud data). These are new local rows, so
+  // they stay 'pending' and are queued to push to the cloud below.
+  const legacyOpeningLots = buildLegacyOpeningLots(
+    productRepair.products,
+    inventoryLots,
+    restoredAt,
+  );
+  const allInventoryLots = [...inventoryLots, ...legacyOpeningLots];
+  if (legacyOpeningLots.length) {
+    onProgress?.(
+      `Rebuilding opening stock for ${legacyOpeningLots.length} legacy product${legacyOpeningLots.length === 1 ? "" : "s"}…`,
     );
   }
 
@@ -991,6 +1093,8 @@ async function doRestoreFromCloud(
       auditEvents: auditEvents.length,
       cashMovements: cashMovements.length,
       expenses: expenses.length,
+      inventoryLots: allInventoryLots.length,
+      billItemCostAllocations: billItemCostAllocations.length,
       settings: settings.length,
     },
   };
@@ -1014,6 +1118,8 @@ async function doRestoreFromCloud(
         db.auditEvents,
         db.cashMovements,
         db.expenses,
+        db.inventoryLots,
+        db.billItemCostAllocations,
         db.settings,
         db.syncQueue,
         db.syncConflicts,
@@ -1037,6 +1143,8 @@ async function doRestoreFromCloud(
           db.auditEvents.clear(),
           db.cashMovements.clear(),
           db.expenses.clear(),
+          db.inventoryLots.clear(),
+          db.billItemCostAllocations.clear(),
           db.settings.clear(),
           db.syncQueue.clear(),
           db.syncConflicts.clear(),
@@ -1060,7 +1168,24 @@ async function doRestoreFromCloud(
         if (auditEvents.length) await db.auditEvents.bulkPut(auditEvents);
         if (cashMovements.length) await db.cashMovements.bulkPut(cashMovements);
         if (expenses.length) await db.expenses.bulkPut(expenses);
+        if (allInventoryLots.length) await db.inventoryLots.bulkPut(allInventoryLots);
+        if (billItemCostAllocations.length)
+          await db.billItemCostAllocations.bulkPut(billItemCostAllocations);
         if (settings.length) await db.settings.bulkPut(settings);
+        // Queue the synthesized legacy opening lots so they reach the cloud.
+        // syncQueue was cleared above; everything else restored is already
+        // 'synced', so only these new rows need a push.
+        if (legacyOpeningLots.length) {
+          await db.syncQueue.bulkPut(
+            legacyOpeningLots.map((lot) =>
+              buildSyncQueueItem({
+                entity: "inventoryLot",
+                entityId: lot.id,
+                operation: "create",
+              }),
+            ),
+          );
+        }
       },
     );
   } catch (error) {

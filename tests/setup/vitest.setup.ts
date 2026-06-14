@@ -84,6 +84,7 @@ afterEach(() => {
   document.documentElement.style.overflow = '';
   document.body.style.overflow = '';
   window.localStorage.clear();
+  document.cookie = 'shopkeeper-pos-locale=; path=/; max-age=0; SameSite=Lax';
   Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: undefined });
   delete (window as unknown as { BarcodeDetector?: unknown }).BarcodeDetector;
 });

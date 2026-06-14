@@ -204,8 +204,8 @@ export function AuditWorkspace() {
       />
 
       <Card>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
-          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+        <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 xl:grid-cols-10">
+          <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-slate-600 xl:col-span-2">
             {t('audit.filterCategory')}
             <SearchableSelect
               value={category || null}
@@ -217,7 +217,7 @@ export function AuditWorkspace() {
               ]}
             />
           </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+          <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-slate-600 xl:col-span-2">
             {t('audit.filterAction')}
             <SearchableSelect
               value={action || null}
@@ -229,7 +229,7 @@ export function AuditWorkspace() {
               ]}
             />
           </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+          <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-slate-600 xl:col-span-2">
             {t('audit.filterActor')}
             <SearchableSelect
               value={actor || null}
@@ -239,15 +239,15 @@ export function AuditWorkspace() {
               options={actorOptions}
             />
           </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+          <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-slate-600 xl:col-span-2">
             {t('audit.fromDate')}
             <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
           </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+          <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-slate-600 xl:col-span-2">
             {t('audit.toDate')}
             <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
           </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+          <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-slate-600 sm:col-span-2 xl:col-span-8">
             {t('audit.filterSearch')}
             <Input
               value={search}
@@ -258,7 +258,7 @@ export function AuditWorkspace() {
           <button
             type="button"
             onClick={() => { setCategory(''); setAction(''); setActor(''); setFromDate(''); setToDate(''); setSearch(''); }}
-            className="min-h-[42px] self-end rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            className="min-h-[42px] self-end rounded-xl border border-border-default bg-surface-soft px-4 text-sm font-semibold text-slate-800 transition-colors hover:bg-surface-muted sm:col-span-2 xl:col-span-2"
           >
             {t('common.reset')}
           </button>

@@ -132,6 +132,42 @@ describe('product-import-service integration', () => {
     expect(syncRequested).toHaveBeenCalledTimes(1);
   });
 
+  it('creates an opening inventory lot for imported products with positive stock (so FIFO sales can consume them)', async () => {
+    const preview = await previewProductCsvImport([
+      'barcode,name,category,quantityInStock,buyPrice,sellPrice,minimumStockAlert',
+      '7290000000101,Rice,Food,10,3.25,5,2',
+      '7290000000102,Gift Card,General,0,0,25,0',
+    ].join('\n'));
+
+    await importProductsFromPreview(preview);
+
+    const rice = await db.products.where('barcode').equals('7290000000101').first();
+    const giftCard = await db.products.where('barcode').equals('7290000000102').first();
+
+    // Only the product with positive stock gets an opening lot; the zero-stock
+    // gift card does not (we never create empty lots).
+    const lots = await db.inventoryLots.toArray();
+    expect(lots).toHaveLength(1);
+    expect(lots[0]).toMatchObject({
+      productId: rice!.id,
+      sourceType: 'opening_balance',
+      sourceId: 'import-opening',
+      quantityReceived: 10,
+      quantityRemaining: 10,
+      unitCost: 3.25,
+      status: 'open',
+      syncStatus: 'pending',
+    });
+    await expect(db.inventoryLots.where('productId').equals(giftCard!.id).count()).resolves.toBe(0);
+
+    // The lot is queued for cloud sync.
+    await expect(db.syncQueue.get(getSyncQueueId('inventoryLot', lots[0].id))).resolves.toMatchObject({
+      entity: 'inventoryLot',
+      operation: 'create',
+      status: 'pending',
+    });
+  });
+
   it('rechecks existing barcodes at import time to avoid race-condition duplicates', async () => {
     const preview = await previewProductCsvImport('barcode,name,sellPrice\n7290000000201,Race Product,4');
     await seedProduct({ id: 'race-product', barcode: '7290000000201' });

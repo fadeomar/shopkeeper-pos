@@ -70,6 +70,10 @@ const SYNC_ENTITY_PRIORITY: Record<SyncEntity, number> = {
   // the midpoint since queue-service can't distinguish the two sub-types.
   settings: 9,
   product: 11,
+  // FIFO records depend on their parents (lots → product, allocations → bill +
+  // lot), so they sync after products/bills are pushed.
+  inventoryLot: 12,
+  billItemCostAllocation: 12,
   // Audit events are append-only history with no foreign-key dependencies in
   // either direction, so they can sync last without blocking anything else.
   auditEvent: 13,

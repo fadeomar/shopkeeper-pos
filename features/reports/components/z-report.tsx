@@ -26,6 +26,7 @@ import {
   type ReportRange,
   type ReportFilters,
 } from "@/features/reports/utils/report-summary";
+import { buildCashDrawerReconciliation } from "@/features/reports/utils/accounting-reconciliation";
 import { netSplitField, normalizeBillSplit } from "@/lib/utils/bill-split";
 import type {
   Bill,
@@ -183,21 +184,25 @@ export function ZReport() {
         .filter((p) => !p.paymentMethod || p.paymentMethod === "cash")
         .reduce((sum, p) => sum + (Number(p.amount) || 0), 0),
     );
-    const expectedDrawer = roundMoney(
-      openingCashAcrossShifts +
-        salesCash +
-        customerCashIn -
-        purchaseCash -
-        supplierCashOut -
-        expenseSummary.cashPaidOut +
-        cashSummary.net,
-    );
+    // Shared reconciliation — single source of truth across Reports + Z report.
+    // Its expectedDrawer uses the same opening + money-in - money-out formula,
+    // and it surfaces drawer warnings (records without a shift, split mismatches).
+    const reconciliation = buildCashDrawerReconciliation({
+      bills: filteredBills,
+      purchases: filteredPurchases,
+      customerPayments: filteredCustomerPayments,
+      supplierPayments: filteredSupplierPayments,
+      expenses: filteredExpenses,
+      cashMovements: filteredCashMovements,
+      shifts: shiftsInRange,
+    });
 
     return {
       salesSummary,
       purchaseSummary,
       expenseSummary,
       cashSummary,
+      reconciliation,
       drawer: {
         openingCash: openingCashAcrossShifts,
         salesCash,
@@ -206,7 +211,7 @@ export function ZReport() {
         supplierCashOut,
         expenseCash: expenseSummary.cashPaidOut,
         cashMovementsNet: cashSummary.net,
-        expectedDrawer,
+        expectedDrawer: reconciliation.expectedDrawer,
       },
       customerPaymentsTotal: roundMoney(
         filteredCustomerPayments.reduce(
@@ -491,6 +496,26 @@ export function ZReport() {
           />
         </Section>
         </div>
+
+        {result.reconciliation.issues.length > 0 && (
+          <Card className="border-warning/30 bg-warning-soft/50">
+            <h3 className="text-sm font-semibold text-warning mb-2">
+              {t("reports.reconciliationIssuesTitle")}
+            </h3>
+            <ul className="space-y-1 text-xs text-slate-700">
+              {result.reconciliation.issues.map((issue) => (
+                <li key={issue.key} className="flex items-start gap-2">
+                  <span aria-hidden className="mt-0.5 text-warning">•</span>
+                  <span>
+                    {issue.key === "drawer_records_without_shift"
+                      ? t("reports.reconciliationMissingShift", { count: String(issue.count) })
+                      : t("reports.reconciliationSplitMismatch", { count: String(issue.count) })}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        )}
 
         <p className="text-center text-xs text-slate-400">
           {t("reports.zEndOfDay")}: {formatDateTime(new Date().toISOString())}

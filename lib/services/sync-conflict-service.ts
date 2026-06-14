@@ -2,7 +2,7 @@ import { db } from '@/lib/db/schema';
 import { nowIso } from '@/lib/utils/date';
 import { getSyncQueueId } from '@/lib/services/sync-queue-service';
 import { isSettingsSequenceField } from '@/lib/services/settings-sync-fields';
-import type { Settings, Product, SyncConflict, SyncConflictResolution } from '@/types/domain';
+import type { InventoryLot, Settings, Product, SyncConflict, SyncConflictResolution } from '@/types/domain';
 
 function requestSync(): void {
   if (typeof window === 'undefined') return;
@@ -151,7 +151,7 @@ export async function resolveConflictWithAction(
 
   const resolvedAt = nowIso();
 
-  await db.transaction('rw', [db.syncConflicts, db.products, db.settings, db.syncQueue], async () => {
+  await db.transaction('rw', [db.syncConflicts, db.products, db.settings, db.inventoryLots, db.syncQueue], async () => {
     await db.syncConflicts.update(id, {
       status: 'resolved',
       resolution,
@@ -203,6 +203,39 @@ export async function resolveConflictWithAction(
         });
       } else if (resolution === 'keep_local' || resolution === 'manual') {
         await db.settings.update(conflict.entityId, {
+          syncStatus: 'pending',
+          lastSyncError: undefined,
+        });
+        await db.syncQueue.update(queueId, {
+          status: 'pending',
+          retryCount: 0,
+          updatedAt: resolvedAt,
+          lastError: undefined,
+        });
+      }
+    }
+
+    // FIFO inventory lots are mutable (every sale/return/void changes
+    // quantityRemaining + status), so pullInventoryLots can raise lot
+    // conflicts. Without this branch, resolving a lot conflict marked the
+    // syncConflicts row resolved but left the lot row and its queue job stuck
+    // in 'conflict' — the modal closed yet the device stayed unsynced.
+    if (conflict.entity === 'inventoryLot') {
+      const queueId = conflict.operationId ?? getSyncQueueId('inventoryLot', conflict.entityId);
+      if (resolution === 'keep_cloud') {
+        await db.inventoryLots.put({
+          ...(conflict.cloudRecord as unknown as InventoryLot),
+          syncStatus: 'synced',
+          lastSyncError: undefined,
+        });
+        await db.syncQueue.update(queueId, {
+          status: 'synced',
+          syncedAt: resolvedAt,
+          updatedAt: resolvedAt,
+          lastError: undefined,
+        });
+      } else if (resolution === 'keep_local' || resolution === 'manual') {
+        await db.inventoryLots.update(conflict.entityId, {
           syncStatus: 'pending',
           lastSyncError: undefined,
         });

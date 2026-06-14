@@ -285,6 +285,25 @@ export interface TranslationDict {
     cacheUnavailable?: string;
     installed: string;
     installable: string;
+    installApp: string;
+    installHelp: string;
+    installModalTitle: string;
+    installModalDesc: string;
+    installInAppBrowserWarning: string;
+    installIosIntro: string;
+    installIosStep1: string;
+    installIosStep2: string;
+    installIosStep3: string;
+    installIosStep4: string;
+    installAndroidIntro: string;
+    installAndroidStep1: string;
+    installAndroidStep2: string;
+    installAndroidStep3: string;
+    installDesktopIntro: string;
+    installDesktopStep1: string;
+    installDesktopStep2: string;
+    installDesktopStep3: string;
+    installOfflineBenefit: string;
     updateAvailable: string;
     reload: string;
   };
@@ -308,10 +327,38 @@ export interface TranslationDict {
     noMovements: string;
     demoInserted: string;
     demoExists: string;
+    demoConfirmTitle: string;
+    demoConfirmDesc: string;
+    demoConfirmAction: string;
     emptyTitle: string;
     emptyDesc: string;
     addFirstProduct: string;
     openFirstShift: string;
+  };
+  weight: {
+    sellingMethod: string;
+    piece: string;
+    weight: string;
+    sellPricePerKg: string;
+    currentStockKg: string;
+    lowStockKg: string;
+    purchaseQtyKg: string;
+    costPerKg: string;
+    deductHelp: string;
+    badge: string;
+    available: string;
+    label: string;
+    customWeight: string;
+    chooseWeight: string;
+    addToCart: string;
+    editWeight: string;
+    exceedsStock: string;
+    perKgSuffix: string;
+    pieceUnit: string;
+    kgUnit: string;
+    gramUnit: string;
+    requirePositivePricePerKg: string;
+    requireNonNegativeStock: string;
   };
   products: {
     title: string;
@@ -628,6 +675,15 @@ export interface TranslationDict {
     zDrawerCashMovements: string;
     zDrawerExpected: string;
     zEndOfDay: string;
+    reconciliationTitle: string;
+    reconciliationExpectedCash: string;
+    reconciliationActualCash: string;
+    reconciliationDifference: string;
+    reconciliationDifferenceDetected: string;
+    reconciliationIssuesTitle: string;
+    reconciliationNoIssues: string;
+    reconciliationMissingShift: string;
+    reconciliationSplitMismatch: string;
   };
   billing: {
     addMiscItem: string;
@@ -857,6 +913,9 @@ export interface TranslationDict {
     about: string;
     version: string;
     pwaShortcutHelp: string;
+    installApp: string;
+    installAppDesc: string;
+    installAppNote: string;
     cloudBackup: string;
     cloudBackupDesc: string;
     syncNow: string;
@@ -963,6 +1022,10 @@ export interface TranslationDict {
   };
   auth: {
     previousAccountUnsynced: string;
+    offlineSessionRestored: string;
+    offlineSessionExpired: string;
+    offlineLoginRequiresFirstOnlineLogin: string;
+    offlineSessionVerificationPending: string;
     signIn: string;
     signInToContinue: string;
     requestAccess: string;
@@ -1038,6 +1101,10 @@ export interface TranslationDict {
     copyError: string;
     closeRestorePrompt: string;
     appLoading: string;
+    preparingStoreData: string;
+    restoreFailedTitle: string;
+    restoreFailedDesc: string;
+    retryRestore: string;
     restoreStatBills: string;
     restoreStatProducts: string;
     restoreStatPurchases: string;
@@ -1066,6 +1133,18 @@ export interface TranslationDict {
     conflictReviewDesc: string;
     conflictNoSilentOverwrite: string;
     conflictEntitySuffix: string;
+    conflictItemLabel: string;
+    entityProduct: string;
+    entityCustomer: string;
+    entitySupplier: string;
+    entityBill: string;
+    entityPurchase: string;
+    entityInventoryLot: string;
+    entityBillItemCostAllocation: string;
+    entityStockMovement: string;
+    entitySettings: string;
+    entityShift: string;
+    entityRecord: string;
     needsReview: string;
     keepCloud: string;
     keepLocal: string;
@@ -1347,6 +1426,13 @@ export interface TranslationDict {
     lastCloudSync: string;
     cloudBills: string;
     cloudProducts: string;
+    inventoryLots: string;
+    billCostAllocations: string;
+    fifoPreviewTitle: string;
+    lotRemaining: string;
+    lotUnitCost: string;
+    lotSource: string;
+    noLotData: string;
     netSales: string;
     customerDebt: string;
     lowStock: string;
@@ -1549,6 +1635,10 @@ export interface TranslationDict {
     STOCK_ADJ_NEGATIVE_RESULT: string;
     STOCK_RECEIVED_QTY_INVALID: string;
     STOCK_COUNTED_QTY_INVALID: string;
+    // FIFO inventory lots
+    INVENTORY_LOT_NOT_FOUND: string;
+    INVENTORY_LOT_INSUFFICIENT_STOCK: string;
+    INVENTORY_LOT_OVER_ALLOCATED: string;
     // Payments
     CUSTOMER_REQUIRED: string;
     SUPPLIER_REQUIRED: string;

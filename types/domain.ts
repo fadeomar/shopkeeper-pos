@@ -1,4 +1,22 @@
 export type EntityStatus = 'active' | 'inactive';
+
+/**
+ * How a product is sold and tracked.
+ *  - 'unit'   : sold by piece/count (the original and default behavior).
+ *  - 'weight' : sold by weight. For these products the existing numeric fields
+ *               are reinterpreted: `quantityInStock` and `minimumStockAlert`
+ *               are GRAMS (integer), and `buyPrice`/`sellPrice` are price PER
+ *               KILOGRAM. A missing `saleType` always means 'unit', so every
+ *               pre-existing product keeps its current meaning.
+ */
+export type ProductSaleType = 'unit' | 'weight';
+
+/**
+ * Base (integer) unit a lot/line is tracked in. Pieces for unit products,
+ * grams for weight products. Absent === 'piece' for backward compatibility
+ * with lots created before weight support.
+ */
+export type LotBaseUnit = 'piece' | 'gram';
 export type UserRole = 'owner' | 'manager' | 'cashier' | 'accountant';
 export type AccountType = 'standard' | 'trial';
 export type SubscriptionStatus = 'trial' | 'active' | 'expired' | 'suspended';
@@ -131,7 +149,7 @@ export function resolveRolePermissions(
 }
 
 export type SyncStatus = 'pending' | 'syncing' | 'synced' | 'failed' | 'conflict' | 'blocked';
-export type SyncEntity = 'bill' | 'product' | 'settings' | 'stockMovement' | 'customerPayment' | 'customer' | 'shift' | 'supplier' | 'purchase' | 'supplierPayment' | 'auditEvent' | 'cashMovement' | 'expense';
+export type SyncEntity = 'bill' | 'product' | 'settings' | 'stockMovement' | 'customerPayment' | 'customer' | 'shift' | 'supplier' | 'purchase' | 'supplierPayment' | 'auditEvent' | 'cashMovement' | 'expense' | 'inventoryLot' | 'billItemCostAllocation';
 export type SyncOperation = 'create' | 'update' | 'delete' | 'upsert';
 
 export interface SyncQueueItem {
@@ -198,6 +216,8 @@ export interface AppUser {
 
 export interface AuthCacheEntry extends AppUser {
   cachedAt: string;
+  lastOnlineValidatedAt?: string;
+  offlineSessionExpiresAt?: string;
 }
 export type BillStatus = 'finalized' | 'voided' | 'partially_returned' | 'returned';
 export type PaymentMethod = 'cash' | 'card' | 'mixed' | 'credit';
@@ -211,6 +231,9 @@ export interface Product {
   category: string;
   brand?: string;
   unit: string;
+  // 'unit' (or absent) → pieces. 'weight' → quantityInStock/minimumStockAlert
+  // are grams and buyPrice/sellPrice are per-kilogram. See ProductSaleType.
+  saleType?: ProductSaleType;
   quantityInStock: number;
   buyPrice: number;
   sellPrice: number;
@@ -294,12 +317,22 @@ export interface BillItem {
   // 'misc' for ad-hoc متفرقات lines; defaults to 'product' when absent.
   itemKind?: LineItemKind;
   miscDescription?: string;
+  // Snapshot of how the product was sold. Absent === 'unit'. For 'weight'
+  // lines, the money fields below are in PRICING units (quantitySold is
+  // kilograms — possibly fractional — and the unit prices are per-kg), so all
+  // existing `price × quantity` money math keeps working unchanged. The
+  // integer-gram quantities live in baseQuantitySold/baseQuantityReturned.
+  saleType?: ProductSaleType;
   quantitySold: number;
   unitBuyPriceAtSale: number;
   unitSellPriceAtSale: number;
   lineSubtotal: number;
   lineProfit: number;
   quantityReturned?: number;
+  // Weight lines only: integer grams sold / returned (the inventory-accurate
+  // quantity, used for lot allocation and weight display).
+  baseQuantitySold?: number;
+  baseQuantityReturned?: number;
   createdAt: string;
   syncStatus?: SyncStatus;
   syncedAt?: string;
@@ -423,6 +456,11 @@ export interface PurchaseItem {
   // 'misc' for ad-hoc متفرقات purchase lines; defaults to 'product' when absent.
   itemKind?: LineItemKind;
   miscDescription?: string;
+  // Absent === 'unit'. For 'weight' lines, quantityPurchased is GRAMS
+  // (integer) and unitCostAtPurchase is the cost PER KILOGRAM, mirroring the
+  // weight lot it creates.
+  saleType?: ProductSaleType;
+  baseUnit?: LotBaseUnit;
   quantityPurchased: number;
   unitCostAtPurchase: number;
   lineSubtotal: number;
@@ -479,6 +517,93 @@ export interface StockMovement {
   referenceId: string;
   note?: string;
   createdAt: string;
+  syncStatus?: SyncStatus;
+  syncedAt?: string;
+  lastSyncError?: string;
+}
+
+/**
+ * FIFO inventory costing — an `InventoryLot` is one physically-received batch
+ * of a product at a known unit cost. Every real purchase line, the migration
+ * opening balance, and positive stock adjustments create a lot. Sales consume
+ * lots oldest-first (FIFO) so profit is computed against the actual cost of the
+ * units that left the shelf — not the product's latest `buyPrice`.
+ *
+ * `quantityRemaining` is the unsold/unreturned quantity still costed to this
+ * lot. A lot becomes `depleted` when it reaches 0, and `voided` when a purchase
+ * void/return fully reverses it before any of it was sold.
+ */
+export type InventoryLotSourceType =
+  | 'opening_balance'
+  | 'purchase'
+  | 'stock_adjustment';
+
+export type InventoryLotStatus =
+  | 'open'
+  | 'depleted'
+  | 'voided';
+
+export interface InventoryLot {
+  id: string;
+  productId: string;
+
+  sourceType: InventoryLotSourceType;
+  // For 'purchase': purchase.id. For 'opening_balance': the migration tag.
+  // For 'stock_adjustment': the originating reference id.
+  sourceId: string;
+  // For 'purchase': the originating purchaseItem.id (lets purchase return/void
+  // find exactly the lot(s) it created).
+  sourceItemId?: string;
+  // Human-readable label captured at creation (purchase number, "Opening
+  // balance", etc.) — survives deletion of the source record.
+  sourceLabel?: string;
+
+  receivedAt: string;
+  // Unit the quantities below are counted in. Absent === 'piece'. For 'gram'
+  // lots, quantityReceived/quantityRemaining are GRAMS and unitCost is the
+  // cost PER KILOGRAM (the pricing unit), so FIFO COGS stays integer-safe:
+  // lineCost = multiplyMoney(unitCost, gramsTaken / 1000).
+  baseUnit?: LotBaseUnit;
+  quantityReceived: number;
+  quantityRemaining: number;
+  unitCost: number;
+
+  status: InventoryLotStatus;
+
+  createdAt: string;
+  updatedAt: string;
+
+  syncStatus?: SyncStatus;
+  syncedAt?: string;
+  lastSyncError?: string;
+}
+
+/**
+ * Exact cost snapshot of which lot(s) a single bill item consumed. Created at
+ * sale time alongside the bill item. `quantityReturned` tracks how much of this
+ * specific allocation has been restored to its lot by returns/voids, so partial
+ * returns can be costed against the precise lot they came from rather than a
+ * line average. `lineCost = quantity * unitCost`, money-rounded.
+ *
+ * Old bills (created before FIFO) have no allocations — reporting falls back to
+ * `BillItem.unitBuyPriceAtSale` for those.
+ */
+export interface BillItemCostAllocation {
+  id: string;
+  billId: string;
+  billItemId: string;
+  productId: string;
+  inventoryLotId: string;
+
+  quantity: number;
+  quantityReturned?: number;
+
+  unitCost: number;
+  lineCost: number;
+
+  createdAt: string;
+  updatedAt: string;
+
   syncStatus?: SyncStatus;
   syncedAt?: string;
   lastSyncError?: string;
@@ -686,6 +811,10 @@ export interface ProductFormValues {
   category: string;
   brand?: string;
   unit: string;
+  // When 'weight', the numeric fields below are entered in KILOGRAMS (stock,
+  // low-stock threshold) and price-per-kg (buy/sell); the service converts
+  // stock thresholds to integer grams on save. Absent === 'unit'.
+  saleType?: ProductSaleType;
   quantityInStock: number;
   buyPrice: number;
   sellPrice: number;
@@ -709,6 +838,11 @@ export interface PurchaseDraftItem {
   // No availableStock check on the buy side — we're adding inventory.
   // Existing stock is shown read-only in the UI just for context.
   currentStock: number;
+  // Absent === 'unit'. For 'weight' lines, `quantity` is kilograms (the
+  // pricing unit, may be fractional) and `baseQuantity` is the integer grams
+  // it converts to; `unitCost` is cost per kg.
+  saleType?: ProductSaleType;
+  baseQuantity?: number;
   quantity: number;
   unitCost: number;
   // Pre-purchase sell price (informational; we don't mutate sellPrice during
@@ -741,6 +875,11 @@ export interface BillDraftItem {
   itemKind?: LineItemKind;
   miscDescription?: string;
   availableStock: number;
+  // Absent === 'unit'. For 'weight' lines, `quantity` is kilograms (pricing
+  // unit, may be fractional), `baseQuantity` is the integer grams sold, and
+  // `availableStock` is in grams; unit prices are per kg.
+  saleType?: ProductSaleType;
+  baseQuantity?: number;
   quantity: number;
   unitBuyPrice: number;
   unitSellPrice: number;

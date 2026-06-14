@@ -13,6 +13,7 @@ import {
 } from "@/lib/services/inventory-service";
 import { settingsRepo } from "@/lib/db/repositories";
 import { isLowStock } from "@/lib/utils/stock";
+import { formatStockDisplay } from "@/lib/utils/weight";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
@@ -174,6 +175,11 @@ export function ProductsTable({
           <span className="font-medium text-slate-800">
             {row.original.name}
           </span>
+          {row.original.saleType === "weight" && (
+            <Badge tone="info" className="ms-2 align-middle">
+              {t("weight.badge")}
+            </Badge>
+          )}
           {row.original.shelfLocation && (
             <div className="text-xs text-slate-400">
               {t("products.shelf")} {row.original.shelfLocation}
@@ -184,11 +190,11 @@ export function ProductsTable({
     },
     { header: t("products.category"), accessorKey: "category" },
     {
-      header: t("products.qty"),
+      header: t("weight.available"),
       accessorKey: "quantityInStock",
       cell: ({ row }) => (
         <span className="font-semibold tabular-nums">
-          {row.original.quantityInStock}
+          {formatStockDisplay(row.original.saleType, row.original.quantityInStock)}
         </span>
       ),
     },
@@ -196,26 +202,32 @@ export function ProductsTable({
       header: t("products.buy"),
       accessorKey: "buyPrice",
       cell: ({ row }) => (
-        <PriceDisplay
-          value={row.original.buyPrice}
-          currency={currency}
-          size="sm"
-        />
+        <span className="inline-flex items-baseline gap-1">
+          <PriceDisplay value={row.original.buyPrice} currency={currency} size="sm" />
+          {row.original.saleType === "weight" && (
+            <span className="text-xs text-slate-400">{t("weight.perKgSuffix")}</span>
+          )}
+        </span>
       ),
     },
     {
       header: t("products.sell"),
       accessorKey: "sellPrice",
       cell: ({ row }) => (
-        <PriceDisplay
-          value={row.original.sellPrice}
-          currency={currency}
-          size="sm"
-          emphasis
-        />
+        <span className="inline-flex items-baseline gap-1">
+          <PriceDisplay value={row.original.sellPrice} currency={currency} size="sm" emphasis />
+          {row.original.saleType === "weight" && (
+            <span className="text-xs text-slate-400">{t("weight.perKgSuffix")}</span>
+          )}
+        </span>
       ),
     },
-    { header: t("products.min"), accessorKey: "minimumStockAlert" },
+    {
+      header: t("products.min"),
+      accessorKey: "minimumStockAlert",
+      cell: ({ row }) =>
+        formatStockDisplay(row.original.saleType, row.original.minimumStockAlert),
+    },
     {
       header: t("products.supplier"),
       accessorKey: "supplierName",
@@ -331,6 +343,11 @@ export function ProductsTable({
                     <div className="min-w-0">
                       <p className="font-semibold text-slate-900 truncate">
                         {product.name}
+                        {product.saleType === "weight" && (
+                          <Badge tone="info" className="ms-2 align-middle">
+                            {t("weight.badge")}
+                          </Badge>
+                        )}
                       </p>
                       <p className="text-xs text-slate-500 font-mono truncate">
                         {product.barcode}
@@ -346,26 +363,28 @@ export function ProductsTable({
                   </div>
                   <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
                     <div className="rounded-xl bg-white/75 p-2">
-                      <p className="text-slate-500">{t("products.qty")}</p>
+                      <p className="text-slate-500">{t("weight.available")}</p>
                       <p
                         className={clsx(
                           "font-black tabular-nums",
                           lowStock ? "text-warning" : "text-slate-900",
                         )}
                       >
-                        {product.quantityInStock}
+                        {formatStockDisplay(product.saleType, product.quantityInStock)}
                       </p>
                     </div>
                     <div className="rounded-xl bg-white/75 p-2">
                       <p className="text-slate-500">{t("products.buy")}</p>
                       <p className="font-bold text-slate-800 tabular-nums">
                         {formatCurrency(product.buyPrice, currency)}
+                        {product.saleType === "weight" ? ` ${t("weight.perKgSuffix")}` : ""}
                       </p>
                     </div>
                     <div className="rounded-xl bg-white/75 p-2">
                       <p className="text-slate-500">{t("products.sell")}</p>
                       <p className="font-bold text-slate-800 tabular-nums">
                         {formatCurrency(product.sellPrice, currency)}
+                        {product.saleType === "weight" ? ` ${t("weight.perKgSuffix")}` : ""}
                       </p>
                     </div>
                   </div>
@@ -471,7 +490,10 @@ export function ProductsTable({
         description={
           adjustProduct
             ? t("products.stockAdjustDesc", {
-                count: adjustProduct.quantityInStock,
+                count: formatStockDisplay(
+                  adjustProduct.saleType,
+                  adjustProduct.quantityInStock,
+                ),
               })
             : undefined
         }
@@ -518,7 +540,7 @@ export function ProductsTable({
                   {t("products.currentStock")}
                 </span>
                 <span className="font-semibold text-slate-800">
-                  {adjustProduct.quantityInStock}
+                  {formatStockDisplay(adjustProduct.saleType, adjustProduct.quantityInStock)}
                 </span>
               </div>
               <div className="flex justify-between text-sm">
@@ -533,7 +555,10 @@ export function ProductsTable({
                       : "text-danger",
                   )}
                 >
-                  {adjustProduct.quantityInStock + (adjustQty || 0)}
+                  {formatStockDisplay(
+                    adjustProduct.saleType,
+                    adjustProduct.quantityInStock + (adjustQty || 0),
+                  )}
                 </span>
               </div>
             </div>

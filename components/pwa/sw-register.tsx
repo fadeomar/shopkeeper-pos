@@ -2,7 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { db } from "@/lib/db/schema";
+import clsx from "clsx";
 import { useLocale } from "@/components/providers/locale-context";
+import { useAuth } from "@/components/providers/auth-context";
+import { PwaInstallAction } from "@/components/pwa/pwa-install-action";
 
 const OFFLINE_NAV_ROUTES = [
   "/",
@@ -101,6 +104,8 @@ async function hasRequiredOfflineCache(): Promise<boolean> {
 
 export function ServiceWorkerRegister() {
   const { t } = useLocale();
+  const { status } = useAuth();
+  const hasDesktopSidebar = status === "authenticated";
   const regRef = useRef<ServiceWorkerRegistration | null>(null);
   const warmRunRef = useRef(0);
 
@@ -108,7 +113,6 @@ export function ServiceWorkerRegister() {
   // "Online" flash that occurred when the layout remounted after a hard reload).
   const [online, setOnline] = useState<boolean | undefined>(undefined);
   const [ready, setReady] = useState(false);
-  const [installed, setInstalled] = useState(false);
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [cacheUnavailable, setCacheUnavailable] = useState(false);
 
@@ -151,8 +155,6 @@ export function ServiceWorkerRegister() {
     let cancelled = false;
 
     setOnline(window.navigator.onLine);
-    setInstalled(window.matchMedia("(display-mode: standalone)").matches);
-
     function reloadOnceForControl(): boolean {
       if (navigator.serviceWorker.controller) return false;
       if (sessionStorage.getItem(FIRST_CONTROL_RELOAD_KEY) === "1")
@@ -425,7 +427,10 @@ export function ServiceWorkerRegister() {
 
   return (
     <div
-      className="flex flex-wrap gap-2 px-4 py-2 bg-slate-950 border-b border-white/5"
+      className={clsx(
+        "flex flex-wrap gap-2 bg-slate-950 px-4 py-2 transition-[padding] border-b border-white/5",
+        hasDesktopSidebar && "lg:ps-[276px]",
+      )}
       aria-live="polite"
     >
       {networkBadge}
@@ -436,9 +441,7 @@ export function ServiceWorkerRegister() {
             ? t("pwa.cacheReady")
             : t("pwa.cachePrep")}
       </span>
-      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-white/5 text-slate-400">
-        {installed ? t("pwa.installed") : t("pwa.installable")}
-      </span>
+      <PwaInstallAction compact />
 
       {pendingCount > 0 && (
         <span

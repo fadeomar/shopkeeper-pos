@@ -55,16 +55,46 @@ function SyncBadge({ status }: { status?: SyncStatus }) {
   );
 }
 
-function SummaryCard({ label, value }: { label: string; value: string }) {
+type SummaryTone = "sales" | "profit" | "count" | "items";
+
+const summaryToneClasses: Record<SummaryTone, { card: string; value: string }> = {
+  sales: {
+    card: "border-success/20 bg-success-soft/35",
+    value: "text-success",
+  },
+  profit: {
+    card: "border-money/20 bg-money-soft/45",
+    value: "text-money",
+  },
+  count: {
+    card: "border-info/20 bg-info-soft/35",
+    value: "text-info",
+  },
+  items: {
+    card: "border-border-default bg-surface-soft",
+    value: "text-slate-900",
+  },
+};
+
+function SummaryCard({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: SummaryTone;
+}) {
+  const styles = summaryToneClasses[tone];
   return (
-    <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+    <div className={clsx("rounded-2xl border p-4", styles.card)}>
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
         {label}
       </p>
       <FitText
         value={value}
         size="lg"
-        className="mt-1 font-black text-slate-900"
+        className={clsx("mt-2 font-black", styles.value)}
       />
     </div>
   );
@@ -302,20 +332,24 @@ export function BillsTable() {
           <SummaryCard
             label={t("bills.filteredSales")}
             value={formatCurrency(summary.totalSales, currency)}
+            tone="sales"
           />
           {canViewProfit && (
             <SummaryCard
               label={t("bills.filteredProfit")}
               value={formatCurrency(summary.totalProfit, currency)}
+              tone="profit"
             />
           )}
           <SummaryCard
             label={t("bills.filteredBills")}
             value={String(summary.billCount)}
+            tone="count"
           />
           <SummaryCard
             label={t("bills.filteredItems")}
             value={String(summary.itemCount)}
+            tone="items"
           />
         </div>
         <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs text-slate-600">
@@ -345,12 +379,13 @@ export function BillsTable() {
       </Card>
 
       <Card>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
+        <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 xl:grid-cols-7">
           <Input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={t("bills.searchPlaceholder")}
             aria-label={t("bills.searchPlaceholder")}
+            className="sm:col-span-2 xl:col-span-2"
           />
           <SearchableSelect
             value={dateFilter}

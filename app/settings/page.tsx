@@ -43,6 +43,8 @@ import {
 import clsx from "clsx";
 import { PageShell } from "@/components/ui/page-shell";
 import { PageHeader } from "@/components/ui/page-header";
+import { PwaInstallAction } from "@/components/pwa/pwa-install-action";
+import { isRolePermissionsUiEnabled } from "@/lib/config/feature-flags";
 
 // ─── Form types ──────────────────────────────────────────────────────────────
 
@@ -444,10 +446,21 @@ export default function SettingsPage() {
       )}
 
       {/* ── Role permissions ─────────────────────────────────────────────── */}
-      {canManageRolePermissions && <RolePermissionsCard />}
+      {isRolePermissionsUiEnabled() && canManageRolePermissions && <RolePermissionsCard />}
 
       {/* ── Cloud Backup ─────────────────────────────────────────────────── */}
       <CloudBackupCard />
+
+      {/* ── App install ──────────────────────────────────────────────────── */}
+      <SectionCard
+        title={t("settings.installApp")}
+        description={t("settings.installAppDesc")}
+      >
+        <div className="flex flex-col gap-3 rounded-2xl border border-info/20 bg-info-soft p-4 text-sm text-info sm:flex-row sm:items-center sm:justify-between">
+          <p>{t("settings.installAppNote")}</p>
+          <PwaInstallAction />
+        </div>
+      </SectionCard>
 
       {/* ── Device health ────────────────────────────────────────────────── */}
       <DeviceHealthCard />

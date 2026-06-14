@@ -18,6 +18,8 @@ import {
   syncCustomerPaymentsToCloud,
   syncSupplierPaymentsToCloud,
   syncSuppliersToCloud,
+  syncInventoryLotsToCloud,
+  syncBillItemCostAllocationsToCloud,
 } from '@/lib/firebase/sync-service';
 import {
   getPendingSyncJobs,
@@ -33,6 +35,7 @@ import { autoDismissFalseOfflineSaleConflicts, getOpenConflicts } from '@/lib/se
 import { detectProductCloudConflict, prepareSettingsForCloudSync } from '@/lib/firebase/cloud-merge-service';
 import { pullCloudChangesBeforePush } from '@/lib/firebase/cloud-pull-service';
 import { isSyncBlocked } from '@/lib/services/sync-gate';
+import { SYNC_POLL_INTERVAL_MS, isSyncPollingDisabled } from '@/lib/config/sync';
 import type { Product, Settings, StockMovement, SyncQueueItem, SyncStatus } from '@/types/domain';
 
 const MAX_RETRIES = 5;
@@ -107,6 +110,10 @@ function jobPriority(job: SyncQueueItem): number {
       return isSequenceJob(job) ? 8 : 10;
     case 'product':
       return 11;
+    // FIFO records depend on product (lots) and bill (allocations) — after both.
+    case 'inventoryLot':
+    case 'billItemCostAllocation':
+      return 12;
     // Append-only history with no foreign-key dependencies — last.
     case 'auditEvent':
       return 13;
@@ -194,6 +201,10 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
         await db.cashMovements.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
       } else if (job.entity === 'expense') {
         await db.expenses.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
+      } else if (job.entity === 'inventoryLot') {
+        await db.inventoryLots.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
+      } else if (job.entity === 'billItemCostAllocation') {
+        await db.billItemCostAllocations.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
       }
     }
     return;
@@ -392,6 +403,26 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
       if (syncedAt) {
         await db.expenses.update(job.entityId, { syncStatus: 'synced', syncedAt, lastSyncError: undefined });
       }
+    } else if (job.entity === 'inventoryLot') {
+      const lot = await db.inventoryLots.get(job.entityId);
+      if (!lot) {
+        await markSynced(job.id);
+        return;
+      }
+      const syncedAt = await syncInventoryLotsToCloud(uid, [lot]);
+      if (syncedAt) {
+        await db.inventoryLots.update(job.entityId, { syncStatus: 'synced', syncedAt, lastSyncError: undefined });
+      }
+    } else if (job.entity === 'billItemCostAllocation') {
+      const allocation = await db.billItemCostAllocations.get(job.entityId);
+      if (!allocation) {
+        await markSynced(job.id);
+        return;
+      }
+      const syncedAt = await syncBillItemCostAllocationsToCloud(uid, [allocation]);
+      if (syncedAt) {
+        await db.billItemCostAllocations.update(job.entityId, { syncStatus: 'synced', syncedAt, lastSyncError: undefined });
+      }
     }
 
     await markSynced(job.id);
@@ -424,6 +455,10 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
       await db.cashMovements.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
     } else if (job.entity === 'expense') {
       await db.expenses.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
+    } else if (job.entity === 'inventoryLot') {
+      await db.inventoryLots.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
+    } else if (job.entity === 'billItemCostAllocation') {
+      await db.billItemCostAllocations.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
     }
   }
 }
@@ -458,6 +493,10 @@ async function markE2EJobEntitySynced(job: SyncQueueItem, syncedAt: string): Pro
     await db.cashMovements.update(job.entityId, patch);
   } else if (job.entity === 'expense') {
     await db.expenses.update(job.entityId, patch);
+  } else if (job.entity === 'inventoryLot') {
+    await db.inventoryLots.update(job.entityId, patch);
+  } else if (job.entity === 'billItemCostAllocation') {
+    await db.billItemCostAllocations.update(job.entityId, patch);
   }
 }
 
@@ -586,11 +625,17 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       requestSync();
     }
 
-    const pollInterval = window.setInterval(() => {
-      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
-      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
-      requestSync();
-    }, 30_000);
+    // Polling is configurable (SYNC_POLL_INTERVAL_MS) and suppressed entirely
+    // under test / when explicitly disabled, so a live interval never keeps a
+    // test process (or a battery-sensitive device) running needlessly. The
+    // reconnect / visibility / local-write triggers below still fire.
+    const pollInterval = isSyncPollingDisabled
+      ? null
+      : window.setInterval(() => {
+          if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+          if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+          requestSync();
+        }, SYNC_POLL_INTERVAL_MS);
 
     window.addEventListener('online', requestSync);
     window.addEventListener('shopkeeper:sync-requested', requestSync);
@@ -599,7 +644,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener('online', requestSync);
       window.removeEventListener('shopkeeper:sync-requested', requestSync);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.clearInterval(pollInterval);
+      if (pollInterval !== null) window.clearInterval(pollInterval);
     };
   }, [user?.uid]);
 
