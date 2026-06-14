@@ -10,10 +10,12 @@ import { useLocale } from "@/components/providers/locale-context";
 import { fetchUserDoc, updateUserStatus } from "@/lib/firebase/auth-service";
 import { auth } from "@/lib/firebase/config";
 import {
+  fetchUserBillItemCostAllocations,
   fetchUserBills,
   fetchUserBillItems,
   fetchUserCustomerPayments,
   fetchUserCustomers,
+  fetchUserInventoryLots,
   fetchUserProducts,
   fetchUserPurchaseItems,
   fetchUserPurchases,
@@ -41,8 +43,10 @@ import type {
   AppUser,
   Bill,
   BillItem,
+  BillItemCostAllocation,
   Customer,
   CustomerPayment,
+  InventoryLot,
   Product,
   Purchase,
   PurchaseItem,
@@ -84,6 +88,8 @@ export default function UserDetailPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [payments, setPayments] = useState<CustomerPayment[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
+  const [lots, setLots] = useState<InventoryLot[]>([]);
+  const [allocations, setAllocations] = useState<BillItemCostAllocation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [toggling, setToggling] = useState(false);
@@ -100,7 +106,7 @@ export default function UserDetailPage() {
     setLoading(true);
     setError("");
     try {
-      const [prof, snapshot, b, p, s, cps, sms] = await Promise.all([
+      const [prof, snapshot, b, p, s, cps, sms, lts, allocs] = await Promise.all([
         fetchUserDoc(userId),
         fetchUserSupportSnapshot(userId),
         fetchUserBills(userId),
@@ -108,6 +114,12 @@ export default function UserDetailPage() {
         fetchUserSettings(userId),
         fetchUserCustomerPayments(userId).catch(() => [] as CustomerPayment[]),
         fetchUserStockMovements(userId, 100).catch(() => [] as StockMovement[]),
+        // Bounded reads (recent 500) — enough for diagnostic counts + preview
+        // without scanning a large store's full FIFO history.
+        fetchUserInventoryLots(userId, 500).catch(() => [] as InventoryLot[]),
+        fetchUserBillItemCostAllocations(userId, 500).catch(
+          () => [] as BillItemCostAllocation[],
+        ),
       ]);
       setProfile(prof);
       setSupport(snapshot);
@@ -116,6 +128,8 @@ export default function UserDetailPage() {
       setSettings(s as Settings | null);
       setPayments(cps as CustomerPayment[]);
       setMovements(sms as StockMovement[]);
+      setLots(lts as InventoryLot[]);
+      setAllocations(allocs as BillItemCostAllocation[]);
     } catch {
       setError("Could not load user data. Check your connection.");
     } finally {
@@ -187,6 +201,8 @@ export default function UserDetailPage() {
       allPurchaseItems,
       allSupplierPayments,
       allShifts,
+      allInventoryLots,
+      allCostAllocations,
       allConflicts,
       currentSettings,
       syncMeta,
@@ -208,6 +224,10 @@ export default function UserDetailPage() {
         () => [] as SupplierPayment[],
       ),
       fetchUserShifts(profile.uid).catch(() => [] as Shift[]),
+      fetchUserInventoryLots(profile.uid).catch(() => [] as InventoryLot[]),
+      fetchUserBillItemCostAllocations(profile.uid).catch(
+        () => [] as BillItemCostAllocation[],
+      ),
       fetchUserSyncConflicts(profile.uid).catch(() => [] as SyncConflict[]),
       fetchUserSettings(profile.uid),
       fetchUserSyncMeta(profile.uid),
@@ -231,6 +251,8 @@ export default function UserDetailPage() {
         purchaseItems: allPurchaseItems.length,
         supplierPayments: allSupplierPayments.length,
         shifts: allShifts.length,
+        inventoryLots: allInventoryLots.length,
+        billItemCostAllocations: allCostAllocations.length,
         syncConflicts: allConflicts.length,
       },
       bills: allBills,
@@ -244,6 +266,10 @@ export default function UserDetailPage() {
       purchaseItems: allPurchaseItems,
       supplierPayments: allSupplierPayments,
       shifts: allShifts,
+      // FIFO data — required so a restored/diagnosed backup keeps true stock,
+      // COGS and profit. Always present (empty arrays when the user has none).
+      inventoryLots: allInventoryLots,
+      billItemCostAllocations: allCostAllocations,
       syncConflicts: allConflicts,
     };
     downloadJSON(
@@ -782,6 +808,61 @@ export default function UserDetailPage() {
               ))}
             </div>
           </section>
+
+          {/* FIFO diagnostic — counts + a bounded preview so support can verify
+              a store actually has lot/allocation data behind its stock + profit. */}
+          <SectionCard title={t("admin.fifoPreviewTitle")}>
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <StatCard label={t("admin.inventoryLots")} value={lots.length} />
+              <StatCard
+                label={t("admin.billCostAllocations")}
+                value={allocations.length}
+              />
+            </div>
+            {lots.length === 0 ? (
+              <p className="text-sm text-slate-400">{t("admin.noLotData")}</p>
+            ) : (
+              <div className="overflow-hidden rounded-xl ring-1 ring-slate-200">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-slate-50 text-slate-500">
+                      <th className="px-3 py-2 text-start font-medium">
+                        {t("products.name")}
+                      </th>
+                      <th className="px-3 py-2 text-end font-medium">
+                        {t("admin.lotRemaining")}
+                      </th>
+                      <th className="px-3 py-2 text-end font-medium">
+                        {t("admin.lotUnitCost")}
+                      </th>
+                      <th className="px-3 py-2 text-start font-medium">
+                        {t("admin.lotSource")}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lots.slice(0, 20).map((lot) => (
+                      <tr key={lot.id} className="border-t border-slate-100">
+                        <td className="px-3 py-2 text-slate-700">
+                          {products.find((p) => p.id === lot.productId)?.name ??
+                            lot.productId}
+                        </td>
+                        <td className="px-3 py-2 text-end tabular-nums text-slate-700">
+                          {lot.quantityRemaining}
+                        </td>
+                        <td className="px-3 py-2 text-end tabular-nums text-slate-700">
+                          {lot.unitCost.toFixed(2)}
+                        </td>
+                        <td className="px-3 py-2 text-slate-500">
+                          {lot.sourceLabel || lot.sourceType}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </SectionCard>
         </>
       )}
 

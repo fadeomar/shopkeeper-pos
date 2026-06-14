@@ -11,6 +11,7 @@ import {
 import { firestore } from "./config";
 import { db } from "@/lib/db/schema";
 import { setRestoreInProgress } from "@/lib/services/sync-gate";
+import { getLocalDataSummary } from "@/lib/services/account-data-service";
 import {
   buildOpeningLot,
   RESTORE_OPENING_LOT_SOURCE_ID,
@@ -894,32 +895,20 @@ export async function fetchSyncMeta(uid: string): Promise<SyncMeta | null> {
 }
 
 /**
- * Returns true if the local DB has no business data in ANY table —
- * not just bills and products. We can't gate restore on bills/products
- * alone because accounts can have data in customers, suppliers, purchases,
- * shifts, cash movements, expenses, or payments without ever touching the
- * sell-side. Checking every business table prevents the restore prompt
- * from being skipped on those accounts.
+ * Returns true if the local DB has no meaningful business data in ANY table.
+ *
+ * Delegates to the single shared source of truth — getLocalDataSummary's
+ * `hasBusinessData` — so "is this device empty?" has exactly ONE definition
+ * across the app (the startup classifier uses the same signal). That summary
+ * counts every business entity, including the FIFO tables `inventoryLots` and
+ * `billItemCostAllocations`, so a device that holds only lot/allocation data is
+ * correctly treated as NON-empty (and is never falsely offered a fresh restore).
+ * Non-business rows (settings, sync metadata, device id, caches) are excluded.
  */
 export async function isLocalDbEmpty(): Promise<boolean> {
   try {
-    if (!db.isOpen()) await db.open();
-    const counts = await Promise.all([
-      db.bills.count(),
-      db.products.count(),
-      db.customers.count(),
-      db.suppliers.count(),
-      db.purchases.count(),
-      db.purchaseItems.count(),
-      db.supplierPayments.count(),
-      db.customerPayments.count(),
-      db.stockMovements.count(),
-      db.shifts.count(),
-      db.cashMovements.count().catch(() => 0),
-      db.expenses.count().catch(() => 0),
-      db.auditEvents.count().catch(() => 0),
-    ]);
-    return counts.every((c) => c === 0);
+    const summary = await getLocalDataSummary();
+    return !summary.hasBusinessData;
   } catch {
     return false; // if DB is broken, don't offer restore
   }

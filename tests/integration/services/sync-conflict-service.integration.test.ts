@@ -9,7 +9,7 @@ import {
   saveConflict,
 } from '@/lib/services/sync-conflict-service';
 import { resetTestDb, seedProduct, seedSettings } from '@/tests/helpers/db';
-import type { SyncConflict } from '@/types/domain';
+import type { InventoryLot, SyncConflict } from '@/types/domain';
 
 type ConflictInput = Omit<SyncConflict, 'id' | 'status' | 'createdAt'> & { id?: string };
 
@@ -24,6 +24,43 @@ function productConflict(overrides: Partial<ConflictInput> = {}): ConflictInput 
     cloudRecord: { id: 'product-1', name: 'Cloud name' },
     localRecord: { id: 'product-1', name: 'Local name' },
     changedFields: ['name'],
+    ...overrides,
+  };
+}
+
+function seedLot(overrides: Partial<InventoryLot> = {}): InventoryLot {
+  return {
+    id: 'lot-1',
+    productId: 'product-1',
+    sourceType: 'opening_balance',
+    sourceId: 'opening',
+    receivedAt: '2026-01-01T00:00:00.000Z',
+    quantityReceived: 5,
+    quantityRemaining: 5,
+    unitCost: 3,
+    status: 'open',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    syncStatus: 'synced',
+    ...overrides,
+  };
+}
+
+function lotRecord(overrides: Partial<InventoryLot> = {}): Record<string, unknown> {
+  return seedLot(overrides) as unknown as Record<string, unknown>;
+}
+
+function lotConflict(overrides: Partial<ConflictInput> = {}): ConflictInput {
+  return {
+    id: 'conflict:inventoryLot:lot-1:pull-cloud',
+    entity: 'inventoryLot',
+    entityId: 'lot-1',
+    operationId: undefined,
+    conflictType: 'inventory_overwrite',
+    severity: 'high',
+    cloudRecord: lotRecord(),
+    localRecord: lotRecord(),
+    changedFields: ['quantityRemaining'],
     ...overrides,
   };
 }
@@ -121,6 +158,41 @@ describe('sync-conflict-service integration', () => {
       await resolveConflictWithAction(id!, 'keep_local');
 
       await expect(db.settings.get('app-settings')).resolves.toMatchObject({ syncStatus: 'pending' });
+      await expect(db.syncQueue.get(queueId)).resolves.toMatchObject({ status: 'pending', retryCount: 0 });
+    });
+
+    it('keep_cloud overwrites the local inventory lot and marks the queue synced', async () => {
+      await db.inventoryLots.put(seedLot({ quantityRemaining: 2, syncStatus: 'conflict' }));
+      const queueId = getSyncQueueId('inventoryLot', 'lot-1');
+      await db.syncQueue.put({ id: queueId, entity: 'inventoryLot', entityId: 'lot-1', operation: 'update', status: 'conflict', retryCount: 0, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' });
+      const id = await saveConflict(lotConflict({
+        cloudRecord: lotRecord({ quantityRemaining: 5, status: 'open' }),
+        localRecord: lotRecord({ quantityRemaining: 2 }),
+        changedFields: ['quantityRemaining'],
+      }));
+
+      await resolveConflictWithAction(id!, 'keep_cloud');
+
+      await expect(db.inventoryLots.get('lot-1')).resolves.toMatchObject({ quantityRemaining: 5, syncStatus: 'synced' });
+      await expect(db.syncConflicts.get(id!)).resolves.toMatchObject({ status: 'resolved', resolution: 'keep_cloud' });
+      await expect(db.syncQueue.get(queueId)).resolves.toMatchObject({ status: 'synced' });
+    });
+
+    it('keep_local re-queues the inventory lot for another push attempt', async () => {
+      await db.inventoryLots.put(seedLot({ quantityRemaining: 2, syncStatus: 'conflict' }));
+      const queueId = getSyncQueueId('inventoryLot', 'lot-1');
+      await db.syncQueue.put({ id: queueId, entity: 'inventoryLot', entityId: 'lot-1', operation: 'update', status: 'conflict', retryCount: 4, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' });
+      const id = await saveConflict(lotConflict({
+        cloudRecord: lotRecord({ quantityRemaining: 5 }),
+        localRecord: lotRecord({ quantityRemaining: 2 }),
+        changedFields: ['quantityRemaining'],
+      }));
+
+      await resolveConflictWithAction(id!, 'keep_local');
+
+      // Local value untouched; both the lot row and its queue job leave the
+      // stuck 'conflict' state and become pushable again.
+      await expect(db.inventoryLots.get('lot-1')).resolves.toMatchObject({ quantityRemaining: 2, syncStatus: 'pending' });
       await expect(db.syncQueue.get(queueId)).resolves.toMatchObject({ status: 'pending', retryCount: 0 });
     });
   });

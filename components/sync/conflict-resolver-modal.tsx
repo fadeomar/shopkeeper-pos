@@ -8,7 +8,29 @@ import { useLocale } from '@/components/providers/locale-context';
 import { db } from '@/lib/db/schema';
 import { formatDateTime } from '@/lib/utils/date';
 import { getOpenConflicts, resolveConflictWithAction } from '@/lib/services/sync-conflict-service';
-import type { StockMovement, SyncConflict } from '@/types/domain';
+import type { StockMovement, SyncConflict, SyncEntity } from '@/types/domain';
+
+// Map a sync entity to a friendly, translated label so the conflict screen
+// reads naturally for cashiers/admins in Arabic + English (never raw
+// "billItemCostAllocation").
+function getConflictEntityLabel(
+  entity: SyncEntity,
+  t: ReturnType<typeof useLocale>['t'],
+): string {
+  switch (entity) {
+    case 'product': return t('sync.entityProduct');
+    case 'customer': return t('sync.entityCustomer');
+    case 'supplier': return t('sync.entitySupplier');
+    case 'bill': return t('sync.entityBill');
+    case 'purchase': return t('sync.entityPurchase');
+    case 'inventoryLot': return t('sync.entityInventoryLot');
+    case 'billItemCostAllocation': return t('sync.entityBillItemCostAllocation');
+    case 'stockMovement': return t('sync.entityStockMovement');
+    case 'settings': return t('sync.entitySettings');
+    case 'shift': return t('sync.entityShift');
+    default: return t('sync.entityRecord');
+  }
+}
 
 // camelCase / snake_case field name → human "Title Case" label.
 function humanizeField(field: string): string {
@@ -107,15 +129,17 @@ export function ConflictResolverModal({ userId }: { userId?: string }) {
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-sm font-semibold text-slate-900 capitalize">
-                      {c.entity} {t('sync.conflictEntitySuffix')}
+                    <p className="text-sm font-semibold text-slate-900">
+                      {getConflictEntityLabel(c.entity, t)} {t('sync.conflictEntitySuffix')}
                     </p>
                     <Badge tone={c.severity === 'high' || c.severity === 'critical' ? 'danger' : 'warning'}>
                       {t('sync.needsReview')}
                     </Badge>
                   </div>
+                  {/* "Conflicting item: Product — Coca Cola" — friendly entity
+                      label + the record's own name/number where available. */}
                   <p className="mt-1 truncate text-base font-black text-slate-950" title={getRecordLabel(c)}>
-                    {getRecordLabel(c)}
+                    {t('sync.conflictItemLabel')}: {getConflictEntityLabel(c.entity, t)} — {getRecordLabel(c)}
                   </p>
                   {meta.length > 0 && (
                     <p className="mt-1 text-xs text-slate-500">{meta.join(' · ')}</p>

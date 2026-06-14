@@ -37,6 +37,7 @@ import {
   type ReportRange,
   type TrendRow,
 } from "@/features/reports/utils/report-summary";
+import { buildCashDrawerReconciliation } from "@/features/reports/utils/accounting-reconciliation";
 
 function ProductRows({
   rows,
@@ -236,6 +237,8 @@ export function ReportsWorkspace() {
     () => db.customerPayments.toArray(),
     [],
   );
+  const cashMovements = useLiveQuery(() => db.cashMovements.toArray(), [], []);
+  const shifts = useLiveQuery(() => db.shifts.toArray(), [], []);
   const [range, setRange] = useState<ReportRange>("today");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
@@ -294,6 +297,45 @@ export function ReportsWorkspace() {
     () => summarizeReportPurchases(filteredPurchases, filteredSupplierPayments),
     [filteredPurchases, filteredSupplierPayments],
   );
+  // Shared cash reconciliation — same util the Z report uses, so the expected
+  // drawer figure and drawer warnings never diverge between the two surfaces.
+  const reconciliation = useMemo(() => {
+    const { from, to } = getReportRange({ range, customFrom, customTo });
+    const inRange = <T extends { createdAt: string }>(rows: T[]): T[] =>
+      rows.filter((row) => {
+        const created = new Date(row.createdAt);
+        if (from && created < from) return false;
+        if (to && created >= to) return false;
+        return true;
+      });
+    const shiftsInRange = (shifts ?? []).filter((s) => {
+      const opened = new Date(s.openedAt);
+      const closed = s.closedAt ? new Date(s.closedAt) : new Date();
+      if (from && closed <= from) return false;
+      if (to && opened >= to) return false;
+      return true;
+    });
+    return buildCashDrawerReconciliation({
+      bills: filteredBills,
+      purchases: filteredPurchases,
+      customerPayments: inRange(customerPayments ?? []),
+      supplierPayments: filteredSupplierPayments,
+      expenses: filteredExpenses,
+      cashMovements: inRange(cashMovements ?? []),
+      shifts: shiftsInRange,
+    });
+  }, [
+    filteredBills,
+    filteredPurchases,
+    filteredSupplierPayments,
+    filteredExpenses,
+    customerPayments,
+    cashMovements,
+    shifts,
+    range,
+    customFrom,
+    customTo,
+  ]);
   const productSales = useMemo(
     () => summarizeProductSales(filteredBills, billItems ?? [], products ?? [], costAllocations ?? []),
     [filteredBills, billItems, products, costAllocations],
@@ -578,6 +620,44 @@ export function ReportsWorkspace() {
           value={formatCurrency(purchaseSummary.netSupplierDebt, currency)}
           helper={t("reports.netSupplierDebtHelper")}
         />
+      </section>
+
+      <section>
+        <ReportPanel title={t("reports.reconciliationTitle")}>
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between text-sm">
+              <span className="font-medium text-slate-700">
+                {t("reports.reconciliationExpectedCash")}
+              </span>
+              <span className="font-bold tabular-nums text-slate-900" dir="ltr">
+                {formatCurrency(reconciliation.expectedDrawer, currency)}
+              </span>
+            </div>
+            {reconciliation.issues.length === 0 ? (
+              <p className="text-xs text-success">
+                {t("reports.reconciliationNoIssues")}
+              </p>
+            ) : (
+              <div className="rounded-xl bg-warning-soft/60 border border-warning/30 px-3 py-2">
+                <p className="text-xs font-semibold text-warning mb-1">
+                  {t("reports.reconciliationIssuesTitle")}
+                </p>
+                <ul className="space-y-1 text-xs text-slate-700">
+                  {reconciliation.issues.map((issue) => (
+                    <li key={issue.key} className="flex items-start gap-2">
+                      <span aria-hidden className="mt-0.5 text-warning">•</span>
+                      <span>
+                        {issue.key === "drawer_records_without_shift"
+                          ? t("reports.reconciliationMissingShift", { count: String(issue.count) })
+                          : t("reports.reconciliationSplitMismatch", { count: String(issue.count) })}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </ReportPanel>
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">

@@ -16,12 +16,11 @@ import { syncAllToCloud, type SyncMeta } from "@/lib/firebase/sync-service";
 import { getPendingSyncCount } from "@/lib/services/sync-queue-service";
 import { getOpenConflicts } from "@/lib/services/sync-conflict-service";
 import {
-  fetchSyncMeta,
-  isLocalDbEmpty,
   restoreFromCloud,
   pullSettingsFromCloud,
   getRestoreErrorMessage,
 } from "@/lib/firebase/restore-service";
+import { classifySyncStartupState } from "@/lib/services/sync-startup-decision-service";
 import { db } from "@/lib/db/schema";
 import { DbBootstrap } from "@/components/providers/db-bootstrap";
 import { AppSidebarBrand } from "@/components/app-sidebar-brand";
@@ -233,6 +232,9 @@ function CashierShell({ children }: { children: React.ReactNode }) {
   const [restoring, setRestoring] = useState(false);
   const [restoreStep, setRestoreStep] = useState("");
   const [restoreError, setRestoreError] = useState("");
+  // Fresh-device cloud data is restored silently (no choice prompt). The modal
+  // only appears as a fallback if that silent restore fails.
+  const [autoRestoring, setAutoRestoring] = useState(false);
   const checkRan = useRef<string | null>(null);
 
   // One-time new-device detection per uid (resets if uid ever changes).
@@ -264,29 +266,43 @@ function CashierShell({ children }: { children: React.ReactNode }) {
         // Non-fatal — if the wipe fails, proceed with whatever is in IndexedDB.
       }
 
-      const empty = await isLocalDbEmpty();
-      if (empty) {
-        const meta = await fetchSyncMeta(userId);
-        // Restore is worth offering if ANY business collection has data on
-        // the cloud — not just bills/products. Accounts that started in
-        // purchases (buy-side first), did supplier-only setup, recorded
-        // shifts or cash drawer events before any sales, or only tracked
-        // expenses would all be skipped by the old bills-or-products check.
-        const hasCloudData =
-          !!meta &&
-          Object.values(meta.recordCounts).some(
-            (count) => typeof count === "number" && count > 0,
-          );
-        if (hasCloudData && meta) {
-          const skippedBackup = readSkippedRestoreMeta(userId);
-          if (skippedBackup === meta.lastSyncedAt) {
-            setRestoreSkipped(true);
-            setRestoreChecked(true);
-            return;
-          }
-          setCloudMeta(meta);
-          return; // show restore modal — don't mark as checked yet
+      // Single source of truth for the startup decision. The classifier reads
+      // cheap local counts + the cloud meta/sync doc and returns one clear
+      // verdict (plus a reason). We surface it as an event so support tooling
+      // can read exactly why a screen did or didn't appear.
+      const decision = await classifySyncStartupState({ uid: userId });
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("shopkeeper:sync-startup-decision", { detail: decision }),
+        );
+      }
+
+      // Only a truly empty device with cloud data restores here. Every other
+      // verdict (silent pull/push, auto-merge, true conflict) is handled by the
+      // background SyncProvider / ConflictResolverModal — never a choice prompt.
+      if (decision.decision === "RESTORE_CLOUD_SILENTLY") {
+        const meta: SyncMeta = {
+          lastSyncedAt:
+            decision.cloudSummary.lastCloudChangeAt ?? new Date().toISOString(),
+          // RestoreModal reads each count defensively (?? 0); the classifier's
+          // entityCounts is the same shape as SyncMeta.recordCounts.
+          recordCounts: (decision.cloudSummary.entityCounts ??
+            {}) as SyncMeta["recordCounts"],
+        };
+        const skippedBackup = readSkippedRestoreMeta(userId);
+        if (skippedBackup === meta.lastSyncedAt) {
+          setRestoreSkipped(true);
+          setRestoreChecked(true);
+          return;
         }
+        // No real conflict — restore silently behind a loading screen. Keep
+        // `cloudMeta` so the manual modal can take over if the silent restore
+        // fails. Awaited here so the sync gate (closed by the caller) stays shut
+        // for the whole fetch+clear+write sequence.
+        setCloudMeta(meta);
+        setAutoRestoring(true);
+        await runSilentRestore(userId);
+        return;
       }
     } catch {
       /* offline or error — skip restore check silently */
@@ -353,6 +369,29 @@ function CashierShell({ children }: { children: React.ReactNode }) {
     }
 
     return syncAllToCloud(userId);
+  }
+
+  // Silent fresh-device restore. On success the page reloads into a populated
+  // local DB; on failure we drop the auto flag so the manual RestoreModal
+  // renders with the error and the user can retry or start empty. restoreFromCloud
+  // only clears local data inside a transaction that rolls back on failure, so a
+  // mid-restore network error never leaves local half-deleted.
+  async function runSilentRestore(userId: string) {
+    try {
+      await restoreFromCloud(userId, setRestoreStep);
+      clearSkippedRestore(userId);
+      await clearAppCaches();
+      try {
+        db.close();
+      } catch {
+        /* non-fatal */
+      }
+      window.location.replace(window.location.pathname || "/");
+    } catch (e) {
+      console.error("[restore:auto]", e);
+      setRestoreError(getRestoreErrorMessage(e));
+      setAutoRestoring(false);
+    }
   }
 
   async function handleRestore() {
@@ -480,7 +519,10 @@ function CashierShell({ children }: { children: React.ReactNode }) {
         >
           <DbBootstrap>
             <ConflictResolverModal userId={uid} />
-            {cloudMeta && (
+            {cloudMeta && autoRestoring && (
+              <PreparingDataScreen step={restoreStep} />
+            )}
+            {cloudMeta && !autoRestoring && (
               <RestoreModal
                 meta={cloudMeta}
                 restoring={restoring}
@@ -675,6 +717,31 @@ function LoadingScreen() {
       <div className="p-8 bg-white rounded-2xl shadow-sm border border-slate-200 text-center">
         <div className="w-8 h-8 border-2 border-brand border-t-transparent rounded-full animate-spin mx-auto mb-4" />
         <p className="text-sm text-slate-500">{t("auth.appLoading")}</p>
+      </div>
+    </div>
+  );
+}
+
+// Full-screen loader shown while a fresh device silently restores cloud data.
+// Replaces the old "Use cloud data? / Start empty" prompt for the no-conflict
+// fresh-device case. The `step` text comes from restoreFromCloud's progress.
+function PreparingDataScreen({ step }: { step: string }) {
+  const { t } = useLocale();
+  useEffect(() => lockBodyScroll(), []);
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-50 px-4"
+      role="status"
+      aria-live="polite"
+    >
+      <div className="p-8 bg-white rounded-2xl shadow-sm border border-slate-200 text-center">
+        <div className="w-8 h-8 border-2 border-brand border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+        <p className="text-sm font-medium text-slate-700">
+          {t("auth.preparingStoreData")}
+        </p>
+        {step && (
+          <p className="mt-1 text-xs text-info animate-pulse">{step}</p>
+        )}
       </div>
     </div>
   );

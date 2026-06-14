@@ -1,7 +1,7 @@
 import { collection, doc, getDoc, getDocs, limit, orderBy, query, setDoc } from 'firebase/firestore';
 import { firestore } from './config';
 import { netSplitField, normalizeBillSplit } from '@/lib/utils/bill-split';
-import type { Bill, BillItem, Customer, CustomerPayment, Product, Purchase, PurchaseItem, Settings, Shift, StockMovement, Supplier, SupplierPayment, SyncConflict } from '@/types/domain';
+import type { Bill, BillItem, BillItemCostAllocation, Customer, CustomerPayment, InventoryLot, Product, Purchase, PurchaseItem, Settings, Shift, StockMovement, Supplier, SupplierPayment, SyncConflict } from '@/types/domain';
 
 export interface CloudSyncMeta {
   lastSyncedAt: string;
@@ -152,6 +152,29 @@ export async function fetchUserShifts(uid: string, maxRows = 500): Promise<Shift
 export async function fetchUserSyncConflicts(uid: string): Promise<SyncConflict[]> {
   const snap = await getDocs(collection(firestore, `users/${uid}/syncConflicts`));
   return snap.docs.map((d) => d.data() as SyncConflict);
+}
+
+/**
+ * FIFO inventory lots — critical for reconstructing true stock/COGS in a
+ * support backup. Without these a restored backup shows stock but can't cost a
+ * sale, and profit reports break. Capped to keep the read bounded.
+ */
+export async function fetchUserInventoryLots(uid: string, maxRows = 5000): Promise<InventoryLot[]> {
+  const snap = await getDocs(
+    query(collection(firestore, `users/${uid}/inventoryLots`), orderBy('createdAt', 'desc'), limit(maxRows)),
+  );
+  return snap.docs.map((d) => d.data() as InventoryLot);
+}
+
+/**
+ * Per-bill-item FIFO cost allocations — the exact lot(s) each sale consumed.
+ * Required to debug/reconstruct profit and void/return cost history.
+ */
+export async function fetchUserBillItemCostAllocations(uid: string, maxRows = 5000): Promise<BillItemCostAllocation[]> {
+  const snap = await getDocs(
+    query(collection(firestore, `users/${uid}/billItemCostAllocations`), orderBy('createdAt', 'desc'), limit(maxRows)),
+  );
+  return snap.docs.map((d) => d.data() as BillItemCostAllocation);
 }
 
 export async function fetchUserSyncMeta(uid: string): Promise<CloudSyncMeta | null> {
@@ -309,6 +332,8 @@ export function buildAdminBackupExport(data: {
   purchaseItems: PurchaseItem[];
   supplierPayments: SupplierPayment[];
   shifts: Shift[];
+  inventoryLots: InventoryLot[];
+  billItemCostAllocations: BillItemCostAllocation[];
   syncConflicts: SyncConflict[];
   syncMeta: CloudSyncMeta | null;
 }) {

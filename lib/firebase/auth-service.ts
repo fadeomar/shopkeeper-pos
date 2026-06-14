@@ -9,6 +9,7 @@ import {
 import {
   doc,
   getDoc,
+  getFirestore,
   setDoc,
   updateDoc,
   collection,
@@ -74,13 +75,21 @@ export async function registerUser(
     const cred = await createUserWithEmailAndPassword(tempAuth, email, password);
     uid = cred.user.uid;
 
+    // Write the profile through the SECONDARY app's Firestore, which is
+    // authenticated as the just-created user (request.auth.uid == uid). This
+    // lets the Firestore rule require `isOwner(uid)` for self-registration —
+    // closing the previous hole where the create landed as an unauthenticated
+    // request. The main-app sign-in still happens afterwards so
+    // onAuthStateChanged only fires once the doc exists.
+    const tempFirestore = getFirestore(tempApp);
+
     // Write Firestore doc before signing in on main auth — no race condition.
     // If the write fails (e.g. rules not deployed, network error), delete the
     // orphaned Firebase Auth user so the same email can be retried immediately
     // instead of getting "email already in use" forever.
     try {
       const now = new Date();
-      await setDoc(doc(firestore, 'users', uid), {
+      await setDoc(doc(tempFirestore, 'users', uid), {
         uid,
         email,
         name,

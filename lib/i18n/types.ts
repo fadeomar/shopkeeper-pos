@@ -653,6 +653,15 @@ export interface TranslationDict {
     zDrawerCashMovements: string;
     zDrawerExpected: string;
     zEndOfDay: string;
+    reconciliationTitle: string;
+    reconciliationExpectedCash: string;
+    reconciliationActualCash: string;
+    reconciliationDifference: string;
+    reconciliationDifferenceDetected: string;
+    reconciliationIssuesTitle: string;
+    reconciliationNoIssues: string;
+    reconciliationMissingShift: string;
+    reconciliationSplitMismatch: string;
   };
   billing: {
     addMiscItem: string;
@@ -1063,6 +1072,7 @@ export interface TranslationDict {
     copyError: string;
     closeRestorePrompt: string;
     appLoading: string;
+    preparingStoreData: string;
     restoreStatBills: string;
     restoreStatProducts: string;
     restoreStatPurchases: string;
@@ -1091,6 +1101,18 @@ export interface TranslationDict {
     conflictReviewDesc: string;
     conflictNoSilentOverwrite: string;
     conflictEntitySuffix: string;
+    conflictItemLabel: string;
+    entityProduct: string;
+    entityCustomer: string;
+    entitySupplier: string;
+    entityBill: string;
+    entityPurchase: string;
+    entityInventoryLot: string;
+    entityBillItemCostAllocation: string;
+    entityStockMovement: string;
+    entitySettings: string;
+    entityShift: string;
+    entityRecord: string;
     needsReview: string;
     keepCloud: string;
     keepLocal: string;
@@ -1372,6 +1394,13 @@ export interface TranslationDict {
     lastCloudSync: string;
     cloudBills: string;
     cloudProducts: string;
+    inventoryLots: string;
+    billCostAllocations: string;
+    fifoPreviewTitle: string;
+    lotRemaining: string;
+    lotUnitCost: string;
+    lotSource: string;
+    noLotData: string;
     netSales: string;
     customerDebt: string;
     lowStock: string;

@@ -35,6 +35,7 @@ import { autoDismissFalseOfflineSaleConflicts, getOpenConflicts } from '@/lib/se
 import { detectProductCloudConflict, prepareSettingsForCloudSync } from '@/lib/firebase/cloud-merge-service';
 import { pullCloudChangesBeforePush } from '@/lib/firebase/cloud-pull-service';
 import { isSyncBlocked } from '@/lib/services/sync-gate';
+import { SYNC_POLL_INTERVAL_MS, isSyncPollingDisabled } from '@/lib/config/sync';
 import type { Product, Settings, StockMovement, SyncQueueItem, SyncStatus } from '@/types/domain';
 
 const MAX_RETRIES = 5;
@@ -624,11 +625,17 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       requestSync();
     }
 
-    const pollInterval = window.setInterval(() => {
-      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
-      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
-      requestSync();
-    }, 30_000);
+    // Polling is configurable (SYNC_POLL_INTERVAL_MS) and suppressed entirely
+    // under test / when explicitly disabled, so a live interval never keeps a
+    // test process (or a battery-sensitive device) running needlessly. The
+    // reconnect / visibility / local-write triggers below still fire.
+    const pollInterval = isSyncPollingDisabled
+      ? null
+      : window.setInterval(() => {
+          if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+          if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+          requestSync();
+        }, SYNC_POLL_INTERVAL_MS);
 
     window.addEventListener('online', requestSync);
     window.addEventListener('shopkeeper:sync-requested', requestSync);
@@ -637,7 +644,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener('online', requestSync);
       window.removeEventListener('shopkeeper:sync-requested', requestSync);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.clearInterval(pollInterval);
+      if (pollInterval !== null) window.clearInterval(pollInterval);
     };
   }, [user?.uid]);
 
