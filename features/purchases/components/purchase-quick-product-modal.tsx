@@ -10,9 +10,11 @@ import { createProductWithInitialMovement } from "@/lib/services/inventory-servi
 import { createId } from "@/lib/utils/id";
 import { localDateKey } from "@/lib/utils/date";
 import { normalizeBarcode } from "@/lib/utils/barcode";
+import { kgToGrams } from "@/lib/utils/weight";
 import { getServiceErrorMessage } from "@/lib/errors/get-error-message";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NumberField } from "@/components/ui/number-field";
 import { NumberFieldRHF } from "@/components/ui/number-field-rhf";
 import { MoneyInputRHF } from "@/components/ui/money-input";
 import { Modal } from "@/components/ui/modal";
@@ -80,6 +82,7 @@ function buildDefaults(input: {
     name: "",
     category: stored.category ?? "General",
     brand: "",
+    saleType: "unit",
     unit: stored.unit ?? "pcs",
     quantityInStock: 0,
     buyPrice: 0,
@@ -150,6 +153,7 @@ export function PurchaseQuickProductModal({
     );
   }, [products, watchedBarcode]);
   const lowMargin = watchedSellPrice > 0 && watchedBuyPrice >= watchedSellPrice;
+  const isWeight = form.watch("saleType") === "weight";
 
   useEffect(() => {
     if (!open) return;
@@ -170,17 +174,29 @@ export function PurchaseQuickProductModal({
     setSaving(true);
     try {
       const now = new Date().toISOString();
+      const valueIsWeight = values.saleType === "weight";
       const product: Product = {
         id: createId("prod"),
         ...values,
+        saleType: valueIsWeight ? "weight" : "unit",
+        // Initial stock is always 0 here — the purchase movement adds it.
         quantityInStock: 0,
+        // Weight thresholds are entered in kg but persisted as integer grams,
+        // matching the main product form. Prices stay per-kg.
+        minimumStockAlert: valueIsWeight
+          ? kgToGrams(values.minimumStockAlert)
+          : values.minimumStockAlert,
         lastUpdated: now,
         syncStatus: "pending",
       };
 
       await createProductWithInitialMovement(product);
       rememberProductDefaults(values);
-      onCreated(product, Math.max(1, Math.trunc(purchaseQuantity || 1)));
+      // Weight buys fractional kilograms; pieces buy whole units.
+      const purchaseQty = valueIsWeight
+        ? Math.max(0, purchaseQuantity || 0)
+        : Math.max(1, Math.trunc(purchaseQuantity || 1));
+      onCreated(product, purchaseQty);
       form.reset(buildDefaults({ barcode: "", settings, supplierName: "" }));
     } catch (error) {
       push(
@@ -223,6 +239,44 @@ export function PurchaseQuickProductModal({
         className="grid grid-cols-1 gap-4 sm:grid-cols-2"
         onSubmit={form.handleSubmit(submit)}
       >
+        {/* Selling method: lets a weight product (e.g. sugar by kg) be created
+            inline during a purchase. Mirrors the main product form. */}
+        <div className="sm:col-span-2 flex flex-col gap-1.5">
+          <span className="text-sm font-medium text-slate-700">
+            {t("weight.sellingMethod")}
+          </span>
+          <div className="flex gap-2" role="group" aria-label={t("weight.sellingMethod")}>
+            <Button
+              type="button"
+              variant={isWeight ? "secondary" : "primary"}
+              aria-pressed={!isWeight}
+              className="flex-1"
+              onClick={() => {
+                form.setValue("saleType", "unit", { shouldDirty: true });
+                form.setValue("unit", "pcs", { shouldDirty: true });
+                setPurchaseQuantity((q) => Math.max(1, Math.trunc(q || 1)));
+              }}
+            >
+              {t("weight.piece")}
+            </Button>
+            <Button
+              type="button"
+              variant={isWeight ? "primary" : "secondary"}
+              aria-pressed={isWeight}
+              className="flex-1"
+              onClick={() => {
+                form.setValue("saleType", "weight", { shouldDirty: true });
+                form.setValue("unit", "kg", { shouldDirty: true });
+              }}
+            >
+              {t("weight.weight")}
+            </Button>
+          </div>
+          {isWeight && (
+            <span className="text-xs text-slate-500">{t("weight.deductHelp")}</span>
+          )}
+        </div>
+
         <Field label={t("products.name")} error={errors.name?.message}>
           <Input autoFocus {...form.register("name")} />
         </Field>
@@ -246,14 +300,23 @@ export function PurchaseQuickProductModal({
           )}
         </Field>
 
-        <Field label={t("purchases.purchaseQuantity")}>
-          <QuantityStepper
-            value={purchaseQuantity}
-            onChange={setPurchaseQuantity}
-            min={1}
-          />
+        <Field label={isWeight ? t("weight.purchaseQtyKg") : t("purchases.purchaseQuantity")}>
+          {isWeight ? (
+            <NumberField
+              value={purchaseQuantity}
+              onValueChange={setPurchaseQuantity}
+              precision="decimal"
+              min={0}
+            />
+          ) : (
+            <QuantityStepper
+              value={purchaseQuantity}
+              onChange={setPurchaseQuantity}
+              min={1}
+            />
+          )}
         </Field>
-        <Field label={t("products.buyPrice")} error={errors.buyPrice?.message}>
+        <Field label={isWeight ? t("weight.costPerKg") : t("products.buyPrice")} error={errors.buyPrice?.message}>
           <MoneyInputRHF
             name="buyPrice"
             control={form.control}
@@ -262,7 +325,7 @@ export function PurchaseQuickProductModal({
           />
         </Field>
 
-        <Field label={t("products.sellPrice")} error={errors.sellPrice?.message}>
+        <Field label={isWeight ? t("weight.sellPricePerKg") : t("products.sellPrice")} error={errors.sellPrice?.message}>
           <MoneyInputRHF
             name="sellPrice"
             control={form.control}
@@ -287,13 +350,13 @@ export function PurchaseQuickProductModal({
         </Field>
 
         <Field
-          label={t("products.minimumStockAlert")}
+          label={isWeight ? t("weight.lowStockKg") : t("products.minimumStockAlert")}
           error={errors.minimumStockAlert?.message}
         >
           <NumberFieldRHF
             name="minimumStockAlert"
             control={form.control}
-            precision="integer"
+            precision={isWeight ? "decimal" : "integer"}
             min={0}
           />
         </Field>
