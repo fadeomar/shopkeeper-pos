@@ -360,6 +360,49 @@ export interface TranslationDict {
     requirePositivePricePerKg: string;
     requireNonNegativeStock: string;
   };
+  multiUnit: {
+    label: string;
+    badge: string;
+    units: string;
+    baseUnit: string;
+    baseUnitName: string;
+    unitName: string;
+    conversion: string;
+    equals: string;
+    canSell: string;
+    canPurchase: string;
+    defaultUnit: string;
+    sellPrice: string;
+    buyPrice: string;
+    barcode: string;
+    addUnit: string;
+    removeUnit: string;
+    template: string;
+    templatePharmacy: string;
+    templateSupermarket: string;
+    templateCustom: string;
+    pharmacyHint: string;
+    apply: string;
+    deductHelp: string;
+    changeUnit: string;
+    countByUnits: string;
+    totalLabel: string;
+    selectUnit: string;
+    pill: string;
+    strip: string;
+    box: string;
+    carton: string;
+    pack: string;
+    piece: string;
+    errUnits: string;
+    errSellable: string;
+    errDefault: string;
+    errMultipleDefault: string;
+    errBase: string;
+    errName: string;
+    errConversion: string;
+    errBarcode: string;
+  };
   products: {
     title: string;
     subtitle: string;
@@ -1139,6 +1182,7 @@ export interface TranslationDict {
     entitySupplier: string;
     entityBill: string;
     entityPurchase: string;
+    entityProductUnit: string;
     entityInventoryLot: string;
     entityBillItemCostAllocation: string;
     entityStockMovement: string;
@@ -1639,6 +1683,9 @@ export interface TranslationDict {
     INVENTORY_LOT_NOT_FOUND: string;
     INVENTORY_LOT_INSUFFICIENT_STOCK: string;
     INVENTORY_LOT_OVER_ALLOCATED: string;
+    // Multi-unit products
+    PRODUCT_UNIT_INVALID: string;
+    PRODUCT_UNIT_CONVERSION_LOCKED: string;
     // Payments
     CUSTOMER_REQUIRED: string;
     SUPPLIER_REQUIRED: string;

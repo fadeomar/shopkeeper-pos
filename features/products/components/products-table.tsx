@@ -14,6 +14,7 @@ import {
 import { settingsRepo } from "@/lib/db/repositories";
 import { isLowStock } from "@/lib/utils/stock";
 import { formatStockDisplay } from "@/lib/utils/weight";
+import { formatProductStock } from "@/lib/utils/multi-unit";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
@@ -26,7 +27,7 @@ import { Badge } from "@/components/ui/badge";
 import { PriceDisplay } from "@/components/pos/price-display";
 import { useToast } from "@/components/ui/toast";
 import { useLocale } from "@/components/providers/locale-context";
-import type { Product, SyncStatus } from "@/types/domain";
+import type { Product, ProductUnit, SyncStatus } from "@/types/domain";
 import clsx from "clsx";
 import type { ColumnDef } from "@tanstack/react-table";
 
@@ -63,6 +64,16 @@ export function ProductsTable({
     () => db.products.orderBy("name").toArray(),
     [],
   );
+  const productUnits = useLiveQuery(() => db.productUnits.toArray(), []);
+  const unitsByProduct = useMemo(() => {
+    const map = new Map<string, ProductUnit[]>();
+    for (const unit of productUnits ?? []) {
+      const list = map.get(unit.productId) ?? [];
+      list.push(unit);
+      map.set(unit.productId, list);
+    }
+    return map;
+  }, [productUnits]);
   const settings = useLiveQuery(() => settingsRepo.get(), []);
   const { push } = useToast();
   const currency = settings?.currency ?? "ILS";
@@ -180,6 +191,11 @@ export function ProductsTable({
               {t("weight.badge")}
             </Badge>
           )}
+          {row.original.saleType === "multi_unit" && (
+            <Badge tone="info" className="ms-2 align-middle">
+              {t("multiUnit.badge")}
+            </Badge>
+          )}
           {row.original.shelfLocation && (
             <div className="text-xs text-slate-400">
               {t("products.shelf")} {row.original.shelfLocation}
@@ -193,8 +209,19 @@ export function ProductsTable({
       header: t("weight.available"),
       accessorKey: "quantityInStock",
       cell: ({ row }) => (
-        <span className="font-semibold tabular-nums">
-          {formatStockDisplay(row.original.saleType, row.original.quantityInStock)}
+        <span
+          className="font-semibold tabular-nums"
+          title={
+            row.original.saleType === "multi_unit"
+              ? `${row.original.quantityInStock} ${row.original.unit}`
+              : undefined
+          }
+        >
+          {formatProductStock(
+            row.original,
+            unitsByProduct.get(row.original.id),
+            row.original.quantityInStock,
+          )}
         </span>
       ),
     },
@@ -348,6 +375,11 @@ export function ProductsTable({
                             {t("weight.badge")}
                           </Badge>
                         )}
+                        {product.saleType === "multi_unit" && (
+                          <Badge tone="info" className="ms-2 align-middle">
+                            {t("multiUnit.badge")}
+                          </Badge>
+                        )}
                       </p>
                       <p className="text-xs text-slate-500 font-mono truncate">
                         {product.barcode}
@@ -370,7 +402,11 @@ export function ProductsTable({
                           lowStock ? "text-warning" : "text-slate-900",
                         )}
                       >
-                        {formatStockDisplay(product.saleType, product.quantityInStock)}
+                        {formatProductStock(
+                          product,
+                          unitsByProduct.get(product.id),
+                          product.quantityInStock,
+                        )}
                       </p>
                     </div>
                     <div className="rounded-xl bg-white/75 p-2">

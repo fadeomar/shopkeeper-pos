@@ -301,11 +301,22 @@ export function summarizeProductSales(
     // All متفرقات lines collapse into a single "misc" row; real products key
     // by their own id. Misc rows carry no product, no barcode, and no profit.
     const isMisc = isMiscLine(item);
-    const key = isMisc ? 'misc' : item.originalProductId || item.barcodeAtSale || item.id;
+    // Multi-unit lines group by product + sold unit so each unit (box/strip)
+    // gets its own row with a clean, non-mixed quantity.
+    const isMultiUnitLine = item.saleType === 'multi_unit' && Boolean(item.saleUnitIdAtSale);
+    const key = isMisc
+      ? 'misc'
+      : isMultiUnitLine
+        ? `${item.originalProductId}::${item.saleUnitIdAtSale}`
+        : item.originalProductId || item.barcodeAtSale || item.id;
     const product = isMisc ? undefined : productById.get(item.originalProductId);
     const existing = rows.get(key) ?? {
       key,
-      name: isMisc ? item.productNameAtSale.split(' - ')[0] : item.productNameAtSale,
+      name: isMisc
+        ? item.productNameAtSale.split(' - ')[0]
+        : isMultiUnitLine
+          ? `${item.productNameAtSale} (${item.saleUnitNameAtSale})`
+          : item.productNameAtSale,
       barcode: isMisc ? '—' : item.barcodeAtSale,
       category: item.categoryAtSale,
       saleType: product?.saleType ?? item.saleType,
@@ -318,9 +329,10 @@ export function summarizeProductSales(
       isMisc,
     };
 
-    // Net base units (grams for weight) for accurate weight display.
+    // Net base units (grams for weight, base pieces for multi_unit) for
+    // accurate base-quantity display.
     const netBase =
-      item.saleType === 'weight'
+      item.saleType === 'weight' || item.saleType === 'multi_unit'
         ? Math.max(0, (item.baseQuantitySold ?? 0) - (item.baseQuantityReturned ?? 0))
         : netQuantity;
 

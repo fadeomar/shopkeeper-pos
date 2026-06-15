@@ -36,20 +36,45 @@ import type {
  */
 function resolvePurchaseLine(line: PurchaseDraftItem): {
   isWeight: boolean;
+  isMulti: boolean;
   baseUnit: LotBaseUnit;
+  conversion: number;
   baseQuantity: number;
   pricingQuantity: number;
 } {
   const isWeight = line.saleType === 'weight';
+  const isMulti = line.saleType === 'multi_unit';
+  const conversion = isMulti ? line.conversionToBase ?? 1 : 1;
   const baseQuantity = isWeight
     ? Math.round(line.baseQuantity ?? kgToGrams(line.quantity))
-    : line.quantity;
+    : isMulti
+      ? Math.round(line.baseQuantity ?? line.quantity * conversion)
+      : line.quantity;
   return {
     isWeight,
+    isMulti,
+    // multi_unit is a 'piece' lot (its base unit is a single base piece); only
+    // weight uses gram lots.
     baseUnit: isWeight ? 'gram' : 'piece',
+    conversion,
     baseQuantity,
+    // The money multiplier: kg for weight, the bought-unit count for multi_unit
+    // and unit lines. unitCost is per that unit.
     pricingQuantity: line.quantity,
   };
+}
+
+/**
+ * Convert a purchase item's base quantity back to its pricing/display quantity:
+ * kg for weight, bought-unit count (base ÷ conversion) for multi_unit, base
+ * count otherwise. Mirrors pricingQtyForItem in billing-service.
+ */
+function pricingQtyForPurchaseItem(item: PurchaseItem, baseQuantity: number): number {
+  if (item.saleType === 'weight') return pricingQuantityFor('weight', baseQuantity);
+  if (item.saleType === 'multi_unit') {
+    return baseQuantity / (item.conversionToBaseAtPurchase ?? 1);
+  }
+  return baseQuantity;
 }
 
 function requestSync(): void {
@@ -300,7 +325,8 @@ export async function createFinalizedPurchase(input: {
       const resolvedShiftId = activeShift?.id;
 
       const purchaseItems: PurchaseItem[] = input.items.map((item) => {
-        const { isWeight, baseUnit, baseQuantity, pricingQuantity } = resolvePurchaseLine(item);
+        const { isWeight, isMulti, baseUnit, conversion, baseQuantity, pricingQuantity } =
+          resolvePurchaseLine(item);
         return {
           id: createId("purchase_item"),
           purchaseId,
@@ -310,10 +336,18 @@ export async function createFinalizedPurchase(input: {
           categoryAtPurchase: item.category,
           itemKind: isMiscLine(item) ? "misc" : "product",
           miscDescription: item.miscDescription,
-          // Weight lines store grams + per-kg cost; baseUnit lets the lot and
-          // FIFO COGS engine reconcile the two. Unit/misc lines are pieces.
-          saleType: isWeight ? "weight" : undefined,
+          // Weight lines store grams + per-kg cost; multi_unit lines store base
+          // pieces + per-bought-unit cost (baseUnit + conversion let the lot and
+          // FIFO COGS engine reconcile them). Unit/misc lines are pieces.
+          saleType: isWeight ? "weight" : isMulti ? "multi_unit" : undefined,
           baseUnit,
+          // multi_unit: snapshot of the unit bought (box/strip) for the receipt.
+          purchaseUnitIdAtPurchase: isMulti ? item.purchaseUnitId : undefined,
+          purchaseUnitNameAtPurchase: isMulti ? item.purchaseUnitName : undefined,
+          conversionToBaseAtPurchase: isMulti ? conversion : undefined,
+          baseQuantityPurchased: isMulti ? baseQuantity : undefined,
+          // quantityPurchased is the BASE count (grams / base pieces) so stock,
+          // lots, void, and return all work in base units — same as weight.
           quantityPurchased: baseQuantity,
           unitCostAtPurchase: item.unitCost,
           lineSubtotal: calculateLineSubtotal(pricingQuantity, item.unitCost),
@@ -370,8 +404,14 @@ export async function createFinalizedPurchase(input: {
         );
         // If multiple lines reference the same product with different costs,
         // use the latest line's cost as the new buyPrice. Edge case but
-        // possible if the cashier accidentally entered two lines.
-        const latestCost = purchasedLines[purchasedLines.length - 1].unitCost;
+        // possible if the cashier accidentally entered two lines. For
+        // multi_unit, buyPrice is the BASE-unit cost (per pill), so divide the
+        // per-bought-unit cost by the conversion.
+        const latestLine = purchasedLines[purchasedLines.length - 1];
+        const latestResolved = resolvePurchaseLine(latestLine);
+        const latestCost = latestResolved.isMulti
+          ? roundMoney(latestLine.unitCost / (latestResolved.conversion || 1))
+          : latestLine.unitCost;
         return {
           ...product,
           quantityInStock: product.quantityInStock + totalQty,
@@ -492,9 +532,10 @@ function calculateReturnedPurchaseLineValue(
   item: PurchaseItem,
   quantity: number,
 ) {
-  // `quantity` is in base units (grams for weight); unitCostAtPurchase is per
-  // kg, so price the return against the kilograms returned.
-  const pricingQuantity = pricingQuantityFor(item.saleType, quantity);
+  // `quantity` is in base units (grams for weight, base pieces for multi_unit);
+  // unitCostAtPurchase is per kg / per bought unit, so price the return against
+  // the matching pricing quantity (kg / bought-unit count).
+  const pricingQuantity = pricingQtyForPurchaseItem(item, quantity);
   const lineAmount = calculateLineSubtotal(pricingQuantity, item.unitCostAtPurchase);
   const subtotalRatio = purchase.subtotal > 0 ? lineAmount / purchase.subtotal : 0;
   const discountShare = allocateMoney(purchase.discountAmount, subtotalRatio);

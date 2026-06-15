@@ -11,6 +11,7 @@ import {
   syncCustomersToCloud,
   syncExpensesToCloud,
   syncProductsToCloud,
+  syncProductUnitsToCloud,
   syncPurchaseToCloud,
   syncSettingsToCloud,
   syncShiftsToCloud,
@@ -110,6 +111,9 @@ function jobPriority(job: SyncQueueItem): number {
       return isSequenceJob(job) ? 8 : 10;
     case 'product':
       return 11;
+    // Product units depend on their parent product — right after it.
+    case 'productUnit':
+      return 11.5;
     // FIFO records depend on product (lots) and bill (allocations) — after both.
     case 'inventoryLot':
     case 'billItemCostAllocation':
@@ -181,6 +185,8 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
         await db.purchases.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
       } else if (job.entity === 'product') {
         await db.products.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
+      } else if (job.entity === 'productUnit') {
+        await db.productUnits.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
       } else if (job.entity === 'stockMovement') {
         await db.stockMovements.update(job.entityId, { syncStatus: 'blocked', lastSyncError: message });
       } else if (job.entity === 'customerPayment') {
@@ -284,6 +290,16 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
       const syncedAt = await syncProductsToCloud(uid, [product]);
       if (syncedAt) {
         await db.products.update(job.entityId, { syncStatus: 'synced', syncedAt, lastSyncError: undefined });
+      }
+    } else if (job.entity === 'productUnit') {
+      const unit = await db.productUnits.get(job.entityId);
+      if (!unit) {
+        await markSynced(job.id);
+        return;
+      }
+      const syncedAt = await syncProductUnitsToCloud(uid, [unit]);
+      if (syncedAt) {
+        await db.productUnits.update(job.entityId, { syncStatus: 'synced', syncedAt, lastSyncError: undefined });
       }
     } else if (job.entity === 'stockMovement') {
       const movement = await db.stockMovements.get(job.entityId);
@@ -435,6 +451,8 @@ async function processJob(uid: string, job: SyncQueueItem): Promise<void> {
       await db.purchases.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
     } else if (job.entity === 'product') {
       await db.products.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
+    } else if (job.entity === 'productUnit') {
+      await db.productUnits.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
     } else if (job.entity === 'stockMovement') {
       await db.stockMovements.update(job.entityId, { syncStatus: 'failed', lastSyncError: msg });
     } else if (job.entity === 'customerPayment') {
@@ -473,6 +491,8 @@ async function markE2EJobEntitySynced(job: SyncQueueItem, syncedAt: string): Pro
     await db.purchases.update(job.entityId, patch);
   } else if (job.entity === 'product') {
     await db.products.update(job.entityId, patch);
+  } else if (job.entity === 'productUnit') {
+    await db.productUnits.update(job.entityId, patch);
   } else if (job.entity === 'stockMovement') {
     await db.stockMovements.update(job.entityId, patch);
   } else if (job.entity === 'customerPayment') {

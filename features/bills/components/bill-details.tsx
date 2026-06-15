@@ -80,7 +80,7 @@ function SummaryRow({
  * unit returnBillItem expects and the inventory-accurate "can still return".
  */
 function remainingBaseQuantity(item: BillItem) {
-  if (item.saleType === "weight") {
+  if (item.saleType === "weight" || item.saleType === "multi_unit") {
     return Math.max(0, (item.baseQuantitySold ?? 0) - (item.baseQuantityReturned ?? 0));
   }
   return Math.max(0, item.quantitySold - (item.quantityReturned ?? 0));
@@ -127,11 +127,16 @@ export function BillDetails({ billId }: { billId: string }) {
   const billCanVoid = bill.status === "finalized";
   const billCanReturn = bill.status !== "voided";
   const returnIsWeight = returnItem?.saleType === "weight";
-  // Remaining in base units (grams/pieces); the input shows kg for weight.
+  const returnIsMulti = returnItem?.saleType === "multi_unit";
+  const returnConversion = returnItem?.conversionToBaseAtSale ?? 1;
+  // Remaining in base units (grams/pieces); the input shows kg for weight and
+  // the sold-unit count (base ÷ conversion) for multi_unit.
   const selectedRemainingBase = returnItem ? remainingBaseQuantity(returnItem) : 0;
   const selectedRemainingInput = returnIsWeight
     ? gramsToKg(selectedRemainingBase)
-    : selectedRemainingBase;
+    : returnIsMulti
+      ? Math.floor(selectedRemainingBase / returnConversion)
+      : selectedRemainingBase;
 
   const itemColumns: ColumnDef<BillItem, unknown>[] = [
     {
@@ -163,6 +168,9 @@ export function BillDetails({ billId }: { billId: string }) {
             row.original.baseQuantitySold,
             row.original.quantitySold,
           )}
+          {row.original.saleType === "multi_unit" && row.original.saleUnitNameAtSale
+            ? ` ${row.original.saleUnitNameAtSale}`
+            : ""}
         </span>
       ),
     },
@@ -236,9 +244,14 @@ export function BillDetails({ billId }: { billId: string }) {
             disabled={!billCanReturn || remainingBase <= 0}
             onClick={() => {
               setReturnItem(item);
-              // returnQuantity is in the input unit: kg for weight, pieces else.
+              // returnQuantity is in the input unit: kg for weight, sold-unit
+              // count for multi_unit, pieces otherwise.
               setReturnQuantity(
-                item.saleType === "weight" ? gramsToKg(remainingBase) : remainingBase,
+                item.saleType === "weight"
+                  ? gramsToKg(remainingBase)
+                  : item.saleType === "multi_unit"
+                    ? Math.floor(remainingBase / (item.conversionToBaseAtSale ?? 1))
+                    : remainingBase,
               );
             }}
           >
@@ -273,9 +286,14 @@ export function BillDetails({ billId }: { billId: string }) {
       await returnBillItem({
         billId: bill!.id,
         itemId: returnItem.id,
-        // Service expects base units (grams for weight); the input is kg.
-        quantity:
-          returnItem.saleType === "weight" ? kgToGrams(returnQuantity) : returnQuantity,
+        // Service expects base units: grams for weight, base pieces for
+        // multi_unit (sold-unit count × conversion); the input is kg /
+        // sold-unit count respectively.
+        quantity: returnIsWeight
+          ? kgToGrams(returnQuantity)
+          : returnIsMulti
+            ? Math.round(returnQuantity * returnConversion)
+            : returnQuantity,
         reason: returnReason,
       });
       setReturnItem(null);
@@ -504,11 +522,15 @@ export function BillDetails({ billId }: { billId: string }) {
         title={t("bills.returnItem")}
         description={
           returnItem
-            ? `${returnItem.productNameAtSale} — ${t("bills.remainingQty")}: ${formatWeightOrCount(
-                returnItem.saleType,
-                selectedRemainingBase,
-                selectedRemainingBase,
-              )}`
+            ? `${returnItem.productNameAtSale} — ${t("bills.remainingQty")}: ${
+                returnIsMulti
+                  ? `${selectedRemainingInput} ${returnItem.saleUnitNameAtSale ?? ""}`.trim()
+                  : formatWeightOrCount(
+                      returnItem.saleType,
+                      selectedRemainingBase,
+                      selectedRemainingBase,
+                    )
+              }`
             : undefined
         }
         onClose={() => setReturnItem(null)}
@@ -559,12 +581,19 @@ export function BillDetails({ billId }: { billId: string }) {
                 <span className="text-sm text-slate-500">{t("weight.kgUnit")}</span>
               </div>
             ) : (
-              <QuantityStepper
-                value={returnQuantity}
-                onChange={setReturnQuantity}
-                min={1}
-                max={selectedRemainingInput}
-              />
+              <div className="mt-2 flex items-center gap-2">
+                <QuantityStepper
+                  value={returnQuantity}
+                  onChange={setReturnQuantity}
+                  min={1}
+                  max={selectedRemainingInput}
+                />
+                {returnIsMulti && returnItem?.saleUnitNameAtSale && (
+                  <span className="text-sm text-slate-500">
+                    {returnItem.saleUnitNameAtSale}
+                  </span>
+                )}
+              </div>
             )}
           </div>
           <div>

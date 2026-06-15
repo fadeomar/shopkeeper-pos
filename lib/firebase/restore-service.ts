@@ -31,6 +31,7 @@ import type {
   Expense,
   InventoryLot,
   Product,
+  ProductUnit,
   Purchase,
   PurchaseItem,
   Settings,
@@ -223,6 +224,31 @@ function normalizeProduct(
     status: product.status ?? "active",
     ...syncedMeta(syncedAt),
   } as Product;
+}
+
+function normalizeProductUnit(
+  snapshot: QueryDocumentSnapshot<DocumentData>,
+  syncedAt: string,
+): ProductUnit {
+  const unit = withDocId<ProductUnit>(snapshot) as Partial<ProductUnit> & {
+    id: string;
+  };
+  return {
+    ...unit,
+    productId: unit.productId || "",
+    name:
+      typeof unit.name === "string" && unit.name.trim()
+        ? unit.name.trim()
+        : "unit",
+    conversionToBase: Math.max(1, Math.round(finiteNumber(unit.conversionToBase, 1))),
+    sellPrice: Math.max(0, finiteNumber(unit.sellPrice)),
+    canSell: unit.canSell ?? true,
+    canPurchase: unit.canPurchase ?? true,
+    sortOrder: finiteNumber(unit.sortOrder),
+    createdAt: unit.createdAt || syncedAt,
+    updatedAt: unit.updatedAt || unit.createdAt || syncedAt,
+    ...syncedMeta(syncedAt),
+  } as ProductUnit;
 }
 
 function normalizeStockMovement(
@@ -962,6 +988,11 @@ async function doRestoreFromCloud(
     normalizeProduct(snapshot, restoredAt),
   );
 
+  onProgress?.("Fetching product units…");
+  const productUnits = await readUserCollection(uid, "productUnits", (snapshot) =>
+    normalizeProductUnit(snapshot, restoredAt),
+  );
+
   onProgress?.("Fetching stock movements…");
   const cloudStockMovements = await readUserCollection(
     uid,
@@ -1082,6 +1113,7 @@ async function doRestoreFromCloud(
       bills: bills.length,
       billItems: productRepair.billItems.length,
       products: productRepair.products.length,
+      productUnits: productUnits.length,
       stockMovements: productRepair.stockMovements.length,
       customerPayments: customerPayments.length,
       customers: customers.length,
@@ -1107,6 +1139,7 @@ async function doRestoreFromCloud(
         db.bills,
         db.billItems,
         db.products,
+        db.productUnits,
         db.stockMovements,
         db.customerPayments,
         db.customers,
@@ -1132,6 +1165,7 @@ async function doRestoreFromCloud(
           db.bills.clear(),
           db.billItems.clear(),
           db.products.clear(),
+          db.productUnits.clear(),
           db.stockMovements.clear(),
           db.customerPayments.clear(),
           db.customers.clear(),
@@ -1154,6 +1188,7 @@ async function doRestoreFromCloud(
           await db.billItems.bulkPut(productRepair.billItems);
         if (productRepair.products.length)
           await db.products.bulkPut(productRepair.products);
+        if (productUnits.length) await db.productUnits.bulkPut(productUnits);
         if (productRepair.stockMovements.length)
           await db.stockMovements.bulkPut(productRepair.stockMovements);
         if (customerPayments.length)

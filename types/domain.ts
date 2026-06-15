@@ -8,8 +8,15 @@ export type EntityStatus = 'active' | 'inactive';
  *               are GRAMS (integer), and `buyPrice`/`sellPrice` are price PER
  *               KILOGRAM. A missing `saleType` always means 'unit', so every
  *               pre-existing product keeps its current meaning.
+ *  - 'multi_unit' : sold/bought in related units (pill/strip/box). Stock is
+ *               tracked in the smallest BASE unit (a piece — see ProductUnit),
+ *               so `quantityInStock`/`minimumStockAlert` are base-unit counts.
+ *               Per-unit prices live on the product's ProductUnit rows; the
+ *               legacy buyPrice/sellPrice hold the base-unit values. The base
+ *               unit is a 'piece' lot, so FIFO/stock math is identical to a
+ *               unit product (conversion factor 1).
  */
-export type ProductSaleType = 'unit' | 'weight';
+export type ProductSaleType = 'unit' | 'weight' | 'multi_unit';
 
 /**
  * Base (integer) unit a lot/line is tracked in. Pieces for unit products,
@@ -149,7 +156,7 @@ export function resolveRolePermissions(
 }
 
 export type SyncStatus = 'pending' | 'syncing' | 'synced' | 'failed' | 'conflict' | 'blocked';
-export type SyncEntity = 'bill' | 'product' | 'settings' | 'stockMovement' | 'customerPayment' | 'customer' | 'shift' | 'supplier' | 'purchase' | 'supplierPayment' | 'auditEvent' | 'cashMovement' | 'expense' | 'inventoryLot' | 'billItemCostAllocation';
+export type SyncEntity = 'bill' | 'product' | 'productUnit' | 'settings' | 'stockMovement' | 'customerPayment' | 'customer' | 'shift' | 'supplier' | 'purchase' | 'supplierPayment' | 'auditEvent' | 'cashMovement' | 'expense' | 'inventoryLot' | 'billItemCostAllocation';
 export type SyncOperation = 'create' | 'update' | 'delete' | 'upsert';
 
 export interface SyncQueueItem {
@@ -232,8 +239,13 @@ export interface Product {
   brand?: string;
   unit: string;
   // 'unit' (or absent) → pieces. 'weight' → quantityInStock/minimumStockAlert
-  // are grams and buyPrice/sellPrice are per-kilogram. See ProductSaleType.
+  // are grams and buyPrice/sellPrice are per-kilogram. 'multi_unit' →
+  // quantityInStock/minimumStockAlert are base-unit (piece) counts and the
+  // sellable/purchasable units live in the productUnits table. See ProductSaleType.
   saleType?: ProductSaleType;
+  // multi_unit only: id of the ProductUnit used by default when selling (the
+  // unit the POS adds to the cart). Absent for unit/weight products.
+  defaultSaleUnitId?: string;
   quantityInStock: number;
   buyPrice: number;
   sellPrice: number;
@@ -245,6 +257,35 @@ export interface Product {
   shelfLocation?: string;
   notes?: string;
   status: EntityStatus;
+  syncStatus?: SyncStatus;
+  syncedAt?: string;
+  lastSyncError?: string;
+}
+
+/**
+ * A sellable/purchasable unit of a `multi_unit` product (e.g. pill, strip,
+ * box). One Product has many ProductUnits. Stock is stored on the Product in
+ * the smallest BASE unit; each ProductUnit declares how many base units it
+ * equals via `conversionToBase` (a positive integer — the base unit itself has
+ * conversionToBase = 1). Prices are independent per unit (a box is NOT forced
+ * to equal pill price × conversion). Unit/weight products have NO ProductUnit
+ * rows — a virtual `legacy-unit` is synthesized at read time (see
+ * lib/utils/multi-unit.ts).
+ */
+export interface ProductUnit {
+  id: string;
+  productId: string;
+  name: string;              // pill / strip / box — حبة / شريط / علبة
+  conversionToBase: number;  // pill=1, strip=10, box=150 (positive integer)
+  sellPrice: number;
+  buyPrice?: number;
+  barcode?: string;
+  canSell: boolean;
+  canPurchase: boolean;
+  isDefaultSaleUnit?: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
   syncStatus?: SyncStatus;
   syncedAt?: string;
   lastSyncError?: string;
@@ -323,14 +364,23 @@ export interface BillItem {
   // existing `price × quantity` money math keeps working unchanged. The
   // integer-gram quantities live in baseQuantitySold/baseQuantityReturned.
   saleType?: ProductSaleType;
+  // multi_unit lines only: snapshot of the unit sold (pill/strip/box). Money
+  // fields below are per SOLD unit and `quantitySold` is the sold-unit count,
+  // so all `price × quantity` math is unchanged; `baseQuantitySold` holds the
+  // integer base (piece) count that stock/FIFO consume. Old bills lack these
+  // and render as plain unit lines.
+  saleUnitIdAtSale?: string;
+  saleUnitNameAtSale?: string;
+  conversionToBaseAtSale?: number;
   quantitySold: number;
   unitBuyPriceAtSale: number;
   unitSellPriceAtSale: number;
   lineSubtotal: number;
   lineProfit: number;
   quantityReturned?: number;
-  // Weight lines only: integer grams sold / returned (the inventory-accurate
-  // quantity, used for lot allocation and weight display).
+  // Weight lines only: integer grams sold / returned. multi_unit lines: integer
+  // base-unit (piece) count sold / returned — the inventory-accurate quantity
+  // used for lot allocation and stock math.
   baseQuantitySold?: number;
   baseQuantityReturned?: number;
   createdAt: string;
@@ -461,6 +511,14 @@ export interface PurchaseItem {
   // weight lot it creates.
   saleType?: ProductSaleType;
   baseUnit?: LotBaseUnit;
+  // multi_unit lines only: snapshot of the unit bought (strip/box).
+  // `quantityPurchased` is the count in that unit and `unitCostAtPurchase` is
+  // the cost per that unit; `baseQuantityPurchased` is the integer base (piece)
+  // count added to stock.
+  purchaseUnitIdAtPurchase?: string;
+  purchaseUnitNameAtPurchase?: string;
+  conversionToBaseAtPurchase?: number;
+  baseQuantityPurchased?: number;
   quantityPurchased: number;
   unitCostAtPurchase: number;
   lineSubtotal: number;
@@ -840,8 +898,14 @@ export interface PurchaseDraftItem {
   currentStock: number;
   // Absent === 'unit'. For 'weight' lines, `quantity` is kilograms (the
   // pricing unit, may be fractional) and `baseQuantity` is the integer grams
-  // it converts to; `unitCost` is cost per kg.
+  // it converts to; `unitCost` is cost per kg. For 'multi_unit' lines,
+  // `quantity` is the bought-unit count, `baseQuantity = quantity ×
+  // conversionToBase` is the piece count, and `unitCost` is cost per bought unit.
   saleType?: ProductSaleType;
+  // multi_unit only: which ProductUnit this line is bought in.
+  purchaseUnitId?: string;
+  purchaseUnitName?: string;
+  conversionToBase?: number;
   baseQuantity?: number;
   quantity: number;
   unitCost: number;
@@ -877,8 +941,16 @@ export interface BillDraftItem {
   availableStock: number;
   // Absent === 'unit'. For 'weight' lines, `quantity` is kilograms (pricing
   // unit, may be fractional), `baseQuantity` is the integer grams sold, and
-  // `availableStock` is in grams; unit prices are per kg.
+  // `availableStock` is in grams; unit prices are per kg. For 'multi_unit'
+  // lines, `quantity` is the sold-unit count, `baseQuantity = quantity ×
+  // conversionToBase` is the piece count, `availableStock` is in base pieces,
+  // and unit prices are per sold unit.
   saleType?: ProductSaleType;
+  // multi_unit only: which ProductUnit this line sells in. The cart is keyed by
+  // productId + saleUnitId so the same product can appear as box AND strip.
+  saleUnitId?: string;
+  saleUnitName?: string;
+  conversionToBase?: number;
   baseQuantity?: number;
   quantity: number;
   unitBuyPrice: number;

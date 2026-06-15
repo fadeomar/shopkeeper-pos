@@ -22,7 +22,8 @@ import { useToast } from "@/components/ui/toast";
 import { useLocale } from "@/components/providers/locale-context";
 import { PageShell } from "@/components/ui/page-shell";
 import { PageHeader } from "@/components/ui/page-header";
-import type { Product, StockMovement } from "@/types/domain";
+import type { Product, ProductUnit, StockMovement } from "@/types/domain";
+import { formatProductStock } from "@/lib/utils/multi-unit";
 import type { ColumnDef } from "@tanstack/react-table";
 
 type InventoryModalMode = "count" | null;
@@ -66,7 +67,22 @@ export function InventoryWorkspace() {
     [],
   );
   const inventoryLots = useLiveQuery(() => db.inventoryLots.toArray(), []);
+  const productUnits = useLiveQuery(() => db.productUnits.toArray(), []);
+  const unitsByProduct = useMemo(() => {
+    const map = new Map<string, ProductUnit[]>();
+    for (const unit of productUnits ?? []) {
+      const list = map.get(unit.productId) ?? [];
+      list.push(unit);
+      map.set(unit.productId, list);
+    }
+    return map;
+  }, [productUnits]);
   const settings = useLiveQuery(() => settingsRepo.get(), []);
+
+  // Stock line for the inventory cards: a mixed-unit breakdown for multi_unit
+  // products ("9 box + 12 strip + 7 pill"), the plain count otherwise.
+  const renderStockMeta = (product: Product) =>
+    `${formatProductStock(product, unitsByProduct.get(product.id), product.quantityInStock)} / min ${product.minimumStockAlert}`;
 
   const [mode, setMode] = useState<InventoryModalMode>(null);
   const [selectedProductId, setSelectedProductId] = useState("");
@@ -313,6 +329,7 @@ export function InventoryWorkspace() {
           onAction={(product) => {
             window.location.href = `/purchases/new?productId=${encodeURIComponent(product.id)}&source=inventory`;
           }}
+          renderMeta={renderStockMeta}
         />
         <InventoryListCard
           title={t("inventory.outOfStock")}
@@ -322,6 +339,7 @@ export function InventoryWorkspace() {
           onAction={(product) => {
             window.location.href = `/purchases/new?productId=${encodeURIComponent(product.id)}&source=inventory`;
           }}
+          renderMeta={renderStockMeta}
         />
         <InventoryListCard
           title={t("inventory.expiringSoon")}

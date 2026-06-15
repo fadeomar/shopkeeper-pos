@@ -13,8 +13,11 @@ export const productSchema = z
     unit: z.string().trim().min(1, 'Unit is required'),
     // 'weight' products enter stock/threshold in KILOGRAMS (possibly
     // fractional) and price per kg; the form converts kg → integer grams on
-    // save. 'unit' products keep whole-number pieces.
-    saleType: z.enum(['unit', 'weight']).optional(),
+    // save. 'unit' products keep whole-number pieces. 'multi_unit' products
+    // keep whole-number BASE pieces in stock; their per-unit prices live on the
+    // separate productUnits rows (managed by the form's units editor), so the
+    // top-level buy/sell prices are the base-unit values.
+    saleType: z.enum(['unit', 'weight', 'multi_unit']).optional(),
     quantityInStock: z.coerce.number().min(0, 'Quantity cannot be negative'),
     buyPrice: z.coerce.number().min(0, 'Buy price cannot be negative'),
     sellPrice: z.coerce.number().min(0, 'Sell price cannot be negative'),

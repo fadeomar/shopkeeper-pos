@@ -129,6 +129,7 @@ describe('local backup utilities', () => {
 
     expect(plan.counts).toEqual({
       products: 0,
+      productUnits: 0,
       bills: 0,
       billItems: 0,
       stockMovements: 0,

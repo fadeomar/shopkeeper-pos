@@ -62,6 +62,11 @@ import {
   formatWeightForCart,
   gramsToKg,
 } from "@/lib/utils/weight";
+import {
+  getDefaultProductUnit,
+  getSellableUnits,
+  isMultiUnitProduct,
+} from "@/lib/utils/multi-unit";
 import { normalizeBarcode } from "@/lib/utils/barcode";
 import { createId } from "@/lib/utils/id";
 import { isMiscLine, MISC_ITEM_BARCODE } from "@/lib/utils/misc-items";
@@ -74,8 +79,62 @@ import type {
   BillItem,
   Customer,
   Product,
+  ProductUnit,
   Settings,
 } from "@/types/domain";
+
+/**
+ * Cart identity. Multi-unit lines are keyed by productId + saleUnitId so the
+ * same product can sit in the cart as both "1 box" and "2 strips". Misc and
+ * unit/weight lines have no saleUnitId, so the key is just productId — the
+ * original behavior is unchanged.
+ */
+function lineKey(item: BillDraftItem): string {
+  return item.saleUnitId ? `${item.productId}::${item.saleUnitId}` : item.productId;
+}
+
+/** Build a multi-unit cart line for `quantity` of `unit`. */
+function buildMultiUnitLine(
+  product: Product,
+  unit: ProductUnit,
+  quantity: number,
+): BillDraftItem {
+  const conversion = unit.conversionToBase || 1;
+  return {
+    productId: product.id,
+    barcode: unit.barcode || product.barcode,
+    name: product.name,
+    category: product.category,
+    saleType: "multi_unit",
+    saleUnitId: unit.id,
+    saleUnitName: unit.name,
+    conversionToBase: conversion,
+    availableStock: product.quantityInStock, // base (piece) units
+    baseQuantity: quantity * conversion,
+    quantity,
+    // Informational only — finalize re-costs from FIFO lots. Per sold unit.
+    unitBuyPrice: unit.buyPrice ?? product.buyPrice * conversion,
+    unitSellPrice: unit.sellPrice,
+  };
+}
+
+/**
+ * Choose the unit to add: the default sale unit when at least one of it fits in
+ * stock, otherwise the largest sellable unit that fits (so the last few base
+ * units are still sellable). Always returns a unit.
+ */
+function pickAddUnit(
+  product: Product,
+  units: ProductUnit[] | undefined,
+  baseStock: number,
+): ProductUnit {
+  const def = getDefaultProductUnit(product, units);
+  if ((def.conversionToBase || 1) <= baseStock) return def;
+  const fitting = getSellableUnits(product, units)
+    .filter((u) => (u.conversionToBase || 1) <= baseStock)
+    .sort((a, b) => b.conversionToBase - a.conversionToBase);
+  return fitting[0] ?? def;
+}
 
 /**
  * Compute 3 context-aware cash tender amounts above the given total.
@@ -104,6 +163,34 @@ const SUCCESS_AUTO_DISMISS_MS = 8000;
 // data is lost — Dexie still has every saved bill — only the in-progress
 // scratch state is dropped on the migration).
 const POS_DRAFT_KEY_PREFIX = "shopkeeper-pos-bill-draft-v1";
+
+/** Compact native dropdown to switch a multi-unit cart line's sale unit. */
+function UnitChipSelect({
+  value,
+  units,
+  onChange,
+  label,
+}: {
+  value: string;
+  units: ProductUnit[];
+  onChange: (unitId: string) => void;
+  label: string;
+}) {
+  return (
+    <select
+      aria-label={label}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="rounded-lg border border-border-default bg-surface px-2 py-1 text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand/30"
+    >
+      {units.map((u) => (
+        <option key={u.id} value={u.id}>
+          {u.name}
+        </option>
+      ))}
+    </select>
+  );
+}
 
 function FormField({
   label,
@@ -302,6 +389,18 @@ export function PosScreen() {
     () => db.products.where("status").equals("active").sortBy("name"),
     [],
   );
+  // Units for multi-unit products. Loaded once and grouped by productId so the
+  // cart can resolve a product's sellable units without a per-line query.
+  const productUnits = useLiveQuery(() => db.productUnits.toArray(), []);
+  const unitsByProduct = useMemo(() => {
+    const map = new Map<string, ProductUnit[]>();
+    for (const unit of productUnits ?? []) {
+      const list = map.get(unit.productId) ?? [];
+      list.push(unit);
+      map.set(unit.productId, list);
+    }
+    return map;
+  }, [productUnits]);
   const customers = useLiveQuery(() => customerRepo.list(), []);
   const activeShift = useLiveQuery(() => getActiveShift(), []);
   const settings = useLiveQuery(() => settingsRepo.get(), []);
@@ -485,6 +584,28 @@ export function PosScreen() {
           availableStock: live.quantityInStock,
           baseQuantity: cappedBase,
           quantity: gramsToKg(cappedBase),
+        });
+        return acc;
+      }
+
+      if (item.saleType === "multi_unit") {
+        // Multi-unit lines track a sold-unit count; cap by how many whole units
+        // fit in live base stock and refresh availableStock. Unit prices are
+        // snapshots on the line and left as-is.
+        const conversion = item.conversionToBase || 1;
+        const maxUnits = Math.floor(live.quantityInStock / conversion);
+        if (maxUnits < 1) {
+          // The product can no longer supply even one of this unit — drop it.
+          removedCount += 1;
+          return acc;
+        }
+        const cappedQty = Math.min(item.quantity, maxUnits);
+        if (cappedQty < item.quantity) stockCount += 1;
+        acc.push({
+          ...item,
+          availableStock: live.quantityInStock,
+          quantity: Math.max(1, cappedQty),
+          baseQuantity: Math.max(1, cappedQty) * conversion,
         });
         return acc;
       }
@@ -774,7 +895,7 @@ export function PosScreen() {
   // would pop the keyboard open and interrupt checkout (QA blocker).
   function appendProduct(
     product: Product,
-    options?: { focusBarcode?: boolean },
+    options?: { focusBarcode?: boolean; forcedUnitId?: string },
   ) {
     if (product.quantityInStock <= 0) {
       push(t("billing.outOfStock"), "error");
@@ -794,6 +915,45 @@ export function PosScreen() {
         itemId: existingLine?.productId,
         initialGrams: existingLine?.baseQuantity,
       });
+      return;
+    }
+
+    // Multi-unit products add their default sale unit (or the exact unit a
+    // scanned unit-barcode resolved to). The cart line is keyed by the unit so
+    // the same product can appear in several units at once.
+    if (isMultiUnitProduct(product)) {
+      const units = unitsByProduct.get(product.id);
+      const baseStock = product.quantityInStock;
+      const forced = options?.forcedUnitId
+        ? getSellableUnits(product, units).find((u) => u.id === options.forcedUnitId)
+        : undefined;
+      const unit = forced ?? pickAddUnit(product, units, baseStock);
+      const conversion = unit.conversionToBase || 1;
+      const unitMax = Math.floor(baseStock / conversion);
+      const labelName = `${product.name} (${unit.name})`;
+      if (unitMax < 1) {
+        push(t("billing.outOfStock"), "error");
+        return;
+      }
+      const key = `${product.id}::${unit.id}`;
+      const existingUnitLine = draftItems.find((i) => lineKey(i) === key);
+      if (existingUnitLine) {
+        const nextQty = Math.min(existingUnitLine.quantity + 1, unitMax);
+        setDraftItems((cur) =>
+          cur.map((i) =>
+            lineKey(i) === key
+              ? { ...i, quantity: nextQty, baseQuantity: nextQty * conversion }
+              : i,
+          ),
+        );
+        push(t("billing.itemUpdated", { name: labelName, qty: nextQty }));
+      } else {
+        setDraftItems((cur) => [...cur, buildMultiUnitLine(product, unit, 1)]);
+        push(t("billing.itemAdded", { name: labelName }));
+      }
+      if (options?.focusBarcode !== false) {
+        setTimeout(() => barcodeInputRef.current?.focus(), 0);
+      }
       return;
     }
 
@@ -865,6 +1025,42 @@ export function PosScreen() {
     setWeightEditor({ product, itemId: item.productId, initialGrams: item.baseQuantity });
   }
 
+  // Switch a multi-unit cart line to a different sale unit (e.g. strip → box).
+  // Keeps the displayed quantity where stock allows; if a line for the target
+  // unit already exists, the two merge.
+  function changeLineUnit(item: BillDraftItem, newUnitId: string) {
+    const product = products?.find((p) => p.id === item.productId);
+    if (!product) return;
+    const units = unitsByProduct.get(product.id);
+    const newUnit = getSellableUnits(product, units).find((u) => u.id === newUnitId);
+    if (!newUnit || newUnit.id === item.saleUnitId) return;
+    const conversion = newUnit.conversionToBase || 1;
+    const unitMax = Math.floor(product.quantityInStock / conversion);
+    if (unitMax < 1) {
+      push(t("billing.outOfStock"), "error");
+      return;
+    }
+    const oldKey = lineKey(item);
+    const newKey = `${product.id}::${newUnit.id}`;
+    const desiredQty = Math.min(Math.max(1, item.quantity), unitMax);
+    setDraftItems((cur) => {
+      const target = cur.find((i) => lineKey(i) === newKey && lineKey(i) !== oldKey);
+      if (target) {
+        const mergedQty = Math.min(target.quantity + desiredQty, unitMax);
+        return cur
+          .filter((i) => lineKey(i) !== oldKey)
+          .map((i) =>
+            lineKey(i) === newKey
+              ? { ...i, quantity: mergedQty, baseQuantity: mergedQty * conversion }
+              : i,
+          );
+      }
+      return cur.map((i) =>
+        lineKey(i) === oldKey ? buildMultiUnitLine(product, newUnit, desiredQty) : i,
+      );
+    });
+  }
+
   function promptQuickAddProduct(barcode: string) {
     setScannerOpen(false);
     setBarcodeQuery("");
@@ -873,26 +1069,44 @@ export function PosScreen() {
     push(t("billing.productNotFoundAddNow", { barcode }), "error");
   }
 
+  // Resolve a scanned/typed barcode to a product, and — for multi-unit
+  // products — the specific unit when a ProductUnit barcode matched. A
+  // product's own barcode takes precedence over a unit barcode.
+  function resolveBarcode(
+    bc: string,
+  ): { product: Product; unitId?: string } | undefined {
+    const productMatch = products?.find((p) => normalizeBarcode(p.barcode) === bc);
+    if (productMatch) return { product: productMatch };
+    const unitMatch = (productUnits ?? []).find(
+      (u) => u.barcode && normalizeBarcode(u.barcode) === bc,
+    );
+    if (unitMatch) {
+      const product = products?.find((p) => p.id === unitMatch.productId);
+      if (product) return { product, unitId: unitMatch.id };
+    }
+    return undefined;
+  }
+
   function addByBarcode() {
     const bc = normalizeBarcode(barcodeQuery);
     if (!bc) return;
-    const product = products?.find((p) => normalizeBarcode(p.barcode) === bc);
-    if (!product) {
+    const hit = resolveBarcode(bc);
+    if (!hit) {
       promptQuickAddProduct(bc);
       return;
     }
-    appendProduct(product);
+    appendProduct(hit.product, hit.unitId ? { forcedUnitId: hit.unitId } : undefined);
     setBarcodeQuery("");
   }
 
   function handleScanForBill(barcode: string) {
     const bc = normalizeBarcode(barcode);
-    const product = products?.find((p) => normalizeBarcode(p.barcode) === bc);
-    if (!product) {
+    const hit = resolveBarcode(bc);
+    if (!hit) {
       promptQuickAddProduct(bc);
       return;
     }
-    appendProduct(product, { focusBarcode: false });
+    appendProduct(hit.product, { focusBarcode: false, forcedUnitId: hit.unitId });
   }
 
   function handleQuickProductCreated(product: Product) {
@@ -953,14 +1167,22 @@ export function PosScreen() {
     setTimeout(() => barcodeInputRef.current?.focus(), 0);
   }
 
-  function updateQuantity(productId: string, quantity: number) {
+  function updateQuantity(key: string, quantity: number) {
     // Number(""), Number("abc"), Number(".") all yield NaN/non-integer values.
     // Coerce to a safe whole number before clamping so the draft never enters
     // a state where totals/profit/tax derived from quantity become NaN.
     const safeQuantity = Number.isFinite(quantity) ? Math.trunc(quantity) : 1;
     setDraftItems((cur) =>
       cur.map((i) => {
-        if (i.productId !== productId) return i;
+        if (lineKey(i) !== key) return i;
+        // Multi-unit: cap by how many whole units fit in base stock and keep
+        // the base quantity (used for stock/FIFO) in sync.
+        if (i.saleType === "multi_unit") {
+          const conversion = i.conversionToBase || 1;
+          const maxUnits = Math.max(1, Math.floor(i.availableStock / conversion));
+          const q = Math.max(1, Math.min(safeQuantity, maxUnits));
+          return { ...i, quantity: q, baseQuantity: q * conversion };
+        }
         // Misc lines have no real stock cap (sentinel availableStock), so they
         // are never clamped down to a stock count.
         const maxQuantity = isMiscLine(i)
@@ -1040,20 +1262,52 @@ export function PosScreen() {
     {
       accessorKey: "name",
       header: t("billing.product"),
-      cell: ({ row }) => (
-        <span className="font-medium text-slate-800">{row.original.name}</span>
-      ),
+      cell: ({ row }) => {
+        const item = row.original;
+        const units =
+          item.saleType === "multi_unit"
+            ? getSellableUnits(
+                products?.find((p) => p.id === item.productId) ?? ({} as Product),
+                unitsByProduct.get(item.productId),
+              )
+            : [];
+        return (
+          <div className="flex flex-col gap-1">
+            <span className="font-medium text-slate-800">{item.name}</span>
+            {item.saleType === "multi_unit" && units.length > 0 && (
+              <UnitChipSelect
+                value={item.saleUnitId ?? ""}
+                units={units}
+                onChange={(unitId) => changeLineUnit(item, unitId)}
+                label={t("multiUnit.changeUnit")}
+              />
+            )}
+          </div>
+        );
+      },
     },
     {
       accessorKey: "availableStock",
       header: t("billing.stock"),
-      cell: ({ row }) => (
-        <span className="tabular-nums text-slate-500">
-          {isMiscLine(row.original)
-            ? t("billing.nonStock")
-            : formatStockDisplay(row.original.saleType, row.original.availableStock)}
-        </span>
-      ),
+      cell: ({ row }) => {
+        const item = row.original;
+        if (isMiscLine(item)) {
+          return <span className="tabular-nums text-slate-500">{t("billing.nonStock")}</span>;
+        }
+        if (item.saleType === "multi_unit") {
+          const conversion = item.conversionToBase || 1;
+          return (
+            <span className="tabular-nums text-slate-500">
+              {Math.floor(item.availableStock / conversion)} {item.saleUnitName}
+            </span>
+          );
+        }
+        return (
+          <span className="tabular-nums text-slate-500">
+            {formatStockDisplay(item.saleType, item.availableStock)}
+          </span>
+        );
+      },
     },
     {
       accessorKey: "quantity",
@@ -1075,12 +1329,18 @@ export function PosScreen() {
             </Button>
           );
         }
+        const maxUnits =
+          item.saleType === "multi_unit"
+            ? Math.max(1, Math.floor(item.availableStock / (item.conversionToBase || 1)))
+            : isMiscLine(item)
+              ? undefined
+              : item.availableStock;
         return (
           <QuantityStepper
             value={item.quantity}
-            onChange={(v) => updateQuantity(item.productId, v)}
+            onChange={(v) => updateQuantity(lineKey(item), v)}
             min={1}
-            max={isMiscLine(item) ? undefined : item.availableStock}
+            max={maxUnits}
             className="w-[160px]"
           />
         );
@@ -1106,7 +1366,11 @@ export function PosScreen() {
         ) : (
           <span className="tabular-nums text-slate-700" dir="ltr">
             {formatCurrency(row.original.unitSellPrice, currency)}
-            {row.original.saleType === "weight" ? ` ${t("weight.perKgSuffix")}` : ""}
+            {row.original.saleType === "weight"
+              ? ` ${t("weight.perKgSuffix")}`
+              : row.original.saleType === "multi_unit"
+                ? ` / ${row.original.saleUnitName}`
+                : ""}
           </span>
         ),
     },
@@ -1138,7 +1402,7 @@ export function PosScreen() {
           size="sm"
           onClick={() =>
             setDraftItems((cur) =>
-              cur.filter((i) => i.productId !== row.original.productId),
+              cur.filter((i) => lineKey(i) !== lineKey(row.original)),
             )
           }
         >
@@ -1306,7 +1570,7 @@ export function PosScreen() {
               <div className="grid gap-2 md:hidden">
                 {draftItems.map((item) => (
                   <div
-                    key={item.productId}
+                    key={lineKey(item)}
                     className="touch-card rounded-2xl border border-border-default bg-surface p-3 shadow-xs"
                   >
                     <div className="flex items-start justify-between gap-3">
@@ -1319,6 +1583,20 @@ export function PosScreen() {
                             ? item.miscDescription || t("billing.miscQuickSale")
                             : item.barcode}
                         </p>
+                        {item.saleType === "multi_unit" && (
+                          <div className="mt-1.5">
+                            <UnitChipSelect
+                              value={item.saleUnitId ?? ""}
+                              units={getSellableUnits(
+                                products?.find((p) => p.id === item.productId) ??
+                                  ({} as Product),
+                                unitsByProduct.get(item.productId),
+                              )}
+                              onChange={(unitId) => changeLineUnit(item, unitId)}
+                              label={t("multiUnit.changeUnit")}
+                            />
+                          </div>
+                        )}
                       </div>
                       <Button
                         type="button"
@@ -1326,7 +1604,7 @@ export function PosScreen() {
                         size="sm"
                         onClick={() =>
                           setDraftItems((cur) =>
-                            cur.filter((i) => i.productId !== item.productId),
+                            cur.filter((i) => lineKey(i) !== lineKey(item)),
                           )
                         }
                       >
@@ -1339,7 +1617,9 @@ export function PosScreen() {
                         <p className="font-bold text-slate-800 tabular-nums">
                           {isMiscLine(item)
                             ? t("billing.nonStock")
-                            : formatStockDisplay(item.saleType, item.availableStock)}
+                            : item.saleType === "multi_unit"
+                              ? `${Math.floor(item.availableStock / (item.conversionToBase || 1))} ${item.saleUnitName}`
+                              : formatStockDisplay(item.saleType, item.availableStock)}
                         </p>
                       </div>
                       <div className="rounded-xl bg-slate-50 p-2">
@@ -1363,7 +1643,11 @@ export function PosScreen() {
                             dir="ltr"
                           >
                             {formatCurrency(item.unitSellPrice, currency)}
-                            {item.saleType === "weight" ? ` ${t("weight.perKgSuffix")}` : ""}
+                            {item.saleType === "weight"
+                              ? ` ${t("weight.perKgSuffix")}`
+                              : item.saleType === "multi_unit"
+                                ? ` / ${item.saleUnitName}`
+                                : ""}
                           </p>
                         )}
                       </div>
@@ -1402,10 +1686,16 @@ export function PosScreen() {
                       ) : (
                         <NumberField
                           value={item.quantity}
-                          onValueChange={(v) => updateQuantity(item.productId, v)}
+                          onValueChange={(v) => updateQuantity(lineKey(item), v)}
                           precision="integer"
                           min={1}
-                          max={isMiscLine(item) ? undefined : item.availableStock}
+                          max={
+                            item.saleType === "multi_unit"
+                              ? Math.max(1, Math.floor(item.availableStock / (item.conversionToBase || 1)))
+                              : isMiscLine(item)
+                                ? undefined
+                                : item.availableStock
+                          }
                           showStepper
                           align="center"
                           onKeyDown={dismissKeyboardOnEnter}
@@ -1426,7 +1716,7 @@ export function PosScreen() {
                   emptyTitle={t("billing.addOneProduct")}
                   pageSize={10}
                   labels={tableLabels}
-                  getRowId={(row) => row.productId}
+                  getRowId={(row) => lineKey(row)}
                 />
               </div>
             </>

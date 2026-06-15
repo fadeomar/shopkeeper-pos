@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie';
-import type { AuditEvent, Bill, BillItem, BillItemCostAllocation, CashMovement, Customer, Expense, InventoryLot, Product, Purchase, PurchaseItem, Settings, Shift, StockMovement, AuthCacheEntry, SyncQueueItem, CustomerPayment, Supplier, SupplierPayment, SyncConflict, PaymentMethod } from '@/types/domain';
+import type { AuditEvent, Bill, BillItem, BillItemCostAllocation, CashMovement, Customer, Expense, InventoryLot, Product, ProductUnit, Purchase, PurchaseItem, Settings, Shift, StockMovement, AuthCacheEntry, SyncQueueItem, CustomerPayment, Supplier, SupplierPayment, SyncConflict, PaymentMethod } from '@/types/domain';
 import { deriveLegacySplit } from '@/lib/utils/bill-split';
 import { normalizeCustomerKey, normalizePhone } from '@/lib/utils/customer-key';
 import { createId } from '@/lib/utils/id';
@@ -26,6 +26,7 @@ export class ShopkeeperDB extends Dexie {
   expenses!: Table<Expense, string>;
   inventoryLots!: Table<InventoryLot, string>;
   billItemCostAllocations!: Table<BillItemCostAllocation, string>;
+  productUnits!: Table<ProductUnit, string>;
 
   constructor() {
     super('shopkeeper-pos-db');
@@ -335,6 +336,19 @@ export class ShopkeeperDB extends Dexie {
     // baseQuantity* on bill/purchase items) are stored un-indexed on the row.
     this.version(17).stores({
       products: 'id, &barcode, name, category, brand, supplierName, status, quantityInStock, minimumStockAlert, dateAdded, lastUpdated, saleType',
+    });
+
+    // v18: multi-unit products (pharmacy pill/strip/box, supermarket
+    // carton/pack/piece). Adds the productUnits child table — one row per
+    // sellable/purchasable unit of a `multi_unit` product. Indexed by productId
+    // (load a product's units), barcode (scan-to-unit lookup), and syncStatus
+    // (sync engine finds pending rows). No data migration: the table starts
+    // empty and every existing product stays 'unit'/'weight' with no units, so
+    // helpers synthesize a virtual base unit for them. Product gains an
+    // un-indexed defaultSaleUnitId; bill/purchase items gain un-indexed
+    // saleUnit*/purchaseUnit* snapshot fields stored on the row.
+    this.version(18).stores({
+      productUnits: 'id, productId, barcode, syncStatus',
     });
   }
 }

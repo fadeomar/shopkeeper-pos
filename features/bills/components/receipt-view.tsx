@@ -171,8 +171,11 @@ export function ReceiptView({
               <div className="mt-0.5 flex justify-between gap-3 text-slate-500">
                 <span>{item.barcodeAtSale}</span>
                 <span>
-                  {formatWeightOrCount(item.saleType, item.baseQuantitySold, item.quantitySold)} ×{" "}
-                  {formatCurrency(item.unitSellPriceAtSale, currency)}
+                  {formatWeightOrCount(item.saleType, item.baseQuantitySold, item.quantitySold)}
+                  {item.saleType === "multi_unit" && item.saleUnitNameAtSale
+                    ? ` ${item.saleUnitNameAtSale}`
+                    : ""}{" "}
+                  × {formatCurrency(item.unitSellPriceAtSale, currency)}
                   {item.saleType === "weight" ? ` ${t("weight.perKgSuffix")}` : ""}
                 </span>
               </div>
