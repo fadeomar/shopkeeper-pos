@@ -40,8 +40,10 @@ import { QuantityStepper } from "@/components/pos/quantity-stepper";
 import { NumberField } from "@/components/ui/number-field";
 import { formatStockDisplay, gramsToKg, kgToGrams } from "@/lib/utils/weight";
 import {
+  formatProductStock,
   getDefaultPurchaseUnit,
   getPurchasableUnits,
+  isMultiUnitProduct,
 } from "@/lib/utils/multi-unit";
 import { PaymentMethodControl } from "@/components/pos/payment-method-control";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -280,20 +282,31 @@ export function PurchaseEntryScreen() {
   } | null>(null);
   const productOptions = useMemo(
     () =>
-      (products ?? []).map((product) => ({
-        value: product.id,
-        label: product.name,
-        description: [product.barcode, product.brand, product.category]
-          .filter(Boolean)
-          .join(" • "),
-        meta: (
-          <span className="text-xs text-slate-500">
-            {formatCurrency(product.buyPrice, currency)} ·{" "}
-            {product.quantityInStock}
-          </span>
-        ),
-      })),
-    [products, currency],
+      (products ?? []).map((product) => {
+        const units = unitsByProduct.get(product.id);
+        const defaultUnit = isMultiUnitProduct(product)
+          ? getDefaultPurchaseUnit(product, units)
+          : undefined;
+        const conversion = defaultUnit?.conversionToBase || 1;
+        const price = defaultUnit
+          ? defaultUnit.buyPrice ?? product.buyPrice * conversion
+          : product.buyPrice;
+        const unitSuffix = defaultUnit ? ` / ${defaultUnit.name}` : "";
+        return {
+          value: product.id,
+          label: product.name,
+          description: [product.barcode, product.brand, product.category]
+            .filter(Boolean)
+            .join(" • "),
+          meta: (
+            <span className="text-xs text-slate-500">
+              {formatCurrency(price, currency)}{unitSuffix} ·{" "}
+              {formatProductStock(product, units, product.quantityInStock)}
+            </span>
+          ),
+        };
+      }),
+    [products, unitsByProduct, currency],
   );
   const selectedProductForLine = useMemo(
     () => products?.find((product) => product.id === productId),
@@ -885,17 +898,44 @@ export function PurchaseEntryScreen() {
     if (lastFinalized) setLastFinalized(null);
   }
 
+  function resolvePurchaseBarcode(
+    bc: string,
+  ): { product: Product; unit?: ProductUnit } | undefined {
+    const productMatch = products?.find((p) => normalizeBarcode(p.barcode) === bc);
+    if (productMatch) return { product: productMatch };
+
+    const unitMatch = (productUnits ?? []).find(
+      (unit) => unit.barcode && normalizeBarcode(unit.barcode) === bc,
+    );
+    if (!unitMatch) return undefined;
+
+    const product = products?.find((p) => p.id === unitMatch.productId);
+    if (!product) return undefined;
+    return { product, unit: unitMatch };
+  }
+
   function handleScanForPurchase(barcode: string) {
     const bc = normalizeBarcode(barcode);
-    const product = products?.find((p) => normalizeBarcode(p.barcode) === bc);
-    if (!product) {
+    const hit = resolvePurchaseBarcode(bc);
+    if (!hit) {
       setQuickAddBarcode(bc);
       setQuickAddDefaultQuantity(1);
       setQuickAddOpen(true);
       push(t("purchases.noProductFoundForBarcode", { barcode: bc }), "error");
       return;
     }
-    addProductToDraft(product, 1, product.buyPrice);
+
+    if (hit.unit) {
+      if (!hit.unit.canPurchase) {
+        push(t("multiUnit.unitNotPurchasable"), "error");
+        return;
+      }
+      const unitCost = hit.unit.buyPrice ?? hit.product.buyPrice * (hit.unit.conversionToBase || 1);
+      addProductToDraft(hit.product, 1, unitCost, hit.unit);
+      return;
+    }
+
+    addProductToDraft(hit.product, 1, hit.product.buyPrice);
   }
 
   function updateLine(key: string, patch: Partial<PurchaseDraftItem>) {
@@ -1005,7 +1045,18 @@ export function PurchaseEntryScreen() {
         <span className="tabular-nums text-slate-500">
           {isMiscLine(row.original)
             ? t("purchases.nonStock")
-            : formatStockDisplay(row.original.saleType, row.original.currentStock)}
+            : row.original.saleType === "multi_unit"
+              ? (() => {
+                  const product = products?.find((p) => p.id === row.original.productId);
+                  return product
+                    ? formatProductStock(
+                        product,
+                        unitsByProduct.get(row.original.productId),
+                        row.original.currentStock,
+                      )
+                    : `${Math.floor(row.original.currentStock / (row.original.conversionToBase || 1))} ${row.original.purchaseUnitName}`;
+                })()
+              : formatStockDisplay(row.original.saleType, row.original.currentStock)}
         </span>
       ),
     },

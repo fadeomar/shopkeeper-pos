@@ -14,7 +14,7 @@ import {
 import { settingsRepo } from "@/lib/db/repositories";
 import { isLowStock } from "@/lib/utils/stock";
 import { formatStockDisplay } from "@/lib/utils/weight";
-import { formatProductStock } from "@/lib/utils/multi-unit";
+import { formatBaseTotal, formatProductStock } from "@/lib/utils/multi-unit";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
@@ -83,6 +83,7 @@ export function ProductsTable({
   const [adjustProduct, setAdjustProduct] = useState<Product | null>(null);
   const [adjustQty, setAdjustQty] = useState<number>(1);
   const [adjustNote, setAdjustNote] = useState("Manual stock adjustment");
+  const [adjustCountByUnit, setAdjustCountByUnit] = useState<Record<string, number>>({});
 
   const categories = useMemo(() => {
     const set = new Set((products ?? []).map((p) => p.category));
@@ -117,6 +118,10 @@ export function ProductsTable({
     setMobilePage(0);
   }, [query, category]);
 
+  useEffect(() => {
+    setAdjustCountByUnit({});
+  }, [adjustProduct?.id]);
+
   async function toggleStatus(product: Product) {
     const newStatus = product.status === "active" ? "inactive" : "active";
     await updateProductDetails(product, { status: newStatus });
@@ -142,6 +147,7 @@ export function ProductsTable({
       push(t("products.stockAdjusted"));
       setAdjustProduct(null);
       setAdjustQty(1);
+      setAdjustCountByUnit({});
       setAdjustNote("Manual stock adjustment");
     } catch (error) {
       push(
@@ -167,6 +173,16 @@ export function ProductsTable({
       />
     );
   }
+
+  const adjustProductUnits =
+    adjustProduct?.saleType === "multi_unit"
+      ? unitsByProduct.get(adjustProduct.id) ?? []
+      : [];
+  const adjustCountBaseTotal = adjustProductUnits.reduce(
+    (sum, unit) =>
+      sum + Math.max(0, Math.trunc(adjustCountByUnit[unit.id] ?? 0)) * unit.conversionToBase,
+    0,
+  );
 
   const columns: ColumnDef<Product>[] = [
     {
@@ -526,8 +542,9 @@ export function ProductsTable({
         description={
           adjustProduct
             ? t("products.stockAdjustDesc", {
-                count: formatStockDisplay(
-                  adjustProduct.saleType,
+                count: formatProductStock(
+                  adjustProduct,
+                  unitsByProduct.get(adjustProduct.id),
                   adjustProduct.quantityInStock,
                 ),
               })
@@ -560,6 +577,50 @@ export function ProductsTable({
               precision="integer"
             />
           </label>
+          {adjustProduct?.saleType === "multi_unit" && adjustProductUnits.length > 0 && (
+            <div className="rounded-xl border border-info/20 bg-info-soft/40 p-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-slate-800">
+                  {t("multiUnit.countByUnits")}
+                </p>
+                <span className="text-xs text-slate-500">
+                  {formatBaseTotal(adjustProduct, adjustCountBaseTotal)}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                {adjustProductUnits
+                  .slice()
+                  .sort((a, b) => b.conversionToBase - a.conversionToBase)
+                  .map((unit) => (
+                    <label key={unit.id} className="flex flex-col gap-1 text-xs text-slate-600">
+                      <span>{unit.name}</span>
+                      <NumberField
+                        value={adjustCountByUnit[unit.id] ?? 0}
+                        onValueChange={(value) =>
+                          setAdjustCountByUnit((cur) => ({
+                            ...cur,
+                            [unit.id]: Math.max(0, Math.trunc(value || 0)),
+                          }))
+                        }
+                        precision="integer"
+                        min={0}
+                      />
+                    </label>
+                  ))}
+              </div>
+              <div className="mt-3 flex justify-end">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setAdjustQty(adjustCountBaseTotal - adjustProduct.quantityInStock)}
+                  disabled={adjustCountBaseTotal === 0}
+                >
+                  {t("multiUnit.apply")}
+                </Button>
+              </div>
+            </div>
+          )}
           <label className="flex flex-col gap-1.5">
             <span className="text-sm font-medium text-slate-700">
               {t("products.reasonNote")}
@@ -576,7 +637,11 @@ export function ProductsTable({
                   {t("products.currentStock")}
                 </span>
                 <span className="font-semibold text-slate-800">
-                  {formatStockDisplay(adjustProduct.saleType, adjustProduct.quantityInStock)}
+                  {formatProductStock(
+                    adjustProduct,
+                    unitsByProduct.get(adjustProduct.id),
+                    adjustProduct.quantityInStock,
+                  )}
                 </span>
               </div>
               <div className="flex justify-between text-sm">
@@ -591,8 +656,9 @@ export function ProductsTable({
                       : "text-danger",
                   )}
                 >
-                  {formatStockDisplay(
-                    adjustProduct.saleType,
+                  {formatProductStock(
+                    adjustProduct,
+                    unitsByProduct.get(adjustProduct.id),
                     adjustProduct.quantityInStock + (adjustQty || 0),
                   )}
                 </span>

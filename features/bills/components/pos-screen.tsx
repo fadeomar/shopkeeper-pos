@@ -63,6 +63,7 @@ import {
   gramsToKg,
 } from "@/lib/utils/weight";
 import {
+  formatProductStock,
   getDefaultProductUnit,
   getSellableUnits,
   isMultiUnitProduct,
@@ -453,20 +454,28 @@ export function PosScreen() {
   } | null>(null);
   const productOptions = useMemo(
     () =>
-      (products ?? []).map((product) => ({
-        value: product.id,
-        label: product.name,
-        description: [product.barcode, product.brand, product.category]
-          .filter(Boolean)
-          .join(" • "),
-        meta: (
-          <span className="text-xs text-slate-500">
-            {formatCurrency(product.sellPrice, currency)} ·{" "}
-            {product.quantityInStock} {t("billing.stock").toLowerCase()}
-          </span>
-        ),
-      })),
-    [products, currency, t],
+      (products ?? []).map((product) => {
+        const units = unitsByProduct.get(product.id);
+        const defaultUnit = isMultiUnitProduct(product)
+          ? getDefaultProductUnit(product, units)
+          : undefined;
+        const price = defaultUnit?.sellPrice ?? product.sellPrice;
+        const unitSuffix = defaultUnit ? ` / ${defaultUnit.name}` : "";
+        return {
+          value: product.id,
+          label: product.name,
+          description: [product.barcode, product.brand, product.category]
+            .filter(Boolean)
+            .join(" • "),
+          meta: (
+            <span className="text-xs text-slate-500">
+              {formatCurrency(price, currency)}{unitSuffix} ·{" "}
+              {formatProductStock(product, units, product.quantityInStock)}
+            </span>
+          ),
+        };
+      }),
+    [products, unitsByProduct, currency],
   );
 
   const [helpOpen, setHelpOpen] = useState(false);
@@ -1295,10 +1304,12 @@ export function PosScreen() {
           return <span className="tabular-nums text-slate-500">{t("billing.nonStock")}</span>;
         }
         if (item.saleType === "multi_unit") {
-          const conversion = item.conversionToBase || 1;
+          const product = products?.find((p) => p.id === item.productId);
           return (
             <span className="tabular-nums text-slate-500">
-              {Math.floor(item.availableStock / conversion)} {item.saleUnitName}
+              {product
+                ? formatProductStock(product, unitsByProduct.get(item.productId), item.availableStock)
+                : `${Math.floor(item.availableStock / (item.conversionToBase || 1))} ${item.saleUnitName}`}
             </span>
           );
         }
@@ -1618,7 +1629,16 @@ export function PosScreen() {
                           {isMiscLine(item)
                             ? t("billing.nonStock")
                             : item.saleType === "multi_unit"
-                              ? `${Math.floor(item.availableStock / (item.conversionToBase || 1))} ${item.saleUnitName}`
+                              ? (() => {
+                                  const product = products?.find((p) => p.id === item.productId);
+                                  return product
+                                    ? formatProductStock(
+                                        product,
+                                        unitsByProduct.get(item.productId),
+                                        item.availableStock,
+                                      )
+                                    : `${Math.floor(item.availableStock / (item.conversionToBase || 1))} ${item.saleUnitName}`;
+                                })()
                               : formatStockDisplay(item.saleType, item.availableStock)}
                         </p>
                       </div>

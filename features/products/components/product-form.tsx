@@ -181,6 +181,7 @@ export function ProductForm({ product, onSaved, onCancel, onOpenExisting }: Prop
   const { canEditCost } = usePermissions();
   const settings = useLiveQuery(() => settingsRepo.get(), []);
   const products = useLiveQuery(() => productRepo.list(), []);
+  const allProductUnits = useLiveQuery(() => db.productUnits.toArray(), []);
   const currency = settings?.currency ?? "ILS";
   const [lossWarning, setLossWarning] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -351,18 +352,24 @@ export function ProductForm({ product, onSaved, onCancel, onOpenExisting }: Prop
       return;
     }
 
-    // A unit barcode must not collide with the product's own barcode or any
-    // other product's barcode (intra-set duplicates are caught above).
+    // Product/unit barcodes share one scanner namespace. Prevent ambiguous
+    // scans before the service-layer guard runs.
     const productOwnBarcode = normalizeBarcode(values.barcode);
     const otherProductBarcodes = new Set(
       (products ?? [])
         .filter((p) => p.id !== product?.id)
         .map((p) => normalizeBarcode(p.barcode)),
     );
+    const otherUnitBarcodes = new Set(
+      (allProductUnits ?? [])
+        .filter((u) => u.productId !== product?.id && u.id)
+        .map((u) => normalizeBarcode(u.barcode ?? ""))
+        .filter(Boolean),
+    );
     for (const row of units) {
       const bc = normalizeBarcode(row.barcode || "");
       if (!bc) continue;
-      if (bc === productOwnBarcode || otherProductBarcodes.has(bc)) {
+      if (bc === productOwnBarcode || otherProductBarcodes.has(bc) || otherUnitBarcodes.has(bc)) {
         push(t("products.barcodeUnique"), "error");
         return;
       }
@@ -389,6 +396,11 @@ export function ProductForm({ product, onSaved, onCancel, onOpenExisting }: Prop
     );
     const baseUnit = built.find((u) => u.conversionToBase === 1) ?? built[0];
     const defaultUnit = built.find((u) => u.isDefaultSaleUnit) ?? baseUnit;
+
+    if (!product && values.quantityInStock > 0 && canEditCost && (baseUnit.buyPrice ?? 0) <= 0) {
+      push(t("multiUnit.errOpeningCost"), "error");
+      return;
+    }
 
     try {
       if (product) {

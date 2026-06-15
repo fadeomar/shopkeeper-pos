@@ -410,6 +410,8 @@ export const ar: TranslationDict = {
     errName: "اسم الوحدة مطلوب.",
     errConversion: "يجب أن يكون التحويل رقماً صحيحاً أكبر من صفر.",
     errBarcode: "هذا الباركود مستخدم في وحدة أخرى.",
+    errOpeningCost: "المخزون الابتدائي يحتاج تكلفة على الوحدة الأساسية حتى تبقى تقارير FIFO والربح صحيحة.",
+    unitNotPurchasable: "هذه الوحدة الممسوحة غير مفعّلة للمشتريات.",
   },
   products: {
     title: "المنتجات",
@@ -1798,6 +1800,8 @@ export const ar: TranslationDict = {
       "راجع وحدات \"{{name}}\": يلزم وحدة واحدة قابلة للبيع على الأقل، ووحدة افتراضية واحدة، ووحدة أساسية تساوي 1.",
     PRODUCT_UNIT_CONVERSION_LOCKED:
       "لا يمكن تغيير عدد الوحدات الأساسية لـ \"{{name}}\" لأنها استُخدمت في فاتورة أو عملية شراء.",
+    PRODUCT_UNIT_BARCODE_DUPLICATE:
+      "الباركود {{barcode}} مستخدم بالفعل في منتج أو وحدة منتج أخرى.",
     // Payments
     CUSTOMER_REQUIRED: "العميل مطلوب.",
     SUPPLIER_REQUIRED: "المورد مطلوب.",

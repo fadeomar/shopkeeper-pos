@@ -8,7 +8,8 @@ import {
   makePurchaseForm,
 } from '@/tests/helpers/builders';
 import { resetTestDb, seedProduct, seedSettings } from '@/tests/helpers/db';
-import type { Product } from '@/types/domain';
+import { AppErrorCode } from '@/lib/errors/app-error';
+import type { Product, ProductUnit } from '@/types/domain';
 
 vi.mock('@/lib/services/subscription-service', () => ({
   assertSubscriptionCanWrite: vi.fn().mockResolvedValue(undefined),
@@ -34,11 +35,32 @@ vi.mock('@/lib/services/audit-service', () => ({
 
 const { createFinalizedBill } = await import('@/lib/services/billing-service');
 const { createFinalizedPurchase } = await import('@/lib/services/purchase-service');
+const { buildProductUnit, saveProductUnits } = await import('@/lib/services/product-unit-service');
 
 /**
  * Acamol — a multi_unit product. Base unit is the pill; quantityInStock and the
  * lots are counted in base pills.
  */
+
+function baseUnit(product: Product, overrides: Partial<ProductUnit> = {}): ProductUnit {
+  return buildProductUnit(
+    product.id,
+    {
+      id: overrides.id,
+      name: overrides.name ?? 'pill',
+      conversionToBase: overrides.conversionToBase ?? 1,
+      sellPrice: overrides.sellPrice ?? 0.25,
+      buyPrice: overrides.buyPrice ?? 0.1,
+      barcode: overrides.barcode,
+      canSell: overrides.canSell ?? true,
+      canPurchase: overrides.canPurchase ?? true,
+      isDefaultSaleUnit: overrides.isDefaultSaleUnit ?? true,
+    },
+    overrides.sortOrder ?? 0,
+    '2026-01-01T00:00:00.000Z',
+  );
+}
+
 function makeAcamol(overrides: Partial<Product> = {}): Product {
   return makeProduct({
     id: 'acamol',
@@ -219,4 +241,31 @@ describe('multi-unit products', () => {
     expect(ok.billItems).toHaveLength(1);
     await expect(db.products.get('acamol')).resolves.toMatchObject({ quantityInStock: 0 });
   });
+
+  it('blocks duplicate barcodes across product units and product barcodes', async () => {
+    const acamol = await seedProduct(makeAcamol({ id: 'acamol_a', barcode: 'PROD-A' }));
+    const panadol = await seedProduct(
+      makeAcamol({ id: 'panadol_b', name: 'Panadol', barcode: 'PROD-B' }),
+    );
+
+    await saveProductUnits({
+      product: { id: acamol.id, name: acamol.name },
+      units: [baseUnit(acamol, { id: 'unit_acamol_pill', barcode: 'UNIT-123' })],
+    });
+
+    await expect(
+      saveProductUnits({
+        product: { id: panadol.id, name: panadol.name },
+        units: [baseUnit(panadol, { id: 'unit_panadol_pill', barcode: 'UNIT-123' })],
+      }),
+    ).rejects.toMatchObject({ code: AppErrorCode.PRODUCT_UNIT_BARCODE_DUPLICATE });
+
+    await expect(
+      saveProductUnits({
+        product: { id: panadol.id, name: panadol.name },
+        units: [baseUnit(panadol, { id: 'unit_panadol_box', barcode: 'PROD-A' })],
+      }),
+    ).rejects.toMatchObject({ code: AppErrorCode.PRODUCT_UNIT_BARCODE_DUPLICATE });
+  });
+
 });

@@ -22,6 +22,7 @@ import { buildSyncQueueItem } from '@/lib/services/sync-queue-service';
 import { logAudit } from '@/lib/services/audit-service';
 import { assertSubscriptionCanWrite } from '@/lib/services/subscription-service';
 import { validateUnitDrafts } from '@/lib/utils/multi-unit';
+import { normalizeBarcode } from '@/lib/utils/barcode';
 import type { Product, ProductUnit } from '@/types/domain';
 
 function requestSync(): void {
@@ -92,6 +93,52 @@ async function unitHasHistory(unitId: string): Promise<boolean> {
   return Boolean(purchaseUse);
 }
 
+
+/**
+ * ProductUnit barcodes share the same scanner namespace as product barcodes.
+ * A duplicate across any product/unit would make scan-to-product ambiguous, so
+ * this is enforced in the service layer (UI validation is only a convenience).
+ */
+async function assertUniqueProductUnitBarcodes(input: {
+  productId: string;
+  units: ProductUnit[];
+}): Promise<void> {
+  const wanted = input.units
+    .map((unit) => ({ id: unit.id, barcode: normalizeBarcode(unit.barcode ?? '') }))
+    .filter((row) => row.barcode);
+  if (wanted.length === 0) return;
+
+  const [products, allUnits] = await Promise.all([
+    db.products.toArray(),
+    db.productUnits.toArray(),
+  ]);
+  const productBarcodeOwner = new Map<string, string>();
+  for (const product of products) {
+    const barcode = normalizeBarcode(product.barcode);
+    if (barcode) productBarcodeOwner.set(barcode, product.id);
+  }
+  const unitBarcodeOwner = new Map<string, string>();
+  for (const unit of allUnits) {
+    const barcode = normalizeBarcode(unit.barcode ?? '');
+    if (barcode) unitBarcodeOwner.set(barcode, unit.id);
+  }
+
+  for (const row of wanted) {
+    const productOwner = productBarcodeOwner.get(row.barcode);
+    if (productOwner) {
+      throw new AppError(AppErrorCode.PRODUCT_UNIT_BARCODE_DUPLICATE, {
+        barcode: row.barcode,
+      });
+    }
+    const unitOwner = unitBarcodeOwner.get(row.barcode);
+    if (unitOwner && unitOwner !== row.id) {
+      throw new AppError(AppErrorCode.PRODUCT_UNIT_BARCODE_DUPLICATE, {
+        barcode: row.barcode,
+      });
+    }
+  }
+}
+
 /**
  * Reconcile a multi_unit product's full unit set against what is stored.
  * Creates new units, upserts existing ones (blocking unsafe conversion
@@ -108,10 +155,15 @@ export async function saveProductUnits(input: {
     throw new AppError(AppErrorCode.PRODUCT_UNIT_INVALID, { name: input.product.name });
   }
 
+  await assertUniqueProductUnitBarcodes({
+    productId: input.product.id,
+    units: input.units,
+  });
+
   const now = nowIso();
   await db.transaction(
     'rw',
-    [db.productUnits, db.billItems, db.purchaseItems, db.syncQueue],
+    [db.products, db.productUnits, db.billItems, db.purchaseItems, db.syncQueue],
     async () => {
       const existing = await db.productUnits
         .where('productId')

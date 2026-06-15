@@ -412,6 +412,8 @@ export const en: TranslationDict = {
     errName: "Unit name is required.",
     errConversion: "Conversion must be a whole number greater than zero.",
     errBarcode: "This unit barcode is used by another unit.",
+    errOpeningCost: "Opening stock needs a cost on the base unit so FIFO/profit reports stay correct.",
+    unitNotPurchasable: "This scanned unit is not enabled for purchases.",
   },
   products: {
     title: "Products",
@@ -1813,6 +1815,8 @@ export const en: TranslationDict = {
       "Check the units for \"{{name}}\": you need at least one sellable unit, exactly one default, and one base unit equal to 1.",
     PRODUCT_UNIT_CONVERSION_LOCKED:
       "Can't change how many base units \"{{name}}\" equals — it has already been used on a bill or purchase.",
+    PRODUCT_UNIT_BARCODE_DUPLICATE:
+      "Barcode {{barcode}} is already used by another product or product unit.",
     // Payments
     CUSTOMER_REQUIRED: "Customer is required.",
     SUPPLIER_REQUIRED: "Supplier is required.",

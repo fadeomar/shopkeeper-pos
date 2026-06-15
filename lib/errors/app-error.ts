@@ -75,6 +75,7 @@ export const AppErrorCode = {
   // ── Multi-unit products ──────────────────────────────────────────────────────
   PRODUCT_UNIT_INVALID: 'PRODUCT_UNIT_INVALID',
   PRODUCT_UNIT_CONVERSION_LOCKED: 'PRODUCT_UNIT_CONVERSION_LOCKED',
+  PRODUCT_UNIT_BARCODE_DUPLICATE: 'PRODUCT_UNIT_BARCODE_DUPLICATE',
 
   // ── Payments ───────────────────────────────────────────────────────────────
   CUSTOMER_REQUIRED: 'CUSTOMER_REQUIRED',

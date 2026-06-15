@@ -402,6 +402,8 @@ export interface TranslationDict {
     errName: string;
     errConversion: string;
     errBarcode: string;
+    errOpeningCost: string;
+    unitNotPurchasable: string;
   };
   products: {
     title: string;
@@ -1686,6 +1688,7 @@ export interface TranslationDict {
     // Multi-unit products
     PRODUCT_UNIT_INVALID: string;
     PRODUCT_UNIT_CONVERSION_LOCKED: string;
+    PRODUCT_UNIT_BARCODE_DUPLICATE: string;
     // Payments
     CUSTOMER_REQUIRED: string;
     SUPPLIER_REQUIRED: string;
