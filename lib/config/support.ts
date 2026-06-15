@@ -5,17 +5,26 @@
  * shop's own number printed on receipts. Support is the operator that deploys
  * and approves users.
  *
- * Phase 1: a single operator, configured via public env vars. Everything here
- * resolves to plain href links (wa.me / tel: / mailto:) so the contact actions
- * work fully offline and need no JS.
+ * Phase 1: a single operator. The operator's WhatsApp + phone ship as built-in
+ * defaults below so the contact actions always work in production; the public
+ * env vars (if set) override them per-deployment. Everything resolves to plain
+ * href links (wa.me / tel: / mailto:) so the contact actions work fully offline
+ * and need no JS.
  *
- * Add to .env.local:
+ * Override in .env.local (optional):
  *   NEXT_PUBLIC_SUPPORT_WHATSAPP=970590000000   (digits only, country code, no +)
  *   NEXT_PUBLIC_SUPPORT_PHONE=+970590000000
  *   NEXT_PUBLIC_SUPPORT_EMAIL=support@example.com
  *
- * Any value left blank simply hides that action — the UI degrades gracefully.
+ * Any value (env or default) left blank simply hides that action — the UI
+ * degrades gracefully.
  */
+
+// Built-in operator contact. wa.me needs the full international number with no
+// '+' or leading zero (972 = Israel, then 56-744-1842 → 567441842); the phone
+// link uses the local dialable form.
+const DEFAULT_SUPPORT_WHATSAPP = "972567441842";
+const DEFAULT_SUPPORT_PHONE = "0567441842";
 
 export interface SupportContact {
   whatsapp: string | null;
@@ -35,8 +44,8 @@ function trimmed(value: string | undefined): string | null {
 }
 
 export const supportContact: SupportContact = {
-  whatsapp: digitsOnly(process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP),
-  phone: trimmed(process.env.NEXT_PUBLIC_SUPPORT_PHONE),
+  whatsapp: digitsOnly(process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP) ?? DEFAULT_SUPPORT_WHATSAPP,
+  phone: trimmed(process.env.NEXT_PUBLIC_SUPPORT_PHONE) ?? DEFAULT_SUPPORT_PHONE,
   email: trimmed(process.env.NEXT_PUBLIC_SUPPORT_EMAIL),
 };
 
