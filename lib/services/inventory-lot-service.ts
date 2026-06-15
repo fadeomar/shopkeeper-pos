@@ -77,25 +77,35 @@ export async function createPurchaseLots(input: {
   const { purchase, purchaseItems, createdAt } = input;
   const lots: InventoryLot[] = purchaseItems
     .filter((item) => !isMiscLine(item) && item.quantityPurchased > 0)
-    .map((item) => ({
-      id: createId('lot'),
-      productId: item.originalProductId,
-      sourceType: 'purchase',
-      sourceId: purchase.id,
-      sourceItemId: item.id,
-      sourceLabel: purchase.purchaseNumber,
-      receivedAt: createdAt,
-      // For weight lines quantityPurchased is grams and unitCostAtPurchase is
-      // per kg; baseUnit tells the FIFO COGS math how to reconcile them.
-      baseUnit: item.baseUnit ?? 'piece',
-      quantityReceived: item.quantityPurchased,
-      quantityRemaining: item.quantityPurchased,
-      unitCost: item.unitCostAtPurchase,
-      status: 'open',
-      createdAt,
-      updatedAt: createdAt,
-      syncStatus: 'pending',
-    }));
+    .map((item) => {
+      // multi_unit lines are 'piece' lots (factor 1), so the lot cost must be
+      // per BASE piece. The purchase stores cost per BOUGHT unit (per box), so
+      // divide by the conversion. Weight/unit lines store the pricing-unit cost
+      // directly (per kg / per piece) and the COGS factor handles the rest.
+      const conversion =
+        item.saleType === 'multi_unit' ? item.conversionToBaseAtPurchase ?? 1 : 1;
+      const lotUnitCost =
+        conversion > 1 ? roundMoney(item.unitCostAtPurchase / conversion) : item.unitCostAtPurchase;
+      return {
+        id: createId('lot'),
+        productId: item.originalProductId,
+        sourceType: 'purchase' as const,
+        sourceId: purchase.id,
+        sourceItemId: item.id,
+        sourceLabel: purchase.purchaseNumber,
+        receivedAt: createdAt,
+        // For weight lines quantityPurchased is grams and the lot cost is per
+        // kg; baseUnit tells the FIFO COGS math how to reconcile them.
+        baseUnit: item.baseUnit ?? 'piece',
+        quantityReceived: item.quantityPurchased,
+        quantityRemaining: item.quantityPurchased,
+        unitCost: lotUnitCost,
+        status: 'open' as const,
+        createdAt,
+        updatedAt: createdAt,
+        syncStatus: 'pending' as const,
+      };
+    });
 
   if (lots.length > 0) {
     await db.inventoryLots.bulkAdd(lots);

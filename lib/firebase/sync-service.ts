@@ -4,7 +4,7 @@ import { db } from '@/lib/db/schema';
 import { nowIso } from '@/lib/utils/date';
 import { detectProductCloudConflict, detectSettingsCloudConflict } from '@/lib/firebase/cloud-merge-service';
 import { mergedSequences } from '@/lib/services/settings-sync-fields';
-import type { AuditEvent, Bill, BillItem, BillItemCostAllocation, CashMovement, Customer, Expense, InventoryLot, Product, Purchase, PurchaseItem, Settings, Shift, StockMovement, CustomerPayment, Supplier, SupplierPayment, SyncQueueItem } from '@/types/domain';
+import type { AuditEvent, Bill, BillItem, BillItemCostAllocation, CashMovement, Customer, Expense, InventoryLot, Product, ProductUnit, Purchase, PurchaseItem, Settings, Shift, StockMovement, CustomerPayment, Supplier, SupplierPayment, SyncQueueItem } from '@/types/domain';
 
 const BATCH_SIZE = 400; // Firestore max is 500; stay under
 
@@ -14,6 +14,7 @@ export interface SyncMeta {
     bills: number;
     billItems: number;
     products: number;
+    productUnits?: number;
     stockMovements: number;
     customerPayments?: number;
     customers?: number;
@@ -311,6 +312,20 @@ export async function syncBillItemCostAllocationsToCloud(
   return syncedAt;
 }
 
+export async function syncProductUnitsToCloud(
+  uid: string,
+  units: ProductUnit[],
+): Promise<string | null> {
+  if (units.length === 0) return null;
+  const syncedAt = nowIso();
+  const writes = units.map((unit) => ({
+    ref: doc(firestore, `users/${uid}/productUnits/${unit.id}`),
+    data: asSyncedRecord(unit, syncedAt),
+  }));
+  await commitInBatches(writes);
+  return syncedAt;
+}
+
 export async function syncCustomersToCloud(
   uid: string,
   customers: Customer[],
@@ -441,10 +456,11 @@ export async function syncAllToCloud(uid: string): Promise<SyncMeta | null> {
     ]);
     if (activeQueueCount > 0 || openConflictCount > 0) return null;
 
-    const [bills, billItems, products, stockMovements, customerPayments, customers, shifts, suppliers, purchases, purchaseItems, supplierPayments, auditEvents, cashMovements, expenses, inventoryLots, billItemCostAllocations, localSettings] = await Promise.all([
+    const [bills, billItems, products, productUnits, stockMovements, customerPayments, customers, shifts, suppliers, purchases, purchaseItems, supplierPayments, auditEvents, cashMovements, expenses, inventoryLots, billItemCostAllocations, localSettings] = await Promise.all([
       db.bills.toArray(),
       db.billItems.toArray(),
       db.products.toArray(),
+      db.productUnits.toArray(),
       db.stockMovements.toArray(),
       db.customerPayments.toArray(),
       db.customers.toArray(),
@@ -518,6 +534,10 @@ export async function syncAllToCloud(uid: string): Promise<SyncMeta | null> {
         ref: doc(firestore, `users/${uid}/products/${p.id}`),
         data: asSyncedRecord(p, syncedAt),
       })),
+      ...productUnits.map((u) => ({
+        ref: doc(firestore, `users/${uid}/productUnits/${u.id}`),
+        data: asSyncedRecord(u, syncedAt),
+      })),
       ...stockMovements.map((s) => ({
         ref: doc(firestore, `users/${uid}/stockMovements/${s.id}`),
         data: asSyncedRecord(s, syncedAt),
@@ -584,6 +604,7 @@ export async function syncAllToCloud(uid: string): Promise<SyncMeta | null> {
         bills: bills.length,
         billItems: billItems.length,
         products: products.length,
+        productUnits: productUnits.length,
         stockMovements: stockMovements.length,
         customerPayments: customerPayments.length,
         customers: customers.length,
@@ -602,11 +623,12 @@ export async function syncAllToCloud(uid: string): Promise<SyncMeta | null> {
     };
     await setDoc(doc(firestore, `users/${uid}/meta/sync`), meta);
 
-    await db.transaction('rw', [db.bills, db.billItems, db.products, db.stockMovements, db.customerPayments, db.customers, db.shifts, db.suppliers, db.purchases, db.purchaseItems, db.supplierPayments, db.auditEvents, db.cashMovements, db.expenses, db.inventoryLots, db.billItemCostAllocations, db.settings, db.syncQueue], async () => {
+    await db.transaction('rw', [db.bills, db.billItems, db.products, db.productUnits, db.stockMovements, db.customerPayments, db.customers, db.shifts, db.suppliers, db.purchases, db.purchaseItems, db.supplierPayments, db.auditEvents, db.cashMovements, db.expenses, db.inventoryLots, db.billItemCostAllocations, db.settings, db.syncQueue], async () => {
       await Promise.all([
         db.bills.toCollection().modify({ syncStatus: 'synced', syncedAt, lastSyncError: undefined }),
         db.billItems.toCollection().modify({ syncStatus: 'synced', syncedAt, lastSyncError: undefined }),
         db.products.toCollection().modify({ syncStatus: 'synced', syncedAt, lastSyncError: undefined }),
+        db.productUnits.toCollection().modify({ syncStatus: 'synced', syncedAt, lastSyncError: undefined }),
         db.stockMovements.toCollection().modify({ syncStatus: 'synced', syncedAt, lastSyncError: undefined }),
         db.customerPayments.toCollection().modify({ syncStatus: 'synced', syncedAt, lastSyncError: undefined }),
         db.customers.toCollection().modify({ syncStatus: 'synced', syncedAt, lastSyncError: undefined }),

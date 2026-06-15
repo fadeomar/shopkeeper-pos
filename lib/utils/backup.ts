@@ -1,5 +1,5 @@
 import { db } from '@/lib/db/schema';
-import type { AuditEvent, Bill, BillItem, BillItemCostAllocation, CashMovement, Customer, CustomerPayment, Expense, InventoryLot, Product, Purchase, PurchaseItem, Settings, Shift, StockMovement, Supplier, SupplierPayment, SyncConflict, SyncQueueItem } from '@/types/domain';
+import type { AuditEvent, Bill, BillItem, BillItemCostAllocation, CashMovement, Customer, CustomerPayment, Expense, InventoryLot, Product, ProductUnit, Purchase, PurchaseItem, Settings, Shift, StockMovement, Supplier, SupplierPayment, SyncConflict, SyncQueueItem } from '@/types/domain';
 
 /**
  * Portable local backup format.
@@ -15,6 +15,7 @@ export interface BackupSnapshotV1 {
   app: 'shopkeeper-pos';
   counts: {
     products: number;
+    productUnits: number;
     bills: number;
     billItems: number;
     stockMovements: number;
@@ -36,6 +37,7 @@ export interface BackupSnapshotV1 {
   };
   data: {
     products: Product[];
+    productUnits: ProductUnit[];
     bills: Bill[];
     billItems: BillItem[];
     stockMovements: StockMovement[];
@@ -58,8 +60,9 @@ export interface BackupSnapshotV1 {
 }
 
 export async function createLocalBackupSnapshot(): Promise<BackupSnapshotV1> {
-  const [products, bills, billItems, stockMovements, customerPayments, customers, shifts, suppliers, purchases, purchaseItems, supplierPayments, auditEvents, cashMovements, expenses, inventoryLots, billItemCostAllocations, settings, syncQueue, syncConflicts] = await Promise.all([
+  const [products, productUnits, bills, billItems, stockMovements, customerPayments, customers, shifts, suppliers, purchases, purchaseItems, supplierPayments, auditEvents, cashMovements, expenses, inventoryLots, billItemCostAllocations, settings, syncQueue, syncConflicts] = await Promise.all([
     db.products.toArray(),
+    db.productUnits.toArray().catch(() => [] as ProductUnit[]),
     db.bills.toArray(),
     db.billItems.toArray(),
     db.stockMovements.toArray(),
@@ -86,6 +89,7 @@ export async function createLocalBackupSnapshot(): Promise<BackupSnapshotV1> {
     app: 'shopkeeper-pos',
     counts: {
       products: products.length,
+      productUnits: productUnits.length,
       bills: bills.length,
       billItems: billItems.length,
       stockMovements: stockMovements.length,
@@ -107,6 +111,7 @@ export async function createLocalBackupSnapshot(): Promise<BackupSnapshotV1> {
     },
     data: {
       products,
+      productUnits,
       bills,
       billItems,
       stockMovements,
@@ -148,6 +153,7 @@ export function createEmptyBackupPlan(): BackupSnapshotV1 {
     app: 'shopkeeper-pos',
     counts: {
       products: 0,
+      productUnits: 0,
       bills: 0,
       billItems: 0,
       stockMovements: 0,
@@ -169,6 +175,7 @@ export function createEmptyBackupPlan(): BackupSnapshotV1 {
     },
     data: {
       products: [],
+      productUnits: [],
       bills: [],
       billItems: [],
       stockMovements: [],

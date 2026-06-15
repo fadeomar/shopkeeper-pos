@@ -73,7 +73,7 @@ export function buildReceiptText({
     ...items.map((item) =>
       [
         item.productNameAtSale,
-        `${labels.qty}: ${item.quantitySold} x ${formatCurrency(item.unitSellPriceAtSale, currency)} = ${formatCurrency(item.lineSubtotal, currency)}`,
+        `${labels.qty}: ${item.quantitySold}${item.saleType === "multi_unit" && item.saleUnitNameAtSale ? ` ${item.saleUnitNameAtSale}` : ""} x ${formatCurrency(item.unitSellPriceAtSale, currency)} = ${formatCurrency(item.lineSubtotal, currency)}`,
       ].join("\n"),
     ),
     "------------------------------",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -14,16 +14,31 @@ import { createId } from "@/lib/utils/id";
 import { localDateKey } from "@/lib/utils/date";
 import { normalizeBarcode } from "@/lib/utils/barcode";
 import { gramsToKg, kgToGrams } from "@/lib/utils/weight";
+import { db } from "@/lib/db/schema";
+import {
+  buildProductUnit,
+  saveProductUnits,
+} from "@/lib/services/product-unit-service";
+import {
+  PHARMACY_UNIT_TEMPLATE,
+  SUPERMARKET_UNIT_TEMPLATE,
+  type UnitTemplateRow,
+  looksLikePharmacy,
+  validateUnitDrafts,
+} from "@/lib/utils/multi-unit";
+import { getServiceErrorMessage } from "@/lib/errors/get-error-message";
+import { Plus, Trash2 } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NumberFieldRHF } from "@/components/ui/number-field-rhf";
-import { MoneyInputRHF } from "@/components/ui/money-input";
+import { NumberField } from "@/components/ui/number-field";
+import { MoneyInputRHF, MoneyInput } from "@/components/ui/money-input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useToast } from "@/components/ui/toast";
 import { BarcodeScannerModal } from "@/components/barcode/barcode-scanner-modal";
 import { useLocale } from "@/components/providers/locale-context";
 import { usePermissions } from "@/lib/hooks/use-permissions";
-import type { Product, Settings } from "@/types/domain";
+import type { Product, ProductUnit, Settings } from "@/types/domain";
 import clsx from "clsx";
 
 interface Props {
@@ -108,7 +123,11 @@ function productToFormValues(product: Product): ProductSchema {
     category: product.category,
     brand: product.brand ?? "",
     unit: product.unit,
-    saleType: isWeight ? "weight" : "unit",
+    saleType: isWeight
+      ? "weight"
+      : product.saleType === "multi_unit"
+        ? "multi_unit"
+        : "unit",
     quantityInStock: isWeight ? gramsToKg(product.quantityInStock) : product.quantityInStock,
     buyPrice: product.buyPrice,
     sellPrice: product.sellPrice,
@@ -121,6 +140,20 @@ function productToFormValues(product: Product): ProductSchema {
     status: product.status,
   };
 }
+
+/** A single editable unit row in the multi-unit product form. */
+type UnitRow = {
+  id?: string; // present when the unit already exists (locks conversion edits)
+  name: string;
+  conversionToBase: number;
+  sellPrice: number;
+  buyPrice: number;
+  barcode: string;
+  canSell: boolean;
+  canPurchase: boolean;
+  isDefaultSaleUnit: boolean;
+  persisted: boolean;
+};
 
 function FormField({
   label,
@@ -148,6 +181,7 @@ export function ProductForm({ product, onSaved, onCancel, onOpenExisting }: Prop
   const { canEditCost } = usePermissions();
   const settings = useLiveQuery(() => settingsRepo.get(), []);
   const products = useLiveQuery(() => productRepo.list(), []);
+  const allProductUnits = useLiveQuery(() => db.productUnits.toArray(), []);
   const currency = settings?.currency ?? "ILS";
   const [lossWarning, setLossWarning] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -159,6 +193,121 @@ export function ProductForm({ product, onSaved, onCancel, onOpenExisting }: Prop
 
   const saleType = form.watch("saleType");
   const isWeight = saleType === "weight";
+  const isMulti = saleType === "multi_unit";
+
+  // Multi-unit editor state. Units live outside react-hook-form (they're a
+  // dynamic table with their own validation) and are persisted via
+  // saveProductUnits on submit.
+  const [units, setUnits] = useState<UnitRow[]>([]);
+  const unitsInitRef = useRef(false);
+  const existingUnits = useLiveQuery(
+    () =>
+      product?.id
+        ? db.productUnits.where("productId").equals(product.id).toArray()
+        : Promise.resolve<ProductUnit[]>([]),
+    [product?.id],
+  );
+
+  // If the form is reused for a different product, allow the units to reload.
+  useEffect(() => {
+    unitsInitRef.current = false;
+    setUnits([]);
+  }, [product?.id]);
+
+  // Seed the editor from stored units when editing an existing multi-unit
+  // product (once, so it doesn't clobber in-progress edits).
+  useEffect(() => {
+    if (!product || unitsInitRef.current) return;
+    if (product.saleType !== "multi_unit" || !existingUnits) return;
+    setUnits(
+      existingUnits
+        .slice()
+        .sort(
+          (a, b) =>
+            a.sortOrder - b.sortOrder || a.conversionToBase - b.conversionToBase,
+        )
+        .map((u) => ({
+          id: u.id,
+          name: u.name,
+          conversionToBase: u.conversionToBase,
+          sellPrice: u.sellPrice,
+          buyPrice: u.buyPrice ?? 0,
+          barcode: u.barcode ?? "",
+          canSell: u.canSell,
+          canPurchase: u.canPurchase,
+          isDefaultSaleUnit: Boolean(u.isDefaultSaleUnit),
+          persisted: true,
+        })),
+    );
+    unitsInitRef.current = true;
+  }, [product, existingUnits]);
+
+  function applyUnitTemplate(template: UnitTemplateRow[]) {
+    setUnits(
+      template.map((row) => ({
+        name: t(`multiUnit.${row.nameKey}`),
+        conversionToBase: row.conversionToBase,
+        sellPrice: 0,
+        buyPrice: 0,
+        barcode: "",
+        canSell: row.canSell,
+        canPurchase: row.canPurchase,
+        isDefaultSaleUnit: row.isDefaultSaleUnit,
+        persisted: false,
+      })),
+    );
+  }
+
+  function selectMultiUnit() {
+    form.setValue("saleType", "multi_unit", { shouldDirty: true });
+    if (units.length === 0) {
+      applyUnitTemplate(
+        looksLikePharmacy(form.getValues("category"))
+          ? PHARMACY_UNIT_TEMPLATE
+          : SUPERMARKET_UNIT_TEMPLATE,
+      );
+    }
+  }
+
+  function updateUnit(index: number, patch: Partial<UnitRow>) {
+    setUnits((cur) => cur.map((u, i) => (i === index ? { ...u, ...patch } : u)));
+  }
+
+  function setDefaultUnit(index: number) {
+    setUnits((cur) =>
+      cur.map((u, i) => ({ ...u, isDefaultSaleUnit: i === index })),
+    );
+  }
+
+  function addUnitRow() {
+    setUnits((cur) => [
+      ...cur,
+      {
+        name: "",
+        conversionToBase: 1,
+        sellPrice: 0,
+        buyPrice: 0,
+        barcode: "",
+        canSell: true,
+        canPurchase: false,
+        isDefaultSaleUnit: cur.length === 0,
+        persisted: false,
+      },
+    ]);
+  }
+
+  function removeUnitRow(index: number) {
+    setUnits((cur) => {
+      const next = cur.filter((_, i) => i !== index);
+      // Keep exactly one default among the remaining sellable rows.
+      if (next.length > 0 && !next.some((u) => u.isDefaultSaleUnit)) {
+        const firstSellable = next.findIndex((u) => u.canSell);
+        const target = firstSellable >= 0 ? firstSellable : 0;
+        next[target] = { ...next[target], isDefaultSaleUnit: true };
+      }
+      return next;
+    });
+  }
   const sellPrice = form.watch("sellPrice");
   const buyPrice = form.watch("buyPrice");
   const watchedBarcode = form.watch("barcode");
@@ -185,6 +334,126 @@ export function ProductForm({ product, onSaved, onCancel, onOpenExisting }: Prop
     setLossWarning(Number(sellPrice) < Number(buyPrice));
   }, [sellPrice, buyPrice]);
 
+  const UNIT_ISSUE_KEY: Record<string, string> = {
+    no_units: "multiUnit.errUnits",
+    no_sellable: "multiUnit.errSellable",
+    no_default: "multiUnit.errDefault",
+    multiple_default: "multiUnit.errMultipleDefault",
+    no_base: "multiUnit.errBase",
+    empty_name: "multiUnit.errName",
+    bad_conversion: "multiUnit.errConversion",
+    duplicate_barcode: "multiUnit.errBarcode",
+  };
+
+  async function submitMultiUnit(values: ProductSchema, now: string) {
+    const issues = validateUnitDrafts(units);
+    if (issues.length > 0) {
+      push(t(UNIT_ISSUE_KEY[issues[0].code] ?? "multiUnit.errUnits"), "error");
+      return;
+    }
+
+    // Product/unit barcodes share one scanner namespace. Prevent ambiguous
+    // scans before the service-layer guard runs.
+    const productOwnBarcode = normalizeBarcode(values.barcode);
+    const otherProductBarcodes = new Set(
+      (products ?? [])
+        .filter((p) => p.id !== product?.id)
+        .map((p) => normalizeBarcode(p.barcode)),
+    );
+    const otherUnitBarcodes = new Set(
+      (allProductUnits ?? [])
+        .filter((u) => u.productId !== product?.id && u.id)
+        .map((u) => normalizeBarcode(u.barcode ?? ""))
+        .filter(Boolean),
+    );
+    for (const row of units) {
+      const bc = normalizeBarcode(row.barcode || "");
+      if (!bc) continue;
+      if (bc === productOwnBarcode || otherProductBarcodes.has(bc) || otherUnitBarcodes.has(bc)) {
+        push(t("products.barcodeUnique"), "error");
+        return;
+      }
+    }
+
+    const productId = product?.id ?? createId("prod");
+    const built = units.map((row, i) =>
+      buildProductUnit(
+        productId,
+        {
+          id: row.id,
+          name: row.name,
+          conversionToBase: row.conversionToBase,
+          sellPrice: row.sellPrice,
+          buyPrice: canEditCost ? row.buyPrice : undefined,
+          barcode: row.barcode || undefined,
+          canSell: row.canSell,
+          canPurchase: row.canPurchase,
+          isDefaultSaleUnit: row.isDefaultSaleUnit,
+        },
+        i,
+        now,
+      ),
+    );
+    const baseUnit = built.find((u) => u.conversionToBase === 1) ?? built[0];
+    const defaultUnit = built.find((u) => u.isDefaultSaleUnit) ?? baseUnit;
+
+    if (!product && values.quantityInStock > 0 && canEditCost && (baseUnit.buyPrice ?? 0) <= 0) {
+      push(t("multiUnit.errOpeningCost"), "error");
+      return;
+    }
+
+    try {
+      if (product) {
+        const changes: Partial<Product> = {
+          ...values,
+          saleType: "multi_unit",
+          defaultSaleUnitId: defaultUnit.id,
+          unit: baseUnit.name,
+          sellPrice: baseUnit.sellPrice,
+          // Stock changes only ever go through stock-movement services.
+          quantityInStock: product.quantityInStock,
+          minimumStockAlert: values.minimumStockAlert,
+          lastUpdated: now,
+        };
+        if (canEditCost) changes.buyPrice = baseUnit.buyPrice ?? 0;
+        else delete changes.buyPrice;
+        await updateProductDetails(product, changes);
+        await saveProductUnits({
+          product: { id: product.id, name: product.name },
+          units: built,
+        });
+        push(t("products.productUpdated"));
+      } else {
+        const created: Product = {
+          id: productId,
+          ...values,
+          saleType: "multi_unit",
+          defaultSaleUnitId: defaultUnit.id,
+          unit: baseUnit.name,
+          quantityInStock: values.quantityInStock,
+          minimumStockAlert: values.minimumStockAlert,
+          sellPrice: baseUnit.sellPrice,
+          buyPrice: canEditCost ? baseUnit.buyPrice ?? 0 : 0,
+          lastUpdated: now,
+          syncStatus: "pending",
+        };
+        await createProductWithInitialMovement(created);
+        await saveProductUnits({
+          product: { id: created.id, name: created.name },
+          units: built,
+        });
+        rememberProductDefaults(values);
+        form.reset(buildEmptyDefaults(settings));
+        setUnits([]);
+        unitsInitRef.current = false;
+        push(t("products.productCreated"));
+      }
+      onSaved?.();
+    } catch (error) {
+      push(getServiceErrorMessage(error, t, t("products.productUpdated")), "error");
+    }
+  }
+
   async function onSubmit(values: ProductSchema) {
     const existing = await productRepo.findByBarcode(values.barcode);
     if (existing && existing.id !== product?.id) {
@@ -197,6 +466,13 @@ export function ProductForm({ product, onSaved, onCancel, onOpenExisting }: Prop
       return;
     }
     const now = new Date().toISOString();
+
+    // ── Multi-unit products ────────────────────────────────────────────────
+    if (values.saleType === "multi_unit") {
+      await submitMultiUnit(values, now);
+      return;
+    }
+
     const valueIsWeight = values.saleType === "weight";
     // Weight stock/threshold are entered in kg; persist them as integer grams.
     // Prices stay per-kg. Stored saleType drives all downstream weight math.
@@ -258,8 +534,8 @@ export function ProductForm({ product, onSaved, onCancel, onOpenExisting }: Prop
           >
             <Button
               type="button"
-              variant={isWeight ? "secondary" : "primary"}
-              aria-pressed={!isWeight}
+              variant={!isWeight && !isMulti ? "primary" : "secondary"}
+              aria-pressed={!isWeight && !isMulti}
               disabled={Boolean(product)}
               className="flex-1"
               onClick={() => {
@@ -282,9 +558,26 @@ export function ProductForm({ product, onSaved, onCancel, onOpenExisting }: Prop
             >
               {t("weight.weight")}
             </Button>
+            <Button
+              type="button"
+              variant={isMulti ? "primary" : "secondary"}
+              aria-pressed={isMulti}
+              disabled={Boolean(product)}
+              className="flex-1"
+              onClick={selectMultiUnit}
+            >
+              {t("multiUnit.label")}
+            </Button>
           </div>
           {isWeight && (
             <span className="text-xs text-slate-500">{t("weight.deductHelp")}</span>
+          )}
+          {isMulti && (
+            <span className="text-xs text-slate-500">
+              {t("multiUnit.deductHelp", {
+                base: form.watch("unit") || t("multiUnit.baseUnit"),
+              })}
+            </span>
           )}
         </div>
 
@@ -332,7 +625,7 @@ export function ProductForm({ product, onSaved, onCancel, onOpenExisting }: Prop
         </FormField>
 
         {!isWeight && (
-          <FormField label={t("products.unit")}>
+          <FormField label={isMulti ? t("multiUnit.baseUnitName") : t("products.unit")}>
             <Input {...form.register("unit")} />
           </FormField>
         )}
@@ -351,37 +644,41 @@ export function ProductForm({ product, onSaved, onCancel, onOpenExisting }: Prop
           />
         </FormField>
 
-        {canEditCost ? (
-          <FormField label={isWeight ? t("weight.costPerKg") : t("products.buyPrice")}>
+        {/* Multi-unit prices live on each unit row below, not here. */}
+        {!isMulti &&
+          (canEditCost ? (
+            <FormField label={isWeight ? t("weight.costPerKg") : t("products.buyPrice")}>
+              <MoneyInputRHF
+                name="buyPrice"
+                control={form.control}
+                currency={currency}
+                min={0}
+              />
+            </FormField>
+          ) : (
+            // Cost is hidden for roles without canEditCost, but we surface a clear
+            // note so creating a product without a cost is an explicit, visible
+            // outcome rather than a silent buyPrice = 0.
+            <FormField label={isWeight ? t("weight.costPerKg") : t("products.buyPrice")}>
+              <div className="flex min-h-11 items-center rounded-xl bg-slate-50 border border-slate-100 px-3 text-xs text-slate-500">
+                {t("products.buyPriceLocked")}
+              </div>
+            </FormField>
+          ))}
+
+        {!isMulti && (
+          <FormField
+            label={isWeight ? t("weight.sellPricePerKg") : t("products.sellPrice")}
+            error={e.sellPrice?.message}
+          >
             <MoneyInputRHF
-              name="buyPrice"
+              name="sellPrice"
               control={form.control}
               currency={currency}
               min={0}
             />
           </FormField>
-        ) : (
-          // Cost is hidden for roles without canEditCost, but we surface a clear
-          // note so creating a product without a cost is an explicit, visible
-          // outcome rather than a silent buyPrice = 0.
-          <FormField label={isWeight ? t("weight.costPerKg") : t("products.buyPrice")}>
-            <div className="flex min-h-11 items-center rounded-xl bg-slate-50 border border-slate-100 px-3 text-xs text-slate-500">
-              {t("products.buyPriceLocked")}
-            </div>
-          </FormField>
         )}
-
-        <FormField
-          label={isWeight ? t("weight.sellPricePerKg") : t("products.sellPrice")}
-          error={e.sellPrice?.message}
-        >
-          <MoneyInputRHF
-            name="sellPrice"
-            control={form.control}
-            currency={currency}
-            min={0}
-          />
-        </FormField>
 
         <FormField
           label={isWeight ? t("weight.lowStockKg") : t("products.minimumStockAlert")}
@@ -433,6 +730,145 @@ export function ProductForm({ product, onSaved, onCancel, onOpenExisting }: Prop
           <Input {...form.register("notes")} />
         </FormField>
       </div>
+
+      {/* Multi-unit editor — compact card, only for multi_unit products */}
+      {isMulti && (
+        <div className="flex flex-col gap-3 rounded-2xl border border-border-default bg-surface-soft/40 p-4">
+          <div className="flex items-center justify-between gap-2">
+            <h4 className="text-sm font-semibold text-slate-800">
+              {t("multiUnit.units")}
+            </h4>
+          </div>
+
+          {/* Quick templates — disabled when editing so they can't wipe units */}
+          {!product && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-slate-500">{t("multiUnit.template")}:</span>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => applyUnitTemplate(PHARMACY_UNIT_TEMPLATE)}
+              >
+                {t("multiUnit.templatePharmacy")}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => applyUnitTemplate(SUPERMARKET_UNIT_TEMPLATE)}
+              >
+                {t("multiUnit.templateSupermarket")}
+              </Button>
+            </div>
+          )}
+
+          <div className="flex flex-col gap-2">
+            {units.map((u, index) => (
+              <div
+                key={u.id ?? `new-${index}`}
+                className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 rounded-xl border border-border-subtle bg-surface p-3"
+              >
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs text-slate-500">{t("multiUnit.unitName")}</span>
+                    <Input
+                      value={u.name}
+                      onChange={(ev) => updateUnit(index, { name: ev.target.value })}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs text-slate-500">{t("multiUnit.conversion")}</span>
+                    <NumberField
+                      value={u.conversionToBase}
+                      onValueChange={(v) => updateUnit(index, { conversionToBase: v })}
+                      precision="integer"
+                      min={1}
+                      disabled={u.persisted}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs text-slate-500">{t("multiUnit.sellPrice")}</span>
+                    <MoneyInput
+                      value={u.sellPrice}
+                      onValueChange={(v) => updateUnit(index, { sellPrice: v })}
+                      currency={currency}
+                      min={0}
+                    />
+                  </label>
+                  {canEditCost && (
+                    <label className="flex flex-col gap-1">
+                      <span className="text-xs text-slate-500">{t("multiUnit.buyPrice")}</span>
+                      <MoneyInput
+                        value={u.buyPrice}
+                        onValueChange={(v) => updateUnit(index, { buyPrice: v })}
+                        currency={currency}
+                        min={0}
+                      />
+                    </label>
+                  )}
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs text-slate-500">{t("multiUnit.barcode")}</span>
+                    <Input
+                      value={u.barcode}
+                      onChange={(ev) => updateUnit(index, { barcode: ev.target.value })}
+                    />
+                  </label>
+                </div>
+                <div className="flex flex-row sm:flex-col items-start justify-between gap-2">
+                  <div className="flex flex-wrap gap-3 text-xs text-slate-600">
+                    <label className="flex items-center gap-1">
+                      <input
+                        type="checkbox"
+                        checked={u.canSell}
+                        onChange={(ev) => updateUnit(index, { canSell: ev.target.checked })}
+                      />
+                      {t("multiUnit.canSell")}
+                    </label>
+                    <label className="flex items-center gap-1">
+                      <input
+                        type="checkbox"
+                        checked={u.canPurchase}
+                        onChange={(ev) => updateUnit(index, { canPurchase: ev.target.checked })}
+                      />
+                      {t("multiUnit.canPurchase")}
+                    </label>
+                    <label className="flex items-center gap-1">
+                      <input
+                        type="radio"
+                        name="defaultSaleUnit"
+                        checked={u.isDefaultSaleUnit}
+                        onChange={() => setDefaultUnit(index)}
+                      />
+                      {t("multiUnit.defaultUnit")}
+                    </label>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => removeUnitRow(index)}
+                    aria-label={t("multiUnit.removeUnit")}
+                  >
+                    <Trash2 size={16} aria-hidden />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={addUnitRow}
+            className="self-start inline-flex items-center gap-1.5"
+          >
+            <Plus size={16} aria-hidden />
+            {t("multiUnit.addUnit")}
+          </Button>
+        </div>
+      )}
 
       {/* Footer row */}
       <div className="flex items-center justify-between gap-4 pt-2 border-t border-slate-100">

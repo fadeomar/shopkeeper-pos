@@ -39,6 +39,12 @@ import { MoneyInput, MoneyInputRHF } from "@/components/ui/money-input";
 import { QuantityStepper } from "@/components/pos/quantity-stepper";
 import { NumberField } from "@/components/ui/number-field";
 import { formatStockDisplay, gramsToKg, kgToGrams } from "@/lib/utils/weight";
+import {
+  formatProductStock,
+  getDefaultPurchaseUnit,
+  getPurchasableUnits,
+  isMultiUnitProduct,
+} from "@/lib/utils/multi-unit";
 import { PaymentMethodControl } from "@/components/pos/payment-method-control";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { CircleCheck, Phone, Search, Store, UserPlus, X } from "lucide-react";
@@ -59,9 +65,21 @@ import type {
   PurchaseDraftItem,
   PurchaseItem,
   Product,
+  ProductUnit,
   Settings,
   Supplier,
 } from "@/types/domain";
+
+/**
+ * Purchase line identity. Multi-unit lines are keyed by productId +
+ * purchaseUnitId so the same product can be received in different units;
+ * everything else keys by productId (unchanged behavior).
+ */
+function purchaseLineKey(item: PurchaseDraftItem): string {
+  return item.purchaseUnitId
+    ? `${item.productId}::${item.purchaseUnitId}`
+    : item.productId;
+}
 
 // Avoid unused import warning — customerRepo is re-exported by the repos
 // barrel but not used here.
@@ -216,6 +234,16 @@ export function PurchaseEntryScreen() {
     [],
   );
   const suppliers = useLiveQuery(() => supplierRepo.list(), []);
+  const productUnits = useLiveQuery(() => db.productUnits.toArray(), []);
+  const unitsByProduct = useMemo(() => {
+    const map = new Map<string, ProductUnit[]>();
+    for (const unit of productUnits ?? []) {
+      const list = map.get(unit.productId) ?? [];
+      list.push(unit);
+      map.set(unit.productId, list);
+    }
+    return map;
+  }, [productUnits]);
   const settings = useLiveQuery(() => settingsRepo.get(), []);
   const activeShift = useLiveQuery(
     () => db.shifts.where("status").equals("open").first().then((shift) => shift ?? null),
@@ -234,6 +262,7 @@ export function PurchaseEntryScreen() {
   const [isNewLineCostManuallyEdited, setIsNewLineCostManuallyEdited] =
     useState(false);
   const [newLineQty, setNewLineQty] = useState<number>(1);
+  const [newLineUnitId, setNewLineUnitId] = useState<string>("");
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [quickAddBarcode, setQuickAddBarcode] = useState("");
   const [quickAddDefaultQuantity, setQuickAddDefaultQuantity] = useState(1);
@@ -253,20 +282,31 @@ export function PurchaseEntryScreen() {
   } | null>(null);
   const productOptions = useMemo(
     () =>
-      (products ?? []).map((product) => ({
-        value: product.id,
-        label: product.name,
-        description: [product.barcode, product.brand, product.category]
-          .filter(Boolean)
-          .join(" • "),
-        meta: (
-          <span className="text-xs text-slate-500">
-            {formatCurrency(product.buyPrice, currency)} ·{" "}
-            {product.quantityInStock}
-          </span>
-        ),
-      })),
-    [products, currency],
+      (products ?? []).map((product) => {
+        const units = unitsByProduct.get(product.id);
+        const defaultUnit = isMultiUnitProduct(product)
+          ? getDefaultPurchaseUnit(product, units)
+          : undefined;
+        const conversion = defaultUnit?.conversionToBase || 1;
+        const price = defaultUnit
+          ? defaultUnit.buyPrice ?? product.buyPrice * conversion
+          : product.buyPrice;
+        const unitSuffix = defaultUnit ? ` / ${defaultUnit.name}` : "";
+        return {
+          value: product.id,
+          label: product.name,
+          description: [product.barcode, product.brand, product.category]
+            .filter(Boolean)
+            .join(" • "),
+          meta: (
+            <span className="text-xs text-slate-500">
+              {formatCurrency(price, currency)}{unitSuffix} ·{" "}
+              {formatProductStock(product, units, product.quantityInStock)}
+            </span>
+          ),
+        };
+      }),
+    [products, unitsByProduct, currency],
   );
   const selectedProductForLine = useMemo(
     () => products?.find((product) => product.id === productId),
@@ -472,6 +512,15 @@ export function PurchaseEntryScreen() {
       return;
     }
 
+    // Multi-unit cost defaulting is handled by the unit-aware effects below.
+    if (selectedProductForLine.saleType === "multi_unit") {
+      if (lastSelectedProductId.current !== selectedProductForLine.id) {
+        lastSelectedProductId.current = selectedProductForLine.id;
+        setIsNewLineCostManuallyEdited(false);
+      }
+      return;
+    }
+
     const productChanged = lastSelectedProductId.current !== selectedProductForLine.id;
     if (productChanged) {
       lastSelectedProductId.current = selectedProductForLine.id;
@@ -484,6 +533,28 @@ export function PurchaseEntryScreen() {
       setNewLineCost(selectedProductForLine.buyPrice);
     }
   }, [selectedProductForLine, isNewLineCostManuallyEdited]);
+
+  // Multi-unit: pick a default purchase unit when the product changes, and keep
+  // the cost field showing that unit's cost until the cashier overrides it.
+  useEffect(() => {
+    if (!selectedProductForLine || selectedProductForLine.saleType !== "multi_unit") return;
+    const units = unitsByProduct.get(selectedProductForLine.id);
+    setNewLineUnitId((cur) => {
+      const valid = getPurchasableUnits(selectedProductForLine, units).some((u) => u.id === cur);
+      return valid ? cur : getDefaultPurchaseUnit(selectedProductForLine, units).id;
+    });
+  }, [selectedProductForLine, unitsByProduct]);
+
+  useEffect(() => {
+    if (!selectedProductForLine || selectedProductForLine.saleType !== "multi_unit") return;
+    if (isNewLineCostManuallyEdited) return;
+    const units = unitsByProduct.get(selectedProductForLine.id);
+    const unit =
+      getPurchasableUnits(selectedProductForLine, units).find((u) => u.id === newLineUnitId) ??
+      getDefaultPurchaseUnit(selectedProductForLine, units);
+    const conversion = unit.conversionToBase || 1;
+    setNewLineCost(unit.buyPrice ?? selectedProductForLine.buyPrice * conversion);
+  }, [selectedProductForLine, newLineUnitId, unitsByProduct, isNewLineCostManuallyEdited]);
 
   useEffect(() => {
     if (!draftRestored || !products || !inventoryPrefillProductId) return;
@@ -678,8 +749,60 @@ export function PurchaseEntryScreen() {
     form.setValue("supplierPhone", supplier.phone ?? "", { shouldDirty: true });
   }
 
-  function addProductToDraft(product: Product, quantity: number, unitCost: number) {
+  function addProductToDraft(
+    product: Product,
+    quantity: number,
+    unitCost: number,
+    unit?: ProductUnit,
+  ) {
     const isWeight = product.saleType === "weight";
+    const isMulti = product.saleType === "multi_unit";
+
+    // Multi-unit buys whole units of a selected unit (box/strip); stock and
+    // lots use the base count = quantity × conversion.
+    if (isMulti) {
+      const units = unitsByProduct.get(product.id);
+      const u = unit ?? getDefaultPurchaseUnit(product, units);
+      const conversion = u.conversionToBase || 1;
+      const qty = Math.max(1, Math.trunc(quantity || 0));
+      // When a unit is passed (the Add-line button), honor the entered cost;
+      // otherwise (scan/quick-add) derive the unit's default cost.
+      const cost = unit
+        ? Math.max(0, unitCost || u.buyPrice || product.buyPrice * conversion)
+        : u.buyPrice ?? product.buyPrice * conversion;
+      const key = `${product.id}::${u.id}`;
+      setDraftItems((cur) => {
+        const existing = cur.find((i) => purchaseLineKey(i) === key);
+        if (existing) {
+          return cur.map((i) => {
+            if (purchaseLineKey(i) !== key) return i;
+            const nextQty = i.quantity + qty;
+            return { ...i, quantity: nextQty, baseQuantity: nextQty * conversion, unitCost: cost };
+          });
+        }
+        return [
+          ...cur,
+          {
+            productId: product.id,
+            barcode: u.barcode || product.barcode,
+            name: product.name,
+            category: product.category,
+            saleType: "multi_unit",
+            purchaseUnitId: u.id,
+            purchaseUnitName: u.name,
+            conversionToBase: conversion,
+            currentStock: product.quantityInStock,
+            baseQuantity: qty * conversion,
+            quantity: qty,
+            unitCost: cost,
+            unitSellPriceBefore: u.sellPrice,
+          },
+        ];
+      });
+      if (lastFinalized) setLastFinalized(null);
+      return;
+    }
+
     // Weight buys kilograms (fractional ok); unit buys whole pieces.
     const qty = isWeight
       ? Math.max(0, quantity || 0)
@@ -721,11 +844,18 @@ export function PurchaseEntryScreen() {
   function addLine() {
     const product = products?.find((p) => p.id === productId);
     if (!product) return;
-    addProductToDraft(product, newLineQty, newLineCost);
+    const unit =
+      product.saleType === "multi_unit"
+        ? getPurchasableUnits(product, unitsByProduct.get(product.id)).find(
+            (u) => u.id === newLineUnitId,
+          ) ?? getDefaultPurchaseUnit(product, unitsByProduct.get(product.id))
+        : undefined;
+    addProductToDraft(product, newLineQty, newLineCost, unit);
     setProductId("");
     setNewLineCost(0);
     setIsNewLineCostManuallyEdited(false);
     setNewLineQty(1);
+    setNewLineUnitId("");
   }
 
   function resetMiscForm() {
@@ -768,31 +898,61 @@ export function PurchaseEntryScreen() {
     if (lastFinalized) setLastFinalized(null);
   }
 
+  function resolvePurchaseBarcode(
+    bc: string,
+  ): { product: Product; unit?: ProductUnit } | undefined {
+    const productMatch = products?.find((p) => normalizeBarcode(p.barcode) === bc);
+    if (productMatch) return { product: productMatch };
+
+    const unitMatch = (productUnits ?? []).find(
+      (unit) => unit.barcode && normalizeBarcode(unit.barcode) === bc,
+    );
+    if (!unitMatch) return undefined;
+
+    const product = products?.find((p) => p.id === unitMatch.productId);
+    if (!product) return undefined;
+    return { product, unit: unitMatch };
+  }
+
   function handleScanForPurchase(barcode: string) {
     const bc = normalizeBarcode(barcode);
-    const product = products?.find((p) => normalizeBarcode(p.barcode) === bc);
-    if (!product) {
+    const hit = resolvePurchaseBarcode(bc);
+    if (!hit) {
       setQuickAddBarcode(bc);
       setQuickAddDefaultQuantity(1);
       setQuickAddOpen(true);
       push(t("purchases.noProductFoundForBarcode", { barcode: bc }), "error");
       return;
     }
-    addProductToDraft(product, 1, product.buyPrice);
+
+    if (hit.unit) {
+      if (!hit.unit.canPurchase) {
+        push(t("multiUnit.unitNotPurchasable"), "error");
+        return;
+      }
+      const unitCost = hit.unit.buyPrice ?? hit.product.buyPrice * (hit.unit.conversionToBase || 1);
+      addProductToDraft(hit.product, 1, unitCost, hit.unit);
+      return;
+    }
+
+    addProductToDraft(hit.product, 1, hit.product.buyPrice);
   }
 
-  function updateLine(
-    productIdToUpdate: string,
-    patch: Partial<PurchaseDraftItem>,
-  ) {
+  function updateLine(key: string, patch: Partial<PurchaseDraftItem>) {
     setDraftItems((cur) =>
       cur.map((i) => {
-        if (i.productId !== productIdToUpdate) return i;
+        if (purchaseLineKey(i) !== key) return i;
         const next = { ...i, ...patch };
         if (next.saleType === "weight") {
           // Weight quantity is kilograms (fractional); keep grams in sync.
           next.quantity = Number.isFinite(next.quantity) ? Math.max(0, next.quantity) : 0;
           next.baseQuantity = kgToGrams(next.quantity);
+        } else if (next.saleType === "multi_unit") {
+          // Multi-unit buys whole units; keep the base count in sync.
+          next.quantity = Number.isFinite(next.quantity)
+            ? Math.max(1, Math.trunc(next.quantity))
+            : 1;
+          next.baseQuantity = next.quantity * (next.conversionToBase ?? 1);
         } else {
           next.quantity = Number.isFinite(next.quantity)
             ? Math.max(1, Math.trunc(next.quantity))
@@ -806,10 +966,8 @@ export function PurchaseEntryScreen() {
     );
   }
 
-  function removeLine(productIdToRemove: string) {
-    setDraftItems((cur) =>
-      cur.filter((i) => i.productId !== productIdToRemove),
-    );
+  function removeLine(key: string) {
+    setDraftItems((cur) => cur.filter((i) => purchaseLineKey(i) !== key));
   }
 
   function clearDraft() {
@@ -870,7 +1028,14 @@ export function PurchaseEntryScreen() {
       accessorKey: "name",
       header: t("purchases.item"),
       cell: ({ row }) => (
-        <span className="font-medium text-slate-800">{row.original.name}</span>
+        <span className="font-medium text-slate-800">
+          {row.original.name}
+          {row.original.saleType === "multi_unit" && row.original.purchaseUnitName ? (
+            <span className="ms-1 text-xs font-normal text-slate-500">
+              · {row.original.purchaseUnitName}
+            </span>
+          ) : null}
+        </span>
       ),
     },
     {
@@ -880,7 +1045,18 @@ export function PurchaseEntryScreen() {
         <span className="tabular-nums text-slate-500">
           {isMiscLine(row.original)
             ? t("purchases.nonStock")
-            : formatStockDisplay(row.original.saleType, row.original.currentStock)}
+            : row.original.saleType === "multi_unit"
+              ? (() => {
+                  const product = products?.find((p) => p.id === row.original.productId);
+                  return product
+                    ? formatProductStock(
+                        product,
+                        unitsByProduct.get(row.original.productId),
+                        row.original.currentStock,
+                      )
+                    : `${Math.floor(row.original.currentStock / (row.original.conversionToBase || 1))} ${row.original.purchaseUnitName}`;
+                })()
+              : formatStockDisplay(row.original.saleType, row.original.currentStock)}
         </span>
       ),
     },
@@ -896,7 +1072,7 @@ export function PurchaseEntryScreen() {
             <div className="flex items-center gap-1">
               <NumberField
                 value={item.quantity}
-                onValueChange={(v) => updateLine(item.productId, { quantity: v })}
+                onValueChange={(v) => updateLine(purchaseLineKey(item), { quantity: v })}
                 precision="decimal"
                 min={0}
                 onKeyDown={dismissKeyboardOnEnter}
@@ -910,7 +1086,7 @@ export function PurchaseEntryScreen() {
         return (
           <QuantityStepper
             value={item.quantity}
-            onChange={(v) => updateLine(item.productId, { quantity: v })}
+            onChange={(v) => updateLine(purchaseLineKey(item), { quantity: v })}
             min={1}
             className="w-[140px]"
           />
@@ -926,7 +1102,7 @@ export function PurchaseEntryScreen() {
           <div className="flex items-center gap-1">
             <MoneyInput
               value={item.unitCost}
-              onValueChange={(v) => updateLine(item.productId, { unitCost: v })}
+              onValueChange={(v) => updateLine(purchaseLineKey(item), { unitCost: v })}
               currency={currency}
               min={0}
               onKeyDown={dismissKeyboardOnEnter}
@@ -936,6 +1112,9 @@ export function PurchaseEntryScreen() {
             />
             {item.saleType === "weight" && (
               <span className="text-xs text-slate-400">{t("weight.perKgSuffix")}</span>
+            )}
+            {item.saleType === "multi_unit" && item.purchaseUnitName && (
+              <span className="text-xs text-slate-400">/ {item.purchaseUnitName}</span>
             )}
           </div>
         );
@@ -963,7 +1142,7 @@ export function PurchaseEntryScreen() {
           type="button"
           variant="ghost"
           size="sm"
-          onClick={() => removeLine(row.original.productId)}
+          onClick={() => removeLine(purchaseLineKey(row.original))}
           aria-label={t("common.remove")}
         >
           <X size={14} aria-hidden />
@@ -1028,6 +1207,33 @@ export function PurchaseEntryScreen() {
                   fullWidth={false}
                 />
                 <span className="text-xs text-slate-400">{t("weight.kgUnit")}</span>
+              </div>
+            ) : selectedProductForLine?.saleType === "multi_unit" ? (
+              <div className="flex items-center gap-1">
+                <QuantityStepper
+                  value={newLineQty}
+                  onChange={setNewLineQty}
+                  min={1}
+                  className="w-[120px]"
+                />
+                <select
+                  aria-label={t("multiUnit.selectUnit")}
+                  value={newLineUnitId}
+                  onChange={(e) => {
+                    setNewLineUnitId(e.target.value);
+                    setIsNewLineCostManuallyEdited(false);
+                  }}
+                  className="rounded-lg border border-border-default bg-surface px-2 py-1 text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand/30"
+                >
+                  {getPurchasableUnits(
+                    selectedProductForLine,
+                    unitsByProduct.get(selectedProductForLine.id),
+                  ).map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name}
+                    </option>
+                  ))}
+                </select>
               </div>
             ) : (
               <QuantityStepper
@@ -1126,7 +1332,7 @@ export function PurchaseEntryScreen() {
               <div className="flex flex-col gap-2 md:hidden">
                 {draftItems.map((item) => (
                   <div
-                    key={item.productId}
+                    key={purchaseLineKey(item)}
                     className="rounded-2xl border border-border-default bg-surface p-3 shadow-xs"
                   >
                     {/* Header: name + remove */}
@@ -1134,6 +1340,9 @@ export function PurchaseEntryScreen() {
                       <div className="min-w-0">
                         <p className="text-sm font-semibold text-slate-900 truncate">
                           {item.name}
+                          {item.saleType === "multi_unit" && item.purchaseUnitName
+                            ? ` · ${item.purchaseUnitName}`
+                            : ""}
                         </p>
                         <p className="text-xs text-slate-500 mt-0.5">
                           {t("purchases.currentStock")}:{" "}
@@ -1144,7 +1353,7 @@ export function PurchaseEntryScreen() {
                       </div>
                       <button
                         type="button"
-                        onClick={() => removeLine(item.productId)}
+                        onClick={() => removeLine(purchaseLineKey(item))}
                         aria-label={t("common.remove")}
                         className="shrink-0 rounded-lg p-1 text-slate-400 hover:bg-danger-soft hover:text-danger transition-colors"
                       >
@@ -1162,7 +1371,7 @@ export function PurchaseEntryScreen() {
                           <NumberField
                             value={item.quantity}
                             onValueChange={(v) =>
-                              updateLine(item.productId, { quantity: v })
+                              updateLine(purchaseLineKey(item), { quantity: v })
                             }
                             precision="decimal"
                             min={0}
@@ -1173,7 +1382,7 @@ export function PurchaseEntryScreen() {
                           <QuantityStepper
                             value={item.quantity}
                             onChange={(v) =>
-                              updateLine(item.productId, { quantity: v })
+                              updateLine(purchaseLineKey(item), { quantity: v })
                             }
                             min={1}
                             className="w-full"
@@ -1187,7 +1396,7 @@ export function PurchaseEntryScreen() {
                         <MoneyInput
                           value={item.unitCost}
                           onValueChange={(v) =>
-                            updateLine(item.productId, { unitCost: v })
+                            updateLine(purchaseLineKey(item), { unitCost: v })
                           }
                           currency={currency}
                           min={0}
@@ -1225,6 +1434,7 @@ export function PurchaseEntryScreen() {
                   emptyTitle={t("purchases.addOneProduct")}
                   pageSize={10}
                   labels={tableLabels}
+                  getRowId={(row) => purchaseLineKey(row)}
                 />
               </div>
             </>

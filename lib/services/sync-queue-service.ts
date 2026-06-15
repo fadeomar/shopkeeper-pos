@@ -70,6 +70,9 @@ const SYNC_ENTITY_PRIORITY: Record<SyncEntity, number> = {
   // the midpoint since queue-service can't distinguish the two sub-types.
   settings: 9,
   product: 11,
+  // Product units depend on their parent product, so they sync right after it
+  // (a fresh device must have the product before its units land).
+  productUnit: 11.5,
   // FIFO records depend on their parents (lots → product, allocations → bill +
   // lot), so they sync after products/bills are pushed.
   inventoryLot: 12,

@@ -19,6 +19,7 @@ function getConflictEntityLabel(
 ): string {
   switch (entity) {
     case 'product': return t('sync.entityProduct');
+    case 'productUnit': return t('sync.entityProductUnit');
     case 'customer': return t('sync.entityCustomer');
     case 'supplier': return t('sync.entitySupplier');
     case 'bill': return t('sync.entityBill');

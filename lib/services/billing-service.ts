@@ -11,8 +11,8 @@ import {
   calculateLineSubtotal,
 } from "@/lib/utils/calculations";
 import { nowIso } from "@/lib/utils/date";
-import { MONEY_EPSILON, addMoney, roundMoney, subtractMoney } from "@/lib/utils/money";
-import { kgToGrams, pricingQuantityFor } from "@/lib/utils/weight";
+import { MONEY_EPSILON, addMoney, multiplyMoney, roundMoney, subtractMoney } from "@/lib/utils/money";
+import { gramsToKg, kgToGrams } from "@/lib/utils/weight";
 import type { BillSplit } from "@/lib/utils/bill-split";
 import { createBillNumber, createId } from "@/lib/utils/id";
 import { buildSyncQueueItem, getSyncQueueId } from "@/lib/services/sync-queue-service";
@@ -42,32 +42,53 @@ function requestSync(): void {
 }
 
 /**
- * Resolve a bill draft line into its base quantity (integer grams for weight,
- * pieces otherwise — what stock and lot allocation consume) and its pricing
- * quantity (kilograms for weight, pieces otherwise — the money multiplier).
+ * Resolve a bill draft line into its base quantity (the integer count stock and
+ * lot allocation consume — grams for weight, base pieces × conversion for
+ * multi_unit, pieces otherwise) and its pricing quantity (the money multiplier
+ * — kilograms for weight, the sold-unit count otherwise).
  */
 function resolveBillLine(line: BillDraftItem): {
   isWeight: boolean;
+  isMulti: boolean;
   baseQuantity: number;
   pricingQuantity: number;
 } {
   const isWeight = line.saleType === 'weight';
+  const isMulti = line.saleType === 'multi_unit';
   const baseQuantity = isWeight
     ? Math.round(line.baseQuantity ?? kgToGrams(line.quantity))
-    : line.quantity;
-  return { isWeight, baseQuantity, pricingQuantity: line.quantity };
+    : isMulti
+      ? Math.round(line.baseQuantity ?? line.quantity * (line.conversionToBase ?? 1))
+      : line.quantity;
+  return { isWeight, isMulti, baseQuantity, pricingQuantity: line.quantity };
 }
 
-/** Base units (grams for weight, pieces otherwise) sold on a finalized bill item. */
+/** True when a line/item tracks an integer base quantity separate from display. */
+function tracksBaseQuantity(saleType: BillItem['saleType']): boolean {
+  return saleType === 'weight' || saleType === 'multi_unit';
+}
+
+/** Base units sold on a finalized bill item (grams/pieces). */
 function billItemBaseSold(item: BillItem): number {
-  return item.saleType === 'weight' ? item.baseQuantitySold ?? 0 : item.quantitySold;
+  return tracksBaseQuantity(item.saleType) ? item.baseQuantitySold ?? 0 : item.quantitySold;
 }
 
 /** Base units already returned on a bill item. */
 function billItemBaseReturned(item: BillItem): number {
-  return item.saleType === 'weight'
+  return tracksBaseQuantity(item.saleType)
     ? item.baseQuantityReturned ?? 0
     : item.quantityReturned ?? 0;
+}
+
+/**
+ * Convert a base quantity back to the item's pricing/display quantity: kg for
+ * weight, sold-unit count (base ÷ conversion) for multi_unit, base count
+ * otherwise. Used to value returns in the same units the line's prices are in.
+ */
+function pricingQtyForItem(item: BillItem, baseQuantity: number): number {
+  if (item.saleType === 'weight') return gramsToKg(baseQuantity);
+  if (item.saleType === 'multi_unit') return baseQuantity / (item.conversionToBaseAtSale ?? 1);
+  return baseQuantity;
 }
 
 /** Base units still on a bill item (sold − returned), in grams/pieces. */
@@ -350,7 +371,7 @@ export async function createFinalizedBill(input: {
 
       for (const item of input.items) {
         const billItemId = createId("bill_item");
-        const { isWeight, baseQuantity, pricingQuantity } = resolveBillLine(item);
+        const { isWeight, isMulti, baseQuantity, pricingQuantity } = resolveBillLine(item);
         // For weight lines, quantitySold/unit prices are in pricing units (kg),
         // so the universal `price × quantity` subtotal holds unchanged.
         const lineSubtotal = calculateLineSubtotal(pricingQuantity, item.unitSellPrice);
@@ -379,14 +400,23 @@ export async function createFinalizedBill(input: {
           billId,
           billItemId,
           productId: item.productId,
-          // Allocate in base units (grams for weight); the lot engine returns
-          // averageUnitCost per pricing unit (per kg) to match the sell price.
+          // Allocate in base units (grams for weight, base pieces for
+          // multi_unit). The lot engine returns averageUnitCost per base unit;
+          // for multi_unit a base unit is one base piece (a pill).
           quantity: baseQuantity,
           createdAt,
         });
+        // For multi_unit, sell/cost prices are per SOLD unit (per strip), but
+        // the FIFO engine cost is per base piece — scale it up by the
+        // conversion so the loss-sale check and the stored cost are in the same
+        // unit as unitSellPrice. Weight/unit pass through (conversion 1 / kg).
+        const conversion = isMulti ? item.conversionToBase ?? 1 : 1;
+        const soldUnitCost = isMulti
+          ? multiplyMoney(averageUnitCost, conversion)
+          : averageUnitCost;
         // Loss-sale policy is enforced against the real FIFO cost, not the
         // product's latest buyPrice. Throwing here rolls back the allocation.
-        assertLossSaleAllowed(settings, item.name, item.unitSellPrice, averageUnitCost);
+        assertLossSaleAllowed(settings, item.name, item.unitSellPrice, soldUnitCost);
         costAllocations.push(...allocations);
         for (const allocation of allocations) consumedLotIds.add(allocation.inventoryLotId);
 
@@ -399,12 +429,17 @@ export async function createFinalizedBill(input: {
           categoryAtSale: item.category,
           itemKind: "product",
           miscDescription: item.miscDescription,
-          // saleType + base grams are stored so old bills render exact weights
-          // and returns can restore the precise grams to their lots.
-          saleType: isWeight ? "weight" : undefined,
+          // saleType + base quantity are stored so old bills render exact
+          // weights/units and returns restore the precise base count to lots.
+          saleType: isWeight ? "weight" : isMulti ? "multi_unit" : undefined,
+          // multi_unit: snapshot the sold unit so receipts/reports read
+          // "2 strip" and returns can convert sold units ↔ base pieces.
+          saleUnitIdAtSale: isMulti ? item.saleUnitId : undefined,
+          saleUnitNameAtSale: isMulti ? item.saleUnitName : undefined,
+          conversionToBaseAtSale: isMulti ? conversion : undefined,
           quantitySold: pricingQuantity,
-          baseQuantitySold: isWeight ? baseQuantity : undefined,
-          unitBuyPriceAtSale: averageUnitCost,
+          baseQuantitySold: isWeight || isMulti ? baseQuantity : undefined,
+          unitBuyPriceAtSale: soldUnitCost,
           unitSellPriceAtSale: item.unitSellPrice,
           lineSubtotal,
           lineProfit: subtractMoney(lineSubtotal, totalCost),
@@ -639,9 +674,10 @@ function appendBillNote(existing: string | undefined, note: string): string {
 }
 
 function calculateReturnedLineValue(bill: Bill, item: BillItem, baseQuantity: number) {
-  // baseQuantity is in base units (grams for weight); convert to the pricing
-  // quantity (kg) before applying per-kg prices. Misc/unit lines pass through.
-  const pricingQuantity = pricingQuantityFor(item.saleType, baseQuantity);
+  // baseQuantity is in base units (grams for weight, base pieces for
+  // multi_unit); convert to the pricing quantity (kg / sold-unit count) before
+  // applying the line's per-unit prices. Misc/unit lines pass through.
+  const pricingQuantity = pricingQtyForItem(item, baseQuantity);
   const lineAmount = calculateLineSubtotal(pricingQuantity, item.unitSellPriceAtSale);
   const lineProfit = calculateLineProfit(pricingQuantity, item.unitBuyPriceAtSale, item.unitSellPriceAtSale);
   const net = calculateBillItemNetContribution(bill, lineAmount, lineProfit);
@@ -750,8 +786,9 @@ export async function voidBill(input: {
       const fullyReturnedItems = items.map((item) => ({
         ...item,
         quantityReturned: item.quantitySold,
-        // Weight lines also fully return their grams so base-unit math balances.
-        baseQuantityReturned: item.saleType === 'weight' ? item.baseQuantitySold : item.baseQuantityReturned,
+        // Weight/multi_unit lines also fully return their base count so
+        // base-unit math balances.
+        baseQuantityReturned: tracksBaseQuantity(item.saleType) ? item.baseQuantitySold : item.baseQuantityReturned,
       }));
 
       await db.billItems.bulkPut(fullyReturnedItems);
@@ -888,10 +925,11 @@ export async function returnBillItem(input: {
             quantity,
             updatedAt: now,
           });
-          // Revenue uses the pricing quantity (kg for weight); the returned
-          // cost from `restore` is already a per-kg-derived money total.
+          // Revenue uses the pricing quantity (kg for weight, sold-unit count
+          // for multi_unit); the returned cost from `restore` is an absolute
+          // money total already.
           const lineAmount = calculateLineSubtotal(
-            pricingQuantityFor(item.saleType, quantity),
+            pricingQtyForItem(item, quantity),
             item.unitSellPriceAtSale,
           );
           // Gross returned profit = returned revenue (before bill discount)
@@ -906,17 +944,18 @@ export async function returnBillItem(input: {
       }
 
       // Track returned quantity in BOTH views: quantityReturned in pricing
-      // units (kg for weight) for money/display, baseQuantityReturned in grams
-      // for weight so base-unit remaining math stays exact.
-      const isWeightItem = item.saleType === 'weight';
+      // units (kg for weight, sold-unit count for multi_unit) for money/display,
+      // baseQuantityReturned in base units (grams/pieces) so base-unit remaining
+      // math stays exact.
+      const tracksBase = tracksBaseQuantity(item.saleType);
       const nextReturnedQuantity =
-        (item.quantityReturned ?? 0) + pricingQuantityFor(item.saleType, quantity);
-      const nextBaseReturned = isWeightItem
+        (item.quantityReturned ?? 0) + pricingQtyForItem(item, quantity);
+      const nextBaseReturned = tracksBase
         ? (item.baseQuantityReturned ?? 0) + quantity
         : undefined;
       await db.billItems.update(item.id, {
         quantityReturned: nextReturnedQuantity,
-        ...(isWeightItem ? { baseQuantityReturned: nextBaseReturned } : {}),
+        ...(tracksBase ? { baseQuantityReturned: nextBaseReturned } : {}),
       });
 
       const allItems = await db.billItems

@@ -10,7 +10,7 @@ import {
   mergedSequences,
 } from '@/lib/services/settings-sync-fields';
 import { normalizeBillSplit } from '@/lib/utils/bill-split';
-import type { AuditEvent, Bill, BillItem, BillItemCostAllocation, CashMovement, Customer, CustomerPayment, Expense, InventoryLot, Product, Purchase, PurchaseItem, Settings, Shift, StockMovement, Supplier, SupplierPayment, SyncEntity, SyncQueueItem } from '@/types/domain';
+import type { AuditEvent, Bill, BillItem, BillItemCostAllocation, CashMovement, Customer, CustomerPayment, Expense, InventoryLot, Product, ProductUnit, Purchase, PurchaseItem, Settings, Shift, StockMovement, Supplier, SupplierPayment, SyncEntity, SyncQueueItem } from '@/types/domain';
 
 const PRODUCT_FIELDS: Array<keyof Product> = [
   'barcode', 'name', 'category', 'brand', 'unit', 'quantityInStock', 'buyPrice', 'sellPrice',
@@ -114,6 +114,58 @@ async function pullProducts(uid: string): Promise<void> {
     }
 
     await db.products.put({ ...cloud, syncStatus: 'synced', lastSyncError: undefined });
+  }
+}
+
+const PRODUCT_UNIT_FIELDS: Array<keyof ProductUnit> = [
+  'name', 'conversionToBase', 'sellPrice', 'buyPrice', 'barcode',
+  'canSell', 'canPurchase', 'isDefaultSaleUnit', 'sortOrder',
+];
+
+/**
+ * Pull product units. Units are mutable (price/name/flag edits), so this mirrors
+ * pullProducts: accept a newer cloud copy, but if this device has a pending
+ * change to the same unit raise a conflict instead of silently overwriting it.
+ * A unit missing locally is inserted. Modeled on pullInventoryLots — deliberately
+ * NOT wrapped in a Dexie transaction because saveConflict opens its own.
+ */
+async function pullProductUnits(uid: string): Promise<void> {
+  const cloudUnits = await pullCollection<ProductUnit>(uid, 'productUnits');
+  for (const cloud of cloudUnits) {
+    const local = await db.productUnits.get(cloud.id);
+    if (!local) {
+      await db.productUnits.put({ ...cloud, syncStatus: 'synced', lastSyncError: undefined });
+      continue;
+    }
+
+    const pendingJob = await getPendingLocalJob('productUnit', local.id);
+    const fields = changedFields(
+      local as unknown as Record<string, unknown>,
+      cloud as unknown as Record<string, unknown>,
+      PRODUCT_UNIT_FIELDS as string[],
+    );
+    if (fields.length === 0 || !isCloudNewer(local.syncedAt ?? pendingJob?.createdAt, cloud.syncedAt)) continue;
+
+    if (pendingJob) {
+      const conflictId = await saveConflict({
+        id: `conflict:productUnit:${local.id}:pull-cloud`,
+        entity: 'productUnit',
+        entityId: local.id,
+        operationId: getSyncQueueId('productUnit', local.id),
+        conflictType: 'same_field_changed',
+        severity: 'medium',
+        cloudRecord: cloud as unknown as Record<string, unknown>,
+        localRecord: local as unknown as Record<string, unknown>,
+        changedFields: fields,
+      });
+      if (conflictId) {
+        await db.productUnits.update(local.id, { syncStatus: 'conflict', lastSyncError: 'Needs conflict review' });
+        await db.syncQueue.update(getSyncQueueId('productUnit', local.id), { status: 'conflict', lastError: 'Needs conflict review' });
+      }
+      continue;
+    }
+
+    await db.productUnits.put({ ...cloud, syncStatus: 'synced', lastSyncError: undefined });
   }
 }
 
@@ -447,6 +499,8 @@ export async function pullCloudChangesBeforePush(uid: string): Promise<void> {
   await pullSuppliers(uid);
   await pullShifts(uid);
   await pullProducts(uid);
+  // Product units after their parent product (a unit references a productId).
+  await pullProductUnits(uid);
   // FIFO records: lots after products (parent first), allocations after bills
   // (pulled in pullAppendOnlyCollections above).
   await pullInventoryLots(uid);
