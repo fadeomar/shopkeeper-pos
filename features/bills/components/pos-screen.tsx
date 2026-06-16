@@ -19,8 +19,14 @@ import {
   wasPaidAmountManuallyEdited,
 } from "@/features/bills/utils/paid-amount";
 import {
+  isBelowCost,
+  resolveSellPrice,
+  sellPriceFloor,
+} from "@/features/bills/utils/sell-price";
+import {
   calculateBillTotals,
   calculateChange,
+  calculateLineGrossProfit,
   calculateLineSubtotal,
 } from "@/lib/utils/calculations";
 import { formatCurrency } from "@/lib/utils/money";
@@ -241,12 +247,14 @@ function SuccessPanel({
   items,
   settings,
   currency,
+  canViewProfit,
   onDismiss,
 }: {
   bill: Bill;
   items: BillItem[];
   settings?: Settings;
   currency: string;
+  canViewProfit: boolean;
   onDismiss: () => void;
 }) {
   const { t } = useLocale();
@@ -310,6 +318,12 @@ function SuccessPanel({
           value={formatCurrency(bill.totalAmount, currency)}
           highlight
         />
+        {canViewProfit && (
+          <SummaryRow
+            label={t("billing.profit")}
+            value={formatCurrency(bill.totalProfit, currency)}
+          />
+        )}
         {bill.changeAmount > 0.001 && (
           <SummaryRow
             label={t("billing.changeDueBack")}
@@ -385,7 +399,7 @@ export function PosScreen() {
   const { t, dir } = useLocale();
   const tableLabels = useDataTableLabels();
   const { user } = useAuth();
-  const { canDiscount } = usePermissions();
+  const { canDiscount, canViewProfit, canEditCost } = usePermissions();
   const products = useLiveQuery(
     () => db.products.where("status").equals("active").sortBy("name"),
     [],
@@ -1205,14 +1219,91 @@ export function PosScreen() {
     );
   }
 
-  function updateMiscSellPrice(productId: string, price: number) {
-    const safePrice = Number.isFinite(price) ? Math.max(0, price) : 0;
+  // Edit a cart line's sell price during checkout. Allowed for every line type
+  // and every user (the shop owner asked to be able to haggle a price down for
+  // a customer). The cost floor is the only guard:
+  //   - Misc lines have no real cost — cost tracks the price so product-profit
+  //     reports don't invent profit for an ad-hoc sale.
+  //   - Users WITHOUT canEditCost (manager/accountant) cannot sell below the
+  //     line's unit cost — the price is floored at cost.
+  //   - Users WITH canEditCost (owner/cashier) may go below cost (e.g. clearing
+  //     stock) and get a visible below-cost warning instead of a hard block.
+  function updateLineSellPrice(key: string, price: number) {
     setDraftItems((cur) =>
-      cur.map((i) =>
-        i.productId === productId && isMiscLine(i)
-          ? { ...i, unitBuyPrice: safePrice, unitSellPrice: safePrice }
-          : i,
-      ),
+      cur.map((i) => {
+        if (lineKey(i) !== key) return i;
+        const isMisc = isMiscLine(i);
+        const nextSell = resolveSellPrice({
+          price,
+          unitCost: i.unitBuyPrice,
+          isMisc,
+          canEditCost,
+        });
+        // Misc lines have no real cost — keep cost tracking the price so
+        // product-profit reports don't invent profit for an ad-hoc sale.
+        return isMisc
+          ? { ...i, unitBuyPrice: nextSell, unitSellPrice: nextSell }
+          : { ...i, unitSellPrice: nextSell };
+      }),
+    );
+  }
+
+  // Per-kg / per-unit suffix shown next to a line's sell price.
+  function sellPriceSuffix(item: BillDraftItem): string {
+    if (item.saleType === "weight") return t("weight.perKgSuffix");
+    if (item.saleType === "multi_unit") return `/ ${item.saleUnitName}`;
+    return "";
+  }
+
+  // Editable sell-price cell shared by the desktop table and the mobile cards.
+  // Renders the price input, the unit suffix, a below-cost warning when the
+  // price dips under cost, and the resulting line profit (canViewProfit only).
+  function renderSellEditor(item: BillDraftItem, layout: "table" | "card") {
+    const isMisc = isMiscLine(item);
+    const belowCost = isBelowCost(isMisc, item.unitSellPrice, item.unitBuyPrice);
+    const lineProfit = calculateLineGrossProfit(
+      item.quantity,
+      item.unitBuyPrice,
+      item.unitSellPrice,
+    );
+    const suffix = sellPriceSuffix(item);
+    return (
+      <div className="flex flex-col gap-1">
+        <MoneyInput
+          value={item.unitSellPrice}
+          onValueChange={(v) => updateLineSellPrice(lineKey(item), v)}
+          currency={currency}
+          aria-label={`${t("billing.sell")}: ${item.name}`}
+          // Hard floor at cost for users who can't override; misc and
+          // privileged users float at 0.
+          min={sellPriceFloor(isMisc, canEditCost, item.unitBuyPrice)}
+          onKeyDown={dismissKeyboardOnEnter}
+          inputSize="sm"
+          className={layout === "card" ? "mt-1" : "w-32"}
+          fullWidth={layout === "card"}
+        />
+        {suffix && (
+          <span className="text-[11px] text-slate-400" dir="ltr">
+            {suffix}
+          </span>
+        )}
+        {belowCost && (
+          <span className="text-[11px] font-medium text-warning">
+            {t("billing.priceBelowCostWarning")}
+          </span>
+        )}
+        {canViewProfit && !isMisc && (
+          <span
+            className={clsx(
+              "text-[11px] font-medium tabular-nums",
+              lineProfit < 0 ? "text-danger" : "text-success",
+            )}
+            dir="ltr"
+          >
+            {t("billing.profit")}: {formatCurrency(lineProfit, currency)}
+          </span>
+        )}
+      </div>
     );
   }
 
@@ -1360,30 +1451,7 @@ export function PosScreen() {
     {
       accessorKey: "unitSellPrice",
       header: t("billing.sell"),
-      cell: ({ row }) =>
-        isMiscLine(row.original) ? (
-          <MoneyInput
-            value={row.original.unitSellPrice}
-            onValueChange={(v) =>
-              updateMiscSellPrice(row.original.productId, v)
-            }
-            currency={currency}
-            min={0}
-            onKeyDown={dismissKeyboardOnEnter}
-            inputSize="sm"
-            className="w-32"
-            fullWidth={false}
-          />
-        ) : (
-          <span className="tabular-nums text-slate-700" dir="ltr">
-            {formatCurrency(row.original.unitSellPrice, currency)}
-            {row.original.saleType === "weight"
-              ? ` ${t("weight.perKgSuffix")}`
-              : row.original.saleType === "multi_unit"
-                ? ` / ${row.original.saleUnitName}`
-                : ""}
-          </span>
-        ),
+      cell: ({ row }) => renderSellEditor(row.original, "table"),
     },
     {
       id: "subtotal",
@@ -1644,32 +1712,7 @@ export function PosScreen() {
                       </div>
                       <div className="rounded-xl bg-slate-50 p-2">
                         <p className="text-slate-500">{t("billing.sell")}</p>
-                        {isMiscLine(item) ? (
-                          <MoneyInput
-                            value={item.unitSellPrice}
-                            onValueChange={(v) =>
-                              updateMiscSellPrice(item.productId, v)
-                            }
-                            currency={currency}
-                            min={0}
-                            onKeyDown={dismissKeyboardOnEnter}
-                            inputSize="sm"
-                            className="mt-1"
-                            fullWidth
-                          />
-                        ) : (
-                          <p
-                            className="font-bold text-slate-800 tabular-nums"
-                            dir="ltr"
-                          >
-                            {formatCurrency(item.unitSellPrice, currency)}
-                            {item.saleType === "weight"
-                              ? ` ${t("weight.perKgSuffix")}`
-                              : item.saleType === "multi_unit"
-                                ? ` / ${item.saleUnitName}`
-                                : ""}
-                          </p>
-                        )}
+                        {renderSellEditor(item, "card")}
                       </div>
                       <div className="rounded-xl bg-slate-50 p-2">
                         <p className="text-slate-500">
@@ -1749,6 +1792,7 @@ export function PosScreen() {
               items={lastFinalized.items}
               settings={settings}
               currency={currency}
+              canViewProfit={canViewProfit}
               onDismiss={() => {
                 setLastFinalized(null);
                 setTimeout(() => barcodeInputRef.current?.focus(), 0);
@@ -1962,6 +2006,12 @@ export function PosScreen() {
                     value={formatCurrency(billSummary.totalAmount, currency)}
                     highlight
                   />
+                  {canViewProfit && (
+                    <SummaryRow
+                      label={t("billing.expectedProfit")}
+                      value={formatCurrency(billSummary.totalProfit, currency)}
+                    />
+                  )}
                   {actualChangeAmount > 0.001 && (
                     <>
                       <SummaryRow

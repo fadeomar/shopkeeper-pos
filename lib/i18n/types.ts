@@ -761,6 +761,9 @@ export interface TranslationDict {
     sell: string;
     subtotalCol: string;
     profit: string;
+    expectedProfit: string;
+    priceBelowCost: string;
+    priceBelowCostWarning: string;
     cashierName: string;
     customerName: string;
     customerPhone: string;
