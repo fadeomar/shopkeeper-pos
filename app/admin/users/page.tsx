@@ -13,6 +13,8 @@ import {
   renewUserSubscription,
   suspendUserSubscription,
   markUserContacted,
+  adminSetUserPassword,
+  adminDeleteUser,
 } from "@/lib/firebase/auth-service";
 import {
   fetchUserSummary,
@@ -30,9 +32,20 @@ import { PageHeader } from "@/components/ui/page-header";
 import { SectionCard } from "@/components/ui/section-card";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
+import { Modal } from "@/components/ui/modal";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { DataTable } from "@/components/ui/data-table";
 import { Button } from "@/components/ui/button";
+import { ActionMenu, type ActionMenuItem } from "@/components/ui/action-menu";
+import {
+  Lock,
+  RotateCcw,
+  Trash2,
+  Phone as PhoneIcon,
+  CircleCheck,
+  CircleAlert,
+  Ban,
+} from "@/components/ui/icons";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { LoadingState } from "@/components/ui/loading-state";
@@ -48,7 +61,10 @@ export default function AdminUsersPage() {
   const [loading, setLoading] = useState(true);
   const [loadingHealth, setLoadingHealth] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [showCreate, setShowCreate] = useState(false);
+  const [passwordTarget, setPasswordTarget] = useState<AppUser | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<AppUser | null>(null);
 
   async function loadUsers() {
     try {
@@ -300,52 +316,70 @@ export default function AdminUsersPage() {
           return (
             <span className="text-xs text-slate-400">{t("common.self")}</span>
           );
-        return (
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant="success"
-              onClick={() => void renewSubscription(u.uid, 1)}
-            >
-              {t("admin.renewOneMonth")}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => void renewSubscription(u.uid, 3)}
-            >
-              {t("admin.renewThreeMonths")}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => void markContacted(u.uid)}
-            >
-              {t("admin.markContacted")}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={u.isActive ? "danger" : "success"}
-              onClick={() => void toggleActive(u.uid, u.isActive)}
-            >
-              {u.isActive ? t("admin.deactivate") : t("admin.reactivate")}
-            </Button>
-            {u.subscriptionStatus !== "suspended" && (
-              <Button
-                type="button"
-                size="sm"
-                variant="danger"
-                onClick={() => void suspendSubscription(u.uid)}
-              >
-                {t("admin.suspendSubscription")}
-              </Button>
-            )}
-          </div>
-        );
+        const iconSize = 16;
+        const actions: ActionMenuItem[] = [
+          {
+            key: "renew1",
+            label: t("admin.renewOneMonth"),
+            icon: <RotateCcw size={iconSize} />,
+            onSelect: () => void renewSubscription(u.uid, 1),
+          },
+          {
+            key: "renew3",
+            label: t("admin.renewThreeMonths"),
+            icon: <RotateCcw size={iconSize} />,
+            onSelect: () => void renewSubscription(u.uid, 3),
+          },
+          {
+            key: "setPassword",
+            label: t("admin.setPassword"),
+            icon: <Lock size={iconSize} />,
+            onSelect: () => {
+              setNotice("");
+              setPasswordTarget(u);
+            },
+          },
+          {
+            key: "contacted",
+            label: t("admin.markContacted"),
+            icon: <PhoneIcon size={iconSize} />,
+            onSelect: () => void markContacted(u.uid),
+          },
+          {
+            key: "toggleActive",
+            label: u.isActive ? t("admin.deactivate") : t("admin.reactivate"),
+            icon: u.isActive ? (
+              <Ban size={iconSize} />
+            ) : (
+              <CircleCheck size={iconSize} />
+            ),
+            tone: u.isActive ? "danger" : "default",
+            dividerBefore: true,
+            onSelect: () => void toggleActive(u.uid, u.isActive),
+          },
+          ...(u.subscriptionStatus !== "suspended"
+            ? [
+                {
+                  key: "suspend",
+                  label: t("admin.suspendSubscription"),
+                  icon: <CircleAlert size={iconSize} />,
+                  tone: "danger" as const,
+                  onSelect: () => void suspendSubscription(u.uid),
+                },
+              ]
+            : []),
+          {
+            key: "delete",
+            label: t("admin.deleteUser"),
+            icon: <Trash2 size={iconSize} />,
+            tone: "danger",
+            onSelect: () => {
+              setNotice("");
+              setDeleteTarget(u);
+            },
+          },
+        ];
+        return <ActionMenu label={t("bills.actions")} items={actions} />;
       },
     },
   ];
@@ -415,6 +449,12 @@ export default function AdminUsersPage() {
       {error && (
         <p className="text-sm text-danger bg-danger-soft border border-danger/20 rounded-xl px-4 py-3">
           {error}
+        </p>
+      )}
+
+      {notice && (
+        <p className="text-sm text-success bg-success-soft border border-success/20 rounded-xl px-4 py-3">
+          {notice}
         </p>
       )}
 
@@ -503,7 +543,183 @@ export default function AdminUsersPage() {
       )}
 
       {!loading && users.length === 0 && <EmptyState title={t("admin.noUsers")} />}
+
+      {passwordTarget && (
+        <SetPasswordModal
+          user={passwordTarget}
+          onClose={() => setPasswordTarget(null)}
+          onDone={(name) => {
+            setPasswordTarget(null);
+            setNotice(t("admin.setPasswordSuccess", { name }));
+          }}
+        />
+      )}
+
+      {deleteTarget && (
+        <DeleteUserModal
+          user={deleteTarget}
+          onClose={() => setDeleteTarget(null)}
+          onDeleted={(uid) => {
+            setUsers((prev) => prev.filter((u) => u.uid !== uid));
+            setSummaries((prev) => {
+              const next = { ...prev };
+              delete next[uid];
+              return next;
+            });
+            setDeleteTarget(null);
+            setNotice(t("admin.deleteUserSuccess"));
+          }}
+        />
+      )}
     </PageShell>
+  );
+}
+
+function SetPasswordModal({
+  user,
+  onClose,
+  onDone,
+}: {
+  user: AppUser;
+  onClose: () => void;
+  onDone: (name: string) => void;
+}) {
+  const { t } = useLocale();
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit() {
+    if (password.length < 6) {
+      setError(t("admin.errorPasswordShort"));
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      await adminSetUserPassword(user.uid, password);
+      onDone(user.name);
+    } catch {
+      setError(t("admin.errorSetPassword"));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Modal
+      open
+      presentation="centered"
+      title={t("admin.setPasswordTitle")}
+      description={t("admin.setPasswordBody", { name: user.name })}
+      onClose={onClose}
+      footer={
+        <>
+          <Button type="button" variant="ghost" onClick={onClose}>
+            {t("common.cancel")}
+          </Button>
+          <Button
+            type="button"
+            loading={loading}
+            disabled={password.length < 6}
+            onClick={() => void submit()}
+          >
+            {t("admin.setPassword")}
+          </Button>
+        </>
+      }
+    >
+      <FormField label={t("admin.newPassword")}>
+        <Input
+          type="password"
+          autoFocus
+          minLength={6}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder={t("admin.passwordPlaceholder")}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && password.length >= 6) void submit();
+          }}
+        />
+      </FormField>
+      {error && (
+        <p className="mt-3 text-sm text-danger bg-danger-soft border border-danger/20 rounded-xl px-3 py-2">
+          {error}
+        </p>
+      )}
+    </Modal>
+  );
+}
+
+function DeleteUserModal({
+  user,
+  onClose,
+  onDeleted,
+}: {
+  user: AppUser;
+  onClose: () => void;
+  onDeleted: (uid: string) => void;
+}) {
+  const { t } = useLocale();
+  const [confirmEmail, setConfirmEmail] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  // Require an exact email match before the destructive action is enabled —
+  // this deletes the user's sign-in AND all their data, irreversibly.
+  const matches = confirmEmail.trim().toLowerCase() === user.email.toLowerCase();
+
+  async function submit() {
+    if (!matches) return;
+    setLoading(true);
+    setError("");
+    try {
+      await adminDeleteUser(user.uid);
+      onDeleted(user.uid);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("admin.errorDeleteUser"));
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Modal
+      open
+      presentation="centered"
+      title={t("admin.deleteUserTitle")}
+      description={t("admin.deleteUserBody", { name: user.name, email: user.email })}
+      onClose={onClose}
+      footer={
+        <>
+          <Button type="button" variant="ghost" onClick={onClose}>
+            {t("common.cancel")}
+          </Button>
+          <Button
+            type="button"
+            variant="danger"
+            loading={loading}
+            disabled={!matches}
+            onClick={() => void submit()}
+          >
+            {t("admin.deleteUserConfirmLabel")}
+          </Button>
+        </>
+      }
+    >
+      <FormField label={t("admin.deleteUserConfirmPrompt")}>
+        <Input
+          type="email"
+          autoFocus
+          value={confirmEmail}
+          onChange={(e) => setConfirmEmail(e.target.value)}
+          placeholder={user.email}
+        />
+      </FormField>
+      {error && (
+        <p className="mt-3 text-sm text-danger bg-danger-soft border border-danger/20 rounded-xl px-3 py-2">
+          {error}
+        </p>
+      )}
+    </Modal>
   );
 }
 

@@ -43,7 +43,47 @@ export async function fetchUserDoc(uid: string): Promise<AppUser | null> {
 
 export async function fetchAllUsers(): Promise<AppUser[]> {
   const snap = await getDocs(collection(firestore, 'users'));
-  return snap.docs.map((d) => d.data() as AppUser);
+  // Defensive: a profile doc whose fields were lost (or that exists only as a
+  // parent of POS subcollections) reads back as {} and would crash downstream
+  // consumers assuming a valid AppUser shape — e.g. the admin list's
+  // `name.localeCompare` sort. Skip docs missing the minimal identity fields
+  // so one corrupt profile can't take down the whole admin page.
+  return snap.docs
+    .map((d) => d.data() as Partial<AppUser>)
+    .filter((u): u is AppUser => typeof u?.uid === 'string' && typeof u?.name === 'string');
+}
+
+/**
+ * Call an /api/admin/* route with the current user's Firebase ID token. These
+ * actions (set password, delete user) need the Admin SDK, so they run on the
+ * server; the route re-verifies the token and the caller's admin role. Throws
+ * with the server's error message on a non-2xx response.
+ */
+async function callAdminApi(path: string, body: Record<string, unknown>): Promise<void> {
+  const token = await auth.currentUser?.getIdToken();
+  if (!token) throw new Error('Not signed in.');
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error ?? 'Request failed.');
+  }
+}
+
+/** Overwrite a user's password (admin only). Cannot read existing passwords. */
+export function adminSetUserPassword(uid: string, password: string): Promise<void> {
+  return callAdminApi('/api/admin/set-password', { uid, password });
+}
+
+/** Permanently delete a user and ALL their data (admin only). Irreversible. */
+export function adminDeleteUser(uid: string): Promise<void> {
+  return callAdminApi('/api/admin/delete-user', { uid });
 }
 
 export async function updateUserStatus(uid: string, isActive: boolean) {

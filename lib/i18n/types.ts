@@ -1618,6 +1618,19 @@ export interface TranslationDict {
     no: string;
     on: string;
     off: string;
+    setPassword: string;
+    setPasswordTitle: string;
+    setPasswordBody: string;
+    newPassword: string;
+    setPasswordSuccess: string;
+    errorSetPassword: string;
+    deleteUser: string;
+    deleteUserTitle: string;
+    deleteUserBody: string;
+    deleteUserConfirmPrompt: string;
+    deleteUserConfirmLabel: string;
+    deleteUserSuccess: string;
+    errorDeleteUser: string;
   };
   errors: {
     UNKNOWN: string;

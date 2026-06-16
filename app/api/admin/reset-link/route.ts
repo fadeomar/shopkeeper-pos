@@ -1,30 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import {
-  FirebaseAdminConfigurationError,
-  getAdminAuth,
-  getAdminFirestore,
-} from '@/lib/firebase/firebase-admin';
+import { getAdminAuth } from '@/lib/firebase/firebase-admin';
+import { adminErrorResponse, requireAdmin } from '@/lib/firebase/admin-route-guard';
 
 export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
-    const auth = getAdminAuth();
-
-    const authHeader = request.headers.get('Authorization');
-    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const decoded = await auth.verifyIdToken(token);
-
-    // Verify the caller is an admin by reading their Firestore user doc.
-    // Role is stored at users/{uid}.role — set during createAppUser/registerUser.
-    const callerDoc = await getAdminFirestore().doc(`users/${decoded.uid}`).get();
-    if (!callerDoc.exists || (callerDoc.data() as { role?: string } | undefined)?.role !== 'owner') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
+    await requireAdmin(request);
 
     const body = await request.json() as { uid?: string };
     const targetUid = body.uid;
@@ -32,6 +14,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'uid is required' }, { status: 400 });
     }
 
+    const auth = getAdminAuth();
     const targetUser = await auth.getUser(targetUid);
     if (!targetUser.email) {
       return NextResponse.json(
@@ -43,12 +26,6 @@ export async function POST(request: NextRequest) {
     const link = await auth.generatePasswordResetLink(targetUser.email);
     return NextResponse.json({ link });
   } catch (err) {
-    // Misconfigured server (missing/!invalid admin credentials) is a 503, not a
-    // generic 500 — distinguishes "server not set up" from "request failed".
-    if (err instanceof FirebaseAdminConfigurationError) {
-      return NextResponse.json({ error: err.message }, { status: 503 });
-    }
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return adminErrorResponse(err);
   }
 }
