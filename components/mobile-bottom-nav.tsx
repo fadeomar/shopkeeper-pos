@@ -172,15 +172,10 @@ export function MobileBottomNav() {
   // If the current page is in the "More" set, highlight the More tab.
   const isMoreActive = MORE_ROUTES.some((r) => isActive(r.href));
 
-  // Hide the bottom nav on the POS billing screen so the sticky checkout
-  // bar (which sits at the same bottom-0 position) is never obscured.
-  // The checkout bar has its own totals + finalize button — the nav would
-  // be redundant there and would overlap the most important cashier action.
-  //
-  // IMPORTANT: this early return is placed AFTER every hook call (useState,
-  // useId, useLiveQuery, and the three useEffects above) so the Rules of
-  // Hooks are never violated when navigating to/from /billing.
-  if (pathname.startsWith("/billing")) return null;
+  // The bottom nav also shows on the POS billing screen. When the cart has
+  // items the billing screen renders its own sticky checkout bar — that bar is
+  // offset to sit ABOVE this nav (see pos-screen.tsx) so the finalize button is
+  // never covered, and both stay reachable.
 
   return (
     <>
