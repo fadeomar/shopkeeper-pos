@@ -1436,6 +1436,28 @@ export const en: TranslationDict = {
     categoryAtPurchase: "Category",
     lineTotal: "Line total",
     stockImpact: "Stock impact",
+    action: "Action",
+    actions: "Purchase actions",
+    actionsDesc:
+      "Void mistakes or return received items to the supplier. Stock is adjusted automatically and the purchase stays in history.",
+    voidPurchase: "Void purchase",
+    voidPurchaseDesc:
+      "Void the full purchase and remove all non-returned stock it added. This cannot be undone.",
+    confirmVoid: "Confirm void",
+    voidReason: "Void reason",
+    voidOnlyFinalized: "Only finalized purchases can be voided.",
+    purchaseVoided: "Purchase voided and stock removed.",
+    voidFailed: "Could not void purchase.",
+    returnItem: "Return to supplier",
+    returnQuantity: "Return quantity",
+    returnReason: "Return reason",
+    confirmReturn: "Confirm return",
+    itemReturned: "Item returned to supplier.",
+    returnFailed: "Could not return item.",
+    returnedQty: "Returned",
+    remainingQty: "Remaining",
+    reasonPlaceholder:
+      "Example: damaged goods, wrong item, over-delivery...",
   },
   suppliers: {
     title: "Suppliers & payables",
