@@ -39,5 +39,9 @@ export async function initializeDemoData(page: Page): Promise<void> {
   const initDemo = page.getByRole('button', { name: /initialize demo data/i });
   await expect(initDemo).toBeVisible();
   await initDemo.click();
+  // The trigger opens an "Add demo data?" confirmation dialog; its confirm
+  // button ("Add demo data") is what actually runs the seed. Without this the
+  // toast below never fires.
+  await page.getByRole('button', { name: /^add demo data$/i }).click();
   await expect(page.getByText(/demo data initialized|demo data already exists/i)).toBeVisible();
 }

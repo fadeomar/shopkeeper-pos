@@ -17,7 +17,7 @@ import { gramsToKg, kgToGrams } from "@/lib/utils/weight";
 import { db } from "@/lib/db/schema";
 import {
   buildProductUnit,
-  saveProductUnits,
+  saveMultiUnitProductWithUnits,
 } from "@/lib/services/product-unit-service";
 import {
   PHARMACY_UNIT_TEMPLATE,
@@ -417,9 +417,12 @@ export function ProductForm({ product, onSaved, onCancel, onOpenExisting }: Prop
         };
         if (canEditCost) changes.buyPrice = baseUnit.buyPrice ?? 0;
         else delete changes.buyPrice;
-        await updateProductDetails(product, changes);
-        await saveProductUnits({
-          product: { id: product.id, name: product.name },
+        // Single atomic write: product + units reconcile in one transaction so a
+        // unit failure can't leave the product half-updated.
+        await saveMultiUnitProductWithUnits({
+          mode: "update",
+          product,
+          changes,
           units: built,
         });
         push(t("products.productUpdated"));
@@ -437,9 +440,12 @@ export function ProductForm({ product, onSaved, onCancel, onOpenExisting }: Prop
           lastUpdated: now,
           syncStatus: "pending",
         };
-        await createProductWithInitialMovement(created);
-        await saveProductUnits({
-          product: { id: created.id, name: created.name },
+        // Single atomic write: product + opening stock/lot + units in one
+        // transaction so a unit failure can't leave a multi_unit product with
+        // no valid units.
+        await saveMultiUnitProductWithUnits({
+          mode: "create",
+          product: created,
           units: built,
         });
         rememberProductDefaults(values);
@@ -462,6 +468,20 @@ export function ProductForm({ product, onSaved, onCancel, onOpenExisting }: Prop
           name: existing.name,
         }),
       });
+      push(t("products.barcodeUnique"), "error");
+      return;
+    }
+    // The product barcode shares the scanner namespace with product-unit
+    // barcodes — block a collision with another product's unit (service guards
+    // too). Covers every sale type since onSubmit runs before submitMultiUnit.
+    const productBarcode = normalizeBarcode(values.barcode);
+    const unitClash = (allProductUnits ?? []).find(
+      (u) =>
+        u.productId !== product?.id &&
+        normalizeBarcode(u.barcode ?? "") === productBarcode,
+    );
+    if (unitClash) {
+      form.setError("barcode", { message: t("products.barcodeUnique") });
       push(t("products.barcodeUnique"), "error");
       return;
     }

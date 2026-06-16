@@ -11,6 +11,7 @@ import {
   consumeLotsForNegativeAdjustment,
   createAdjustmentLot,
 } from '@/lib/services/inventory-lot-service';
+import { assertProductBarcodeUnique } from '@/lib/services/product-unit-service';
 import { lotBaseUnitFor } from '@/lib/utils/weight';
 
 function requestSync(): void {
@@ -29,6 +30,8 @@ export async function createProductWithInitialMovement(product: Product) {
   // so a 0 cost simply means "cost not set yet" until a manager edits it.
   const perms = await getCurrentPermissions();
   const safeBuyPrice = perms.canEditCost ? product.buyPrice : 0;
+  // Product barcode must not collide with another product's unit barcode.
+  await assertProductBarcodeUnique({ productId: product.id, barcode: product.barcode });
   const createdAt = nowIso();
   const productToSave: Product = {
     ...product,
@@ -89,6 +92,11 @@ export async function updateProductDetails(product: Product, changes: Partial<Pr
     changes.buyPrice !== product.buyPrice
   ) {
     await assertPermission("canEditCost");
+  }
+
+  // A barcode edit must not collide with another product's unit barcode.
+  if (typeof changes.barcode === "string") {
+    await assertProductBarcodeUnique({ productId: product.id, barcode: changes.barcode });
   }
 
   const updatedAt = nowIso();

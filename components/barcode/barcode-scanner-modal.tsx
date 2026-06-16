@@ -99,10 +99,19 @@ export function BarcodeScannerModal({
 
     void (async () => {
       try {
+        // Resolution is the dominant cost of both camera start-up and
+        // per-frame decoding. 1280×720 carries plenty of detail for retail
+        // 1D barcodes while decoding several times faster than 1080p/4K, so
+        // detection feels near-instant. `focusMode: continuous` (best-effort,
+        // ignored where unsupported) keeps the barcode sharp without the user
+        // having to hold still while the lens hunts.
         const videoConstraints: MediaTrackConstraints = {
           facingMode: { ideal: 'environment' },
-          width: { min: 640, ideal: 1920, max: 3840 },
-          height: { min: 480, ideal: 1080, max: 2160 },
+          width: { min: 640, ideal: 1280, max: 1920 },
+          height: { min: 480, ideal: 720, max: 1080 },
+          frameRate: { ideal: 30 },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          advanced: [{ focusMode: 'continuous' } as any],
         };
 
         let nativeDetector: { detect: (v: HTMLVideoElement) => Promise<{ rawValue: string }[]> } | null = null;
@@ -181,11 +190,16 @@ export function BarcodeScannerModal({
             BarcodeFormat.CODE_39,
             BarcodeFormat.ITF,
           ];
+          // TRY_HARDER is intentionally omitted: it makes each decode attempt
+          // dramatically slower (extra rotations/scaling) to recover damaged
+          // codes. On a live video feed we get many cheap attempts per second
+          // instead, so dropping it makes well-printed retail barcodes scan
+          // far faster — the actual complaint. A short inter-attempt delay
+          // keeps the main thread responsive without throttling detection.
           const hints = new Map<number, unknown>([
-            [DecodeHintType.TRY_HARDER, true],
             [DecodeHintType.POSSIBLE_FORMATS, possibleFormats],
           ]);
-          const reader = new BrowserMultiFormatReader(hints as Map<never, never>, { delayBetweenScanAttempts: 100 });
+          const reader = new BrowserMultiFormatReader(hints as Map<never, never>, { delayBetweenScanAttempts: 50 });
           controlsRef.current?.stop(); controlsRef.current = null;
           const controls = await reader.decodeFromConstraints({ video: videoConstraints }, video, (result, err) => {
             frameCountRef.current += 1;

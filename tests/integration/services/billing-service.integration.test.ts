@@ -13,6 +13,16 @@ vi.mock('@/lib/services/subscription-service', () => ({
 
 vi.mock('@/lib/services/permission-service', () => ({
   assertPermission: vi.fn().mockResolvedValue(undefined),
+  getCurrentPermissions: vi.fn().mockResolvedValue({
+    canVoid: true,
+    canReturn: true,
+    canDiscount: true,
+    canViewProfit: true,
+    canEditCost: true,
+    canExport: true,
+    canManageSettings: true,
+    canManageRolePermissions: true,
+  }),
 }));
 
 vi.mock('@/lib/services/audit-service', () => ({
@@ -20,7 +30,21 @@ vi.mock('@/lib/services/audit-service', () => ({
 }));
 
 const { createFinalizedBill, returnBillItem, voidBill } = await import('@/lib/services/billing-service');
-const { assertPermission } = await import('@/lib/services/permission-service');
+const { assertPermission, getCurrentPermissions } = await import('@/lib/services/permission-service');
+
+/** Make the next getCurrentPermissions() call report no canEditCost. */
+function denyCostEditOnce(): void {
+  vi.mocked(getCurrentPermissions).mockResolvedValueOnce({
+    canVoid: true,
+    canReturn: true,
+    canDiscount: true,
+    canViewProfit: true,
+    canEditCost: false,
+    canExport: true,
+    canManageSettings: true,
+    canManageRolePermissions: true,
+  });
+}
 
 async function expectAppError(promise: Promise<unknown>, code: string): Promise<void> {
   await expect(promise).rejects.toMatchObject({ code });
@@ -167,6 +191,36 @@ describe('billing-service integration', () => {
     await expect(db.bills.count()).resolves.toBe(0);
     await expect(db.stockMovements.count()).resolves.toBe(0);
     await expect(db.products.get(product.id)).resolves.toMatchObject({ quantityInStock: 1 });
+  });
+
+  it('blocks a below-FIFO-cost sale when allowLossSale is on but the user lacks canEditCost', async () => {
+    // Store permits loss sales, but below-cost selling also requires the
+    // per-user canEditCost privilege (mirrors the POS UI's canSellBelowCost).
+    // A stale/manipulated cart from a no-cost user must still be rejected.
+    await seedSettings({ allowLossSale: true });
+    const product = await seedProduct({ quantityInStock: 1, buyPrice: 9, sellPrice: 10 });
+
+    denyCostEditOnce();
+    await expectAppError(
+      createFinalizedBill({
+        items: [makeBillDraftItem(product, { quantity: 1, unitSellPrice: 8 })],
+        form: makeBillForm({ paidAmount: 8 }),
+      }),
+      AppErrorCode.PRODUCT_LOSS_SALE_BLOCKED,
+    );
+
+    // Nothing persisted — the guard throws before any write commits.
+    await expect(db.bills.count()).resolves.toBe(0);
+    await expect(db.stockMovements.count()).resolves.toBe(0);
+    await expect(db.products.get(product.id)).resolves.toMatchObject({ quantityInStock: 1 });
+
+    // With canEditCost (default mock), the same below-cost sale goes through.
+    const result = await createFinalizedBill({
+      items: [makeBillDraftItem(product, { quantity: 1, unitSellPrice: 8 })],
+      form: makeBillForm({ paidAmount: 8 }),
+    });
+    expect(result.bill.totalAmount).toBe(8);
+    await expect(db.products.get(product.id)).resolves.toMatchObject({ quantityInStock: 0 });
   });
 
   it('keeps misc bill lines out of product stock and stock movements while storing the line snapshot', async () => {

@@ -183,4 +183,14 @@ describe('unit validation', () => {
     ];
     expect(validateUnitDrafts(dup).some((i) => i.code === 'duplicate_barcode')).toBe(true);
   });
+
+  it('treats barcodes that normalize equal (inner spaces) as duplicates', () => {
+    // The scanner/service strip inner whitespace, so "ABC 123" and "ABC123"
+    // collide there; the validator must flag them too (a bare .trim() didn't).
+    const dup = [
+      unit({ id: 'a', name: 'pill', conversionToBase: 1, barcode: 'ABC 123', isDefaultSaleUnit: true }),
+      unit({ id: 'b', name: 'strip', conversionToBase: 10, barcode: 'ABC123' }),
+    ];
+    expect(validateUnitDrafts(dup).some((i) => i.code === 'duplicate_barcode')).toBe(true);
+  });
 });

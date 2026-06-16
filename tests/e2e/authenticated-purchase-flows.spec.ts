@@ -32,6 +32,12 @@ async function finalizePurchase(page: Page) {
   await expect(page.getByText(/purchase saved/i).first()).toBeVisible();
 }
 
+/** Read the PO-XXXXXX number shown on the purchase success screen. */
+async function readPurchaseNumber(page: Page): Promise<string> {
+  const text = await page.getByText(/PO-\d+/).first().innerText();
+  return text.match(/PO-\d+/)![0];
+}
+
 test.describe('authenticated purchase and supplier flows', () => {
   test('cashier records a cash purchase from an existing product', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'desktop-chrome', 'full purchase flow runs once on desktop');
@@ -44,6 +50,40 @@ test.describe('authenticated purchase and supplier flows', () => {
     await expect(page.getByRole('radio', { name: /cash/i })).toHaveAttribute('aria-checked', 'true');
     await finalizePurchase(page);
     await expect(page.getByRole('button', { name: /new purchase/i })).toBeVisible();
+  });
+
+  test('cashier voids a finalized purchase from its detail page', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop-chrome', 'void flow runs once on desktop; service tests cover the math');
+
+    await loginAsCashier(page);
+    await initializeDemoData(page);
+    await page.goto('/purchases/new');
+
+    await addProductToPurchase(page, 'Rice 5kg');
+    await finalizePurchase(page);
+    const purchaseNumber = await readPurchaseNumber(page);
+
+    // Open the just-created purchase from history.
+    await page.goto('/purchases');
+    await page.getByPlaceholder(/search purchase number/i).fill(purchaseNumber);
+    await page
+      .getByRole('row', { name: new RegExp(purchaseNumber) })
+      .getByRole('link', { name: /view details/i })
+      .first()
+      .click();
+    await expect(page.getByRole('heading', { name: purchaseNumber })).toBeVisible();
+
+    // Void it: the action needs a reason before the confirm button enables.
+    await page.getByRole('button', { name: /void purchase/i }).click();
+    const dialog = page.getByRole('dialog', { name: /void purchase/i });
+    await expect(dialog).toBeVisible();
+    // Confirm stays disabled until a reason is given.
+    await expect(dialog.getByRole('button', { name: /confirm void/i })).toBeDisabled();
+    await dialog.getByRole('textbox').fill('Wrong item ordered');
+    await dialog.getByRole('button', { name: /confirm void/i }).click();
+
+    await expect(page.getByText(/purchase voided and stock removed/i).first()).toBeVisible();
+    await expect(page.getByText(/^voided$/i).first()).toBeVisible();
   });
 
   test('cashier creates a credit purchase and records a supplier payment', async ({ page }, testInfo) => {
