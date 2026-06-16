@@ -511,10 +511,13 @@ export interface PurchaseItem {
   // weight lot it creates.
   saleType?: ProductSaleType;
   baseUnit?: LotBaseUnit;
-  // multi_unit lines only: snapshot of the unit bought (strip/box).
-  // `quantityPurchased` is the count in that unit and `unitCostAtPurchase` is
-  // the cost per that unit; `baseQuantityPurchased` is the integer base (piece)
-  // count added to stock.
+  // multi_unit lines only: snapshot of the unit bought (strip/box). CONTRACT:
+  // `quantityPurchased` is ALWAYS the BASE (piece) count — same as weight uses
+  // grams — so stock/lots/return/void all run in base units (see
+  // purchase-service.ts). `baseQuantityPurchased` mirrors it for clarity, and
+  // the bought-unit count is recovered as quantityPurchased / conversionToBase.
+  // `unitCostAtPurchase` is the cost per BOUGHT unit (e.g. per box), kept for
+  // the receipt; `conversionToBaseAtPurchase` is that unit's conversion.
   purchaseUnitIdAtPurchase?: string;
   purchaseUnitNameAtPurchase?: string;
   conversionToBaseAtPurchase?: number;

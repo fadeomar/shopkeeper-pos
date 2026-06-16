@@ -15,6 +15,7 @@
  */
 import type { Product, ProductUnit, ProductSaleType } from '@/types/domain';
 import { formatStockDisplay } from '@/lib/utils/weight';
+import { normalizeBarcode } from '@/lib/utils/barcode';
 
 /** The synthetic id given to the virtual unit of a non-multi_unit product. */
 export const LEGACY_UNIT_ID = 'legacy-unit';
@@ -329,7 +330,10 @@ export function validateUnitDrafts(units: UnitDraftLike[]): MultiUnitValidationI
     if (!Number.isInteger(conversion) || conversion <= 0) {
       issues.push({ code: 'bad_conversion', index });
     }
-    const barcode = (unit.barcode ?? '').trim();
+    // Normalize exactly like the scanner/service (trim + strip inner spaces) so
+    // the form flags the same duplicates the service would — a bare .trim()
+    // missed e.g. "ABC 123" vs "ABC123".
+    const barcode = normalizeBarcode(unit.barcode ?? '');
     if (barcode) {
       if (seenBarcodes.has(barcode)) {
         issues.push({ code: 'duplicate_barcode', index });

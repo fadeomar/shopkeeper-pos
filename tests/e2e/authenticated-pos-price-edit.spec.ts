@@ -19,7 +19,7 @@ function visible(page: Page, role: Parameters<Page['getByRole']>[0], name: RegEx
 }
 
 test.describe('authenticated POS price editing + profit', () => {
-  test('cashier edits a line price, sees profit, is warned below cost, and the edit drives the total', async ({ page }, testInfo) => {
+  test('cashier edits a line price, sees profit, is floored at cost when loss sales are off, and the edit drives the total', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'desktop-chrome', 'price-edit flow runs once on desktop');
 
     await loginAsCashier(page);
@@ -35,15 +35,20 @@ test.describe('authenticated POS price editing + profit', () => {
 
     const sellInput = visible(page, 'textbox', /sell:\s*milk 1l/i).first();
 
-    // Below cost: a cashier (canEditCost) may do it, but is warned.
+    // Below cost is blocked by default (allowLossSale = false): trying to type
+    // under the 1.10 cost is hard-floored at cost in the UI, so the cart can
+    // never hold a price the billing service would later reject at finalize.
+    // No below-cost warning appears because the price never actually dips.
     await sellInput.fill('0.50');
-    await expect(page.getByText(/below cost/i).filter({ visible: true }).first()).toBeVisible();
+    await sellInput.blur();
+    await expect(sellInput).toHaveValue('1.10');
+    await expect(page.getByText(/below cost/i)).toHaveCount(0);
 
-    // Raise the price back above cost — the warning clears and the edited
-    // price (1.40), not the catalog price (1.60), drives the bill total.
+    // A normal above-cost edit (1.40) sticks, and the edited price — not the
+    // catalog price (1.60) — drives the bill total.
     await sellInput.fill('1.40');
     await sellInput.blur();
-    await expect(page.getByText(/below cost/i)).toHaveCount(0);
+    await expect(sellInput).toHaveValue('1.40');
 
     const total = page.getByText(/1\.40/).filter({ visible: true }).first();
     await expect(total).toBeVisible();

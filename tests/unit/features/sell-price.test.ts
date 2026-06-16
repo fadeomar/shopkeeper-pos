@@ -23,41 +23,43 @@ describe('sanitizeSellPrice', () => {
 });
 
 describe('resolveSellPrice', () => {
-  const ctx = { unitCost: 3, isMisc: false, canEditCost: false };
+  // canSellBelowCost = canEditCost && settings.allowLossSale. Default here is
+  // "not allowed" (one or both conditions missing), so the floor applies.
+  const ctx = { unitCost: 3, isMisc: false, canSellBelowCost: false };
 
-  it('allows a price at or above cost for a restricted user', () => {
+  it('allows a price at or above cost when below-cost selling is blocked', () => {
     expect(resolveSellPrice({ ...ctx, price: 5 })).toBe(5);
     expect(resolveSellPrice({ ...ctx, price: 3 })).toBe(3);
   });
 
-  it('floors a below-cost price at cost for a restricted user', () => {
+  it('floors a below-cost price at cost when below-cost selling is blocked', () => {
     expect(resolveSellPrice({ ...ctx, price: 2 })).toBe(3);
     expect(resolveSellPrice({ ...ctx, price: 0 })).toBe(3);
   });
 
-  it('lets a privileged user (canEditCost) sell below cost', () => {
-    expect(resolveSellPrice({ ...ctx, price: 2, canEditCost: true })).toBe(2);
-    expect(resolveSellPrice({ ...ctx, price: 0, canEditCost: true })).toBe(0);
+  it('lets the price dip below cost when below-cost selling is permitted', () => {
+    expect(resolveSellPrice({ ...ctx, price: 2, canSellBelowCost: true })).toBe(2);
+    expect(resolveSellPrice({ ...ctx, price: 0, canSellBelowCost: true })).toBe(0);
   });
 
-  it('never floors a misc line, even for a restricted user', () => {
+  it('never floors a misc line, even when below-cost selling is blocked', () => {
     expect(resolveSellPrice({ ...ctx, price: 1, isMisc: true })).toBe(1);
     expect(resolveSellPrice({ ...ctx, price: 0, isMisc: true })).toBe(0);
   });
 
   it('sanitizes the typed price before applying the floor', () => {
     expect(resolveSellPrice({ ...ctx, price: -10 })).toBe(3); // negative -> 0 -> floored to cost
-    expect(resolveSellPrice({ ...ctx, price: Number.NaN, canEditCost: true })).toBe(0);
+    expect(resolveSellPrice({ ...ctx, price: Number.NaN, canSellBelowCost: true })).toBe(0);
   });
 });
 
 describe('sellPriceFloor', () => {
-  it('floors a restricted real line at cost', () => {
+  it('floors a real line at cost when below-cost selling is blocked', () => {
     expect(sellPriceFloor(false, false, 3)).toBe(3);
   });
 
-  it('floors privileged, misc, and override cases at 0', () => {
-    expect(sellPriceFloor(false, true, 3)).toBe(0); // privileged
+  it('floors permitted, misc, and override cases at 0', () => {
+    expect(sellPriceFloor(false, true, 3)).toBe(0); // below-cost permitted
     expect(sellPriceFloor(true, false, 3)).toBe(0); // misc
     expect(sellPriceFloor(true, true, 3)).toBe(0);
   });

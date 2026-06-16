@@ -424,6 +424,14 @@ export function PosScreen() {
   const currency = settings?.currency ?? "ILS";
   const draftKey = user?.uid ? `${POS_DRAFT_KEY_PREFIX}:${user.uid}` : null;
 
+  // Below-cost selling needs BOTH the per-user privilege (canEditCost) and the
+  // store-wide allowLossSale switch. The service (assertLossSaleAllowed) hard-
+  // rejects a below-cost line when allowLossSale is false, so when either
+  // condition is missing the UI must floor the price at cost — otherwise the
+  // cart would accept a price the finalize step then refuses. Settings is
+  // undefined while loading; treat that as "not allowed" (fail safe).
+  const canSellBelowCost = canEditCost && settings?.allowLossSale === true;
+
   // Mobile UX: tapping a numeric input opens the soft keyboard and leaves it
   // up until the user taps far away. That keyboard covers the bill summary +
   // finalize button on small screens. Hitting Enter (or "Done" on Android,
@@ -567,7 +575,15 @@ export function PosScreen() {
   // Runs only on the first render where both products and a non-empty cart are
   // available. The ref gate prevents it from re-running on every cart change.
   useEffect(() => {
-    if (staleDraftChecked.current || !products || draftItems.length === 0)
+    // Wait for productUnits too: a multi-unit line is reconciled against its
+    // live ProductUnit, so reconciling before units load would wrongly treat
+    // every multi-unit line as "unit removed" and drop it.
+    if (
+      staleDraftChecked.current ||
+      !products ||
+      !productUnits ||
+      draftItems.length === 0
+    )
       return;
     staleDraftChecked.current = true;
 
@@ -589,9 +605,13 @@ export function PosScreen() {
         removedCount += 1;
         return acc;
       }
+      // Multi-unit lines are priced per sale unit, not from the product's base
+      // sellPrice, so this product-level price comparison only applies to
+      // unit/weight lines. The multi_unit branch does its own price check.
       const priceChanged =
-        live.sellPrice !== item.unitSellPrice ||
-        live.buyPrice !== item.unitBuyPrice;
+        item.saleType !== "multi_unit" &&
+        (live.sellPrice !== item.unitSellPrice ||
+          live.buyPrice !== item.unitBuyPrice);
       if (priceChanged) priceCount += 1;
 
       if (item.saleType === "weight") {
@@ -612,23 +632,44 @@ export function PosScreen() {
       }
 
       if (item.saleType === "multi_unit") {
-        // Multi-unit lines track a sold-unit count; cap by how many whole units
-        // fit in live base stock and refresh availableStock. Unit prices are
-        // snapshots on the line and left as-is.
-        const conversion = item.conversionToBase || 1;
+        // The sale unit must still exist AND still be sellable. An admin can
+        // disable (canSell=false) or delete the unit, or change its price /
+        // conversion, between when the draft was saved and now. A pre-edit
+        // draft would otherwise sell at a stale snapshot — so resolve the live
+        // unit and drop the line if it's gone, else refresh its snapshot.
+        const liveUnit = getSellableUnits(
+          live,
+          unitsByProduct.get(item.productId),
+        ).find((u) => u.id === item.saleUnitId);
+        if (!liveUnit) {
+          removedCount += 1;
+          return acc;
+        }
+        const conversion = liveUnit.conversionToBase || 1;
         const maxUnits = Math.floor(live.quantityInStock / conversion);
         if (maxUnits < 1) {
           // The product can no longer supply even one of this unit — drop it.
           removedCount += 1;
           return acc;
         }
+        const liveBuyPrice = liveUnit.buyPrice ?? live.buyPrice * conversion;
+        const unitChanged =
+          liveUnit.sellPrice !== item.unitSellPrice ||
+          liveBuyPrice !== item.unitBuyPrice ||
+          conversion !== (item.conversionToBase || 1);
+        if (unitChanged) priceCount += 1;
         const cappedQty = Math.min(item.quantity, maxUnits);
         if (cappedQty < item.quantity) stockCount += 1;
+        const qty = Math.max(1, cappedQty);
         acc.push({
           ...item,
+          saleUnitName: liveUnit.name,
+          conversionToBase: conversion,
+          unitSellPrice: liveUnit.sellPrice,
+          unitBuyPrice: liveBuyPrice,
           availableStock: live.quantityInStock,
-          quantity: Math.max(1, cappedQty),
-          baseQuantity: Math.max(1, cappedQty) * conversion,
+          quantity: qty,
+          baseQuantity: qty * conversion,
         });
         return acc;
       }
@@ -664,7 +705,7 @@ export function PosScreen() {
         "error",
       );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [products, draftItems]);
+  }, [products, productUnits, draftItems]);
 
   // Watch all form fields for draft persistence
   const watchedCashierName = form.watch("cashierName");
@@ -1237,7 +1278,7 @@ export function PosScreen() {
           price,
           unitCost: i.unitBuyPrice,
           isMisc,
-          canEditCost,
+          canSellBelowCost,
         });
         // Misc lines have no real cost — keep cost tracking the price so
         // product-profit reports don't invent profit for an ad-hoc sale.
@@ -1274,9 +1315,9 @@ export function PosScreen() {
           onValueChange={(v) => updateLineSellPrice(lineKey(item), v)}
           currency={currency}
           aria-label={`${t("billing.sell")}: ${item.name}`}
-          // Hard floor at cost for users who can't override; misc and
-          // privileged users float at 0.
-          min={sellPriceFloor(isMisc, canEditCost, item.unitBuyPrice)}
+          // Hard floor at cost unless below-cost selling is permitted (misc
+          // lines and canSellBelowCost float at 0).
+          min={sellPriceFloor(isMisc, canSellBelowCost, item.unitBuyPrice)}
           onKeyDown={dismissKeyboardOnEnter}
           inputSize="sm"
           className={layout === "card" ? "mt-1" : "w-32"}

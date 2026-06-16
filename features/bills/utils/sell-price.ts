@@ -6,10 +6,16 @@
  * is the cost floor:
  *   - Misc / open-price lines have no real cost — cost tracks the price, so
  *     they never trip the below-cost guard.
- *   - Users WITHOUT canEditCost cannot sell below the line's unit cost: the
- *     committed price is floored at cost.
- *   - Users WITH canEditCost may sell below cost (e.g. clearing stock) and
- *     instead get a non-blocking below-cost warning.
+ *   - When below-cost selling is NOT permitted, the committed price is floored
+ *     at the line's unit cost.
+ *   - When it IS permitted, the price may dip below cost (e.g. clearing stock)
+ *     and instead surfaces a non-blocking below-cost warning.
+ *
+ * `canSellBelowCost` is the COMBINED gate `canEditCost && settings.allowLossSale`
+ * — both must hold. The service (`assertLossSaleAllowed`) rejects below-cost
+ * sales when `allowLossSale` is false, so the UI must hard-floor in that case
+ * or the cashier would see the sale "succeed" in the cart and then fail at
+ * finalize. The per-user `canEditCost` flag is the second condition.
  *
  * Kept here as pure functions so the rule is unit-tested directly rather than
  * only through the heavy POS component.
@@ -22,8 +28,8 @@ export interface SellPriceContext {
   unitCost: number;
   /** Misc / open-price line — no real cost basis. */
   isMisc: boolean;
-  /** Whether the current user may sell below cost. */
-  canEditCost: boolean;
+  /** `canEditCost && settings.allowLossSale` — both conditions required. */
+  canSellBelowCost: boolean;
 }
 
 /** Sanitize a typed price to a non-negative finite number. */
@@ -37,25 +43,25 @@ export function sanitizeSellPrice(price: number): number {
  */
 export function resolveSellPrice(ctx: SellPriceContext): number {
   const safe = sanitizeSellPrice(ctx.price);
-  if (ctx.isMisc || ctx.canEditCost) return safe;
+  if (ctx.isMisc || ctx.canSellBelowCost) return safe;
   return Math.max(safe, ctx.unitCost);
 }
 
 /**
- * The lowest price the price input should allow. A hard floor at cost for
- * restricted users; 0 for misc lines and users who may override.
+ * The lowest price the price input should allow. A hard floor at cost when
+ * below-cost selling isn't permitted; 0 for misc lines and when it is.
  */
 export function sellPriceFloor(
   isMisc: boolean,
-  canEditCost: boolean,
+  canSellBelowCost: boolean,
   unitCost: number,
 ): number {
-  return !isMisc && !canEditCost ? unitCost : 0;
+  return !isMisc && !canSellBelowCost ? unitCost : 0;
 }
 
 /**
- * Whether a committed line is being sold below its cost. Only reachable by
- * users with canEditCost (others are floored), used to surface the
+ * Whether a committed line is being sold below its cost. Only reachable when
+ * below-cost selling is permitted (others are floored), used to surface the
  * non-blocking warning.
  */
 export function isBelowCost(

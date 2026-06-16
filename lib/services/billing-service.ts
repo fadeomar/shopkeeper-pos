@@ -17,7 +17,7 @@ import type { BillSplit } from "@/lib/utils/bill-split";
 import { createBillNumber, createId } from "@/lib/utils/id";
 import { buildSyncQueueItem, getSyncQueueId } from "@/lib/services/sync-queue-service";
 import { assertPaymentMethodEnabled, effectiveTaxAmount } from "@/lib/services/settings-policy";
-import { assertPermission } from "@/lib/services/permission-service";
+import { assertPermission, getCurrentPermissions } from "@/lib/services/permission-service";
 import { isMiscLine } from "@/lib/utils/misc-items";
 import { assertSubscriptionCanWrite } from "@/lib/services/subscription-service";
 import {
@@ -136,14 +136,22 @@ function validateDraftLine(
  * cost of the exact lots that left the shelf. Throwing here aborts the
  * enclosing Dexie transaction, so the allocations/lot decrements roll back and
  * nothing is persisted. `settings` is non-null inside createFinalizedBill.
+ *
+ * Below-cost selling needs BOTH gates the POS UI enforces (see pos-screen.tsx
+ * `canSellBelowCost`): the store-wide `allowLossSale` switch AND the per-user
+ * `canEditCost` privilege. A user without canEditCost cannot submit a line
+ * below its real FIFO cost even when the store allows loss sales — otherwise a
+ * stale/manipulated cart could bypass the UI floor, exactly as a discount would
+ * if it weren't service-permission-gated.
  */
 function assertLossSaleAllowed(
   settings: Settings,
+  canEditCost: boolean,
   productName: string,
   unitSellPrice: number,
   averageUnitCost: number,
 ): void {
-  if (settings.allowLossSale) return;
+  if (settings.allowLossSale && canEditCost) return;
   // Money-rounded values; only block when cost meaningfully exceeds price so
   // float noise on an exact break-even sale doesn't trip the guard.
   if (averageUnitCost - unitSellPrice > MONEY_EPSILON) {
@@ -251,6 +259,12 @@ export async function createFinalizedBill(input: {
   if ((Number(input.form.discountAmount) || 0) > 0) {
     await assertPermission("canDiscount");
   }
+
+  // Loss-sale also requires the per-user canEditCost privilege (mirrors the POS
+  // UI's `canSellBelowCost`). Captured here, before the transaction, because
+  // the permission helper reads authCache/settings tables outside this
+  // transaction's scope. Passed into assertLossSaleAllowed below.
+  const canEditCost = (await getCurrentPermissions()).canEditCost;
 
   // Normalise tax up front so the pre-transaction payment checks below use the
   // same total the transaction will commit. Without this, a stale offline
@@ -416,7 +430,7 @@ export async function createFinalizedBill(input: {
           : averageUnitCost;
         // Loss-sale policy is enforced against the real FIFO cost, not the
         // product's latest buyPrice. Throwing here rolls back the allocation.
-        assertLossSaleAllowed(settings, item.name, item.unitSellPrice, soldUnitCost);
+        assertLossSaleAllowed(settings, canEditCost, item.name, item.unitSellPrice, soldUnitCost);
         costAllocations.push(...allocations);
         for (const allocation of allocations) consumedLotIds.add(allocation.inventoryLotId);
 
