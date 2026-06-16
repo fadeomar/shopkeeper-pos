@@ -1399,7 +1399,16 @@ export function PosScreen() {
     }
   }
 
-  const draftItemColumns: ColumnDef<BillDraftItem, unknown>[] = [
+  // Memoized so the `cell` function identities stay stable across the
+  // re-renders that fire on every keystroke while editing a line's price/qty.
+  // DataTable renders each `cell` via flexRender AS A COMPONENT, so a fresh
+  // function reference per render makes React unmount+remount the cell subtree
+  // — which blurs the focused <input> after the first digit and drops the rest.
+  // Deps cover every reactive value the cells (transitively) read; the handler
+  // closures are intentionally omitted because they're behaviourally constant
+  // for a given set of these deps, and including them would defeat the memo.
+  const draftItemColumns: ColumnDef<BillDraftItem, unknown>[] = useMemo(
+    () => [
     {
       accessorKey: "name",
       header: t("billing.product"),
@@ -1530,7 +1539,12 @@ export function PosScreen() {
         </Button>
       ),
     },
-  ];
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- handler closures
+    // omitted on purpose (see comment above the array); these deps are the only
+    // reactive values the cells read.
+    [t, currency, products, unitsByProduct, canViewProfit, canSellBelowCost],
+  );
 
   const canSaveManualCustomer = Boolean(
     manualCustomerName.trim() || manualCustomerPhone.trim(),
@@ -2133,6 +2147,10 @@ export function PosScreen() {
         </div>
       </div>
 
+      {/* Spacer so the last content clears the stacked checkout bar + bottom
+          nav on mobile. Only needed when the checkout bar is present. */}
+      {draftItems.length > 0 && <div className="h-20 lg:hidden" aria-hidden />}
+
       {draftItems.length > 0 && (
         // Sticky mobile checkout bar. Only renders on <lg because the
         // desktop layout already has a persistent right-rail summary.
@@ -2142,10 +2160,14 @@ export function PosScreen() {
         // totals so the bar reads as "your cart" not "random sticky strip".
         <div
           className={clsx(
-            "fixed inset-x-0 bottom-0 z-30 lg:hidden",
+            // Sits ABOVE the mobile bottom nav so the finalize button is never
+            // covered. Offset = nav height: h-16 (4rem) + its pb-safe
+            // (max(env(safe-area-inset-bottom), 0.5rem)) + 1px top border.
+            // The nav owns the safe-area gap, so this bar uses a plain pb.
+            "fixed inset-x-0 bottom-[calc(4rem+max(env(safe-area-inset-bottom),0.5rem)+1px)] z-30 lg:hidden",
             "border-t border-border-default bg-surface/95 backdrop-blur",
             "shadow-[0_-8px_24px_rgba(11,18,32,0.10)]",
-            "px-3 pt-3 pb-safe",
+            "px-3 py-3",
           )}
         >
           <div className="mx-auto flex max-w-screen-sm items-center gap-3">
