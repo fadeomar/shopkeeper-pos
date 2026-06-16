@@ -77,6 +77,7 @@ export {
   LogIn,
   UserPlus,
   // Misc
+  Ban,
   MoreHorizontal,
   MoreVertical,
   Eye,
