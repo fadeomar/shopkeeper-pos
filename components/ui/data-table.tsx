@@ -2,6 +2,7 @@
 
 import { useMemo, useState, type ReactNode } from 'react';
 import Link from 'next/link';
+import type { Route } from 'next';
 import clsx from 'clsx';
 import { useLocale } from '@/components/providers/locale-context';
 import {
@@ -170,7 +171,7 @@ function MobileTableCards<TData>({
 
         if (!href) return <div key={row.id}>{card}</div>;
         return (
-          <Link key={row.id} href={href} aria-label={ariaLabel} className="block">
+          <Link key={row.id} href={href as Route} aria-label={ariaLabel} className="block">
             {card}
           </Link>
         );

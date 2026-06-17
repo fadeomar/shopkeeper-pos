@@ -3,7 +3,7 @@
 import Link from "next/link";
 import clsx from "clsx";
 import { getServiceErrorMessage } from "@/lib/errors/get-error-message";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
