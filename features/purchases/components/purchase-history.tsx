@@ -188,12 +188,9 @@ export function PurchaseHistory() {
         header: t("purchases.purchaseNumber"),
         accessorKey: "purchaseNumber",
         cell: ({ row }) => (
-          <a
-            href={`/purchases/${encodeURIComponent(row.original.id)}`}
-            className="font-medium tabular-nums text-info hover:text-info/80"
-          >
+          <span className="font-medium tabular-nums text-info">
             {row.original.purchaseNumber}
-          </a>
+          </span>
         ),
       },
       {
@@ -427,6 +424,10 @@ export function PurchaseHistory() {
         pageSize={10}
         labels={labels}
         getRowId={(row) => row.id}
+        getMobileRowHref={(row) => `/purchases/${encodeURIComponent(row.id)}`}
+        getMobileRowAriaLabel={(row) =>
+          `${t("purchases.viewDetails")}: ${row.purchaseNumber}`
+        }
       />
     </div>
   );

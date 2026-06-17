@@ -62,6 +62,10 @@ export const ar: TranslationDict = {
     skipToContent: "تخطى إلى المحتوى الرئيسي",
     shiftOpen: "دوام مفتوح",
     moreMenuLabel: "المزيد",
+    mobileGroupDailyWork: "العمل اليومي",
+    mobileGroupBusiness: "الأعمال",
+    mobileGroupReports: "التقارير",
+    mobileGroupSystem: "النظام",
     account: "الحساب",
   },
   navShort: {

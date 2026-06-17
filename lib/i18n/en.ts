@@ -62,6 +62,10 @@ export const en: TranslationDict = {
     skipToContent: "Skip to main content",
     shiftOpen: "Shift open",
     moreMenuLabel: "More",
+    mobileGroupDailyWork: "Daily work",
+    mobileGroupBusiness: "Business",
+    mobileGroupReports: "Reports",
+    mobileGroupSystem: "System",
     account: "Account",
   },
   navShort: {

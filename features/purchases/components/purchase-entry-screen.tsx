@@ -938,7 +938,7 @@ export function PurchaseEntryScreen() {
     addProductToDraft(hit.product, 1, hit.product.buyPrice);
   }
 
-  function updateLine(key: string, patch: Partial<PurchaseDraftItem>) {
+  const updateLine = useCallback((key: string, patch: Partial<PurchaseDraftItem>) => {
     setDraftItems((cur) =>
       cur.map((i) => {
         if (purchaseLineKey(i) !== key) return i;
@@ -964,11 +964,11 @@ export function PurchaseEntryScreen() {
         return next;
       }),
     );
-  }
+  }, []);
 
-  function removeLine(key: string) {
+  const removeLine = useCallback((key: string) => {
     setDraftItems((cur) => cur.filter((i) => purchaseLineKey(i) !== key));
-  }
+  }, []);
 
   function clearDraft() {
     setDraftItems([]);
@@ -1023,7 +1023,7 @@ export function PurchaseEntryScreen() {
     }
   }
 
-  const draftItemColumns: ColumnDef<PurchaseDraftItem, unknown>[] = [
+  const draftItemColumns = useMemo<ColumnDef<PurchaseDraftItem, unknown>[]>(() => [
     {
       accessorKey: "name",
       header: t("purchases.item"),
@@ -1149,7 +1149,7 @@ export function PurchaseEntryScreen() {
         </Button>
       ),
     },
-  ];
+  ], [currency, products, removeLine, t, unitsByProduct, updateLine]);
 
   if (!products) {
     return (
