@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, type ReactNode } from 'react';
 import Link from 'next/link';
 import type { Route } from 'next';
 import clsx from 'clsx';
@@ -15,6 +15,7 @@ import {
   type Cell,
   type ColumnDef,
   type Row,
+  type PaginationState,
   type SortingState,
 } from '@tanstack/react-table';
 import { Button } from '@/components/ui/button';
@@ -22,6 +23,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { typographyClasses } from '@/lib/design/variants';
+import { usePersistedState } from '@/lib/hooks/use-persisted-state';
 
 export interface DataTableLabels {
   searchPlaceholder?: string;
@@ -61,6 +63,8 @@ export interface DataTableProps<TData> {
    * very wide tables. Hiding columns silently drops information the user needs.
    */
   mobileDetailLimit?: number;
+  /** Persists table search, sorting and page size locally so back navigation keeps the user's context. */
+  storageKey?: string;
 }
 
 function isActionColumn(columnId: string): boolean {
@@ -199,10 +203,26 @@ export function DataTable<TData>({
   getMobileRowHref,
   getMobileRowAriaLabel,
   mobileDetailLimit,
+  storageKey,
 }: DataTableProps<TData>) {
   const { t } = useLocale();
-  const [globalFilter, setGlobalFilter] = useState('');
-  const [sorting, setSorting] = useState<SortingState>([]);
+  const persistenceKey = storageKey ?? '__data-table:volatile__';
+  const persistenceEnabled = Boolean(storageKey);
+  const [globalFilter, setGlobalFilter] = usePersistedState(
+    `${persistenceKey}:globalFilter`,
+    '',
+    { enabled: persistenceEnabled },
+  );
+  const [sorting, setSorting] = usePersistedState<SortingState>(
+    `${persistenceKey}:sorting`,
+    [],
+    { enabled: persistenceEnabled },
+  );
+  const [pagination, setPagination] = usePersistedState<PaginationState>(
+    `${persistenceKey}:pagination`,
+    { pageIndex: 0, pageSize },
+    { enabled: persistenceEnabled },
+  );
   // Pull every default from the locale dict so a caller that forgets to pass
   // labels still gets the user's language, not hardcoded English.
   const resolvedEmptyTitle = emptyTitle ?? t('dataTable.noResults');
@@ -211,10 +231,10 @@ export function DataTable<TData>({
   const table = useReactTable({
     data,
     columns,
-    state: { globalFilter, sorting },
-    initialState: { pagination: { pageSize } },
+    state: { globalFilter, sorting, pagination },
     onGlobalFilterChange: setGlobalFilter,
     onSortingChange: setSorting,
+    onPaginationChange: setPagination,
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),
@@ -233,6 +253,13 @@ export function DataTable<TData>({
     next: labels?.next ?? t('dataTable.next'),
     last: labels?.last ?? t('dataTable.last'),
   };
+
+  useEffect(() => {
+    const pageCount = table.getPageCount();
+    if (pageCount > 0 && pagination.pageIndex >= pageCount) {
+      table.setPageIndex(pageCount - 1);
+    }
+  }, [pagination.pageIndex, table]);
 
   const rows = table.getRowModel().rows;
   const colSpan = table.getAllLeafColumns().length || 1;

@@ -11,23 +11,31 @@ describe('role permission resolution', () => {
     expect(resolveRolePermissions(null)).toEqual(NO_PERMISSIONS);
   });
 
-  it('keeps owner closed for POS operations', () => {
-    expect(resolveRolePermissions('owner')).toEqual(DEFAULT_ROLE_PERMISSIONS.owner);
-    expect(resolveRolePermissions('owner').canVoid).toBe(false);
-    expect(resolveRolePermissions('owner').canManageSettings).toBe(false);
+  it('keeps administration as the system-level full access role', () => {
+    expect(resolveRolePermissions('administration')).toEqual(DEFAULT_ROLE_PERMISSIONS.administration);
+    expect(resolveRolePermissions('administration').canManageSettings).toBe(true);
+    expect(resolveRolePermissions('administration').canManageRolePermissions).toBe(true);
   });
 
-  it('keeps cashier as the fixed top operational role and ignores overrides', () => {
+  it('keeps owner as the fixed full store role', () => {
+    expect(resolveRolePermissions('owner')).toEqual(DEFAULT_ROLE_PERMISSIONS.owner);
+    expect(resolveRolePermissions('owner').canVoid).toBe(true);
+    expect(resolveRolePermissions('owner').canManageSettings).toBe(true);
+  });
+
+  it('keeps cashier narrow but allows safe non-meta overrides from settings', () => {
     const resolved = resolveRolePermissions('cashier', {
-      canVoid: false,
-      canManageSettings: false,
-      canManageRolePermissions: false,
+      canDiscount: true,
+      canManageSettings: true,
+      canManageRolePermissions: true,
     });
 
-    expect(resolved).toEqual(DEFAULT_ROLE_PERMISSIONS.cashier);
+    expect(resolved.canDiscount).toBe(true);
+    expect(resolved.canManageSettings).toBe(false);
+    expect(resolved.canManageRolePermissions).toBe(false);
   });
 
-  it('allows future/lower role overrides but blocks meta-permission escalation', () => {
+  it('allows lower role overrides but blocks meta-permission escalation', () => {
     const resolved = resolveRolePermissions('accountant', {
       canVoid: true,
       canManageSettings: true,
@@ -39,7 +47,7 @@ describe('role permission resolution', () => {
     expect(resolved.canManageRolePermissions).toBe(false);
   });
 
-  it('preserves manager operational defaults below cashier', () => {
+  it('preserves manager operational defaults below owner', () => {
     expect(resolveRolePermissions('manager').canEditCost).toBe(false);
     expect(resolveRolePermissions('manager').canDiscount).toBe(true);
   });

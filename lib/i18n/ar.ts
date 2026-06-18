@@ -1098,7 +1098,7 @@ export const ar: TranslationDict = {
     expiryWarningDaysHint: "المنتجات التي تنتهي صلاحيتها خلال هذه الأيام تُحدَّد في المخزون.",
     // Role permissions
     rolePermissions: "صلاحيات الأدوار",
-    rolePermissionsDesc: "تحكم في صلاحيات أدوار نقاط البيع الأقل. الكاشير هو أعلى دور تشغيلي ثابت، والمالك لإدارة الحسابات والمستخدمين فقط.",
+    rolePermissionsDesc: "تحكم في صلاحيات الأدوار داخل المتجر. المالك هو أعلى دور داخل المتجر، وAdministration مخصص لإدارة النظام.",
     roleOwner: "مالك",
     roleManager: "مدير",
     roleCashier: "كاشير",
@@ -1175,6 +1175,8 @@ export const ar: TranslationDict = {
     dontHaveAccount: "تحتاج حساباً؟",
     syncing: "جارٍ المزامنة…",
     syncCloudData: "مزامنة البيانات",
+    accessDeniedTitle: "لا تملك صلاحية الوصول",
+    accessDeniedDescription: "هذا القسم غير متاح لدور المستخدم الحالي. ارجع للصفحة السابقة أو اطلب تعديل الصلاحيات من مالك المتجر.",
     syncThenSignOut: "مزامنة ثم تسجيل الخروج",
     signOut: "تسجيل الخروج",
     signOutAnyway: "خروج على أي حال",

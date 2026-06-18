@@ -24,12 +24,24 @@ export type ProductSaleType = 'unit' | 'weight' | 'multi_unit';
  * with lots created before weight support.
  */
 export type LotBaseUnit = 'piece' | 'gram';
-export type UserRole = 'owner' | 'manager' | 'cashier' | 'accountant';
+export type UserRole = 'administration' | 'owner' | 'manager' | 'cashier' | 'accountant';
+export type StoreRole = UserRole;
+
+/**
+ * Store scope for multi-user shops. Existing single-user accounts keep working
+ * because missing storeId falls back to uid. Admin-created staff users should
+ * get the creator's storeId, so all devices sync the same business data.
+ */
+export function resolveStoreId(user: Pick<AppUser, 'uid' | 'storeId'> | null | undefined): string | null {
+  if (!user?.uid) return null;
+  return (typeof user.storeId === 'string' && user.storeId.trim()) || user.uid;
+}
 export type AccountType = 'standard' | 'trial';
 export type SubscriptionStatus = 'trial' | 'active' | 'expired' | 'suspended';
 
 export function isUserRole(value: unknown): value is UserRole {
   return (
+    value === 'administration' ||
     value === 'owner' ||
     value === 'manager' ||
     value === 'cashier' ||
@@ -49,22 +61,32 @@ export interface RolePermissions {
 }
 
 export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
-  // Owner is the app/account super-admin role. In this app shell it is routed to
-  // the admin dashboard for user/account management and should not be treated as
-  // an operational POS cashier role. Keep POS permissions closed here so any
-  // accidental owner access to shop pages fails safely.
-  owner: {
-    canVoid: false,
-    canReturn: false,
-    canDiscount: false,
-    canViewProfit: false,
-    canEditCost: false,
-    canExport: false,
-    canManageSettings: false,
-    canManageRolePermissions: false,
+  // System administration is our internal POS-system administrator. It is not a
+  // normal store employee role, but it can access all store-level tooling when
+  // used by support/operations.
+  administration: {
+    canVoid: true,
+    canReturn: true,
+    canDiscount: true,
+    canViewProfit: true,
+    canEditCost: true,
+    canExport: true,
+    canManageSettings: true,
+    canManageRolePermissions: true,
   },
-  // Manager/accountant are future operational roles. Until their workflows are
-  // fully implemented, keep them below cashier and conservative by default.
+  // Store owner is the highest customer-side role. It can run the whole store,
+  // manage users/settings, and keep using the current POS workflow normally.
+  owner: {
+    canVoid: true,
+    canReturn: true,
+    canDiscount: true,
+    canViewProfit: true,
+    canEditCost: true,
+    canExport: true,
+    canManageSettings: true,
+    canManageRolePermissions: true,
+  },
+  // Manager runs daily operations but does not manage users or store settings.
   manager: {
     canVoid: true,
     canReturn: true,
@@ -75,16 +97,17 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canManageSettings: false,
     canManageRolePermissions: false,
   },
-  // Cashier is currently the top operational POS user and can do all POS work.
+  // Cashier is intentionally narrow: sell, return, open/close shift. It cannot
+  // manage catalog, settings, users, or financial reports.
   cashier: {
-    canVoid: true,
+    canVoid: false,
     canReturn: true,
-    canDiscount: true,
-    canViewProfit: true,
-    canEditCost: true,
-    canExport: true,
-    canManageSettings: true,
-    canManageRolePermissions: true,
+    canDiscount: false,
+    canViewProfit: false,
+    canEditCost: false,
+    canExport: false,
+    canManageSettings: false,
+    canManageRolePermissions: false,
   },
   accountant: {
     canVoid: false,
@@ -101,9 +124,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
 /**
  * The "deny everything" permission set. Used as a fail-closed fallback when the
  * current user's role cannot be determined (e.g. no cached auth entry). We can
- * no longer fall back to a real role for this: `cashier` — the old "most
- * restrictive" default — is now the top shop-side role with full permissions,
- * so assuming any role would fail OPEN. An unknown caller must get nothing.
+ * no longer fall back to a real role for this: assuming any concrete role would
+ * fail OPEN. An unknown caller must get nothing.
  */
 export const NO_PERMISSIONS: RolePermissions = {
   canVoid: false,
@@ -142,11 +164,6 @@ export function resolveRolePermissions(
 ): RolePermissions {
   if (!isUserRole(role)) return NO_PERMISSIONS;
   const base = DEFAULT_ROLE_PERMISSIONS[role];
-
-  // Cashier is intentionally fixed as the top operational POS role. Do not let
-  // stored role overrides downgrade it, because that can make the main shop
-  // account lose access to critical POS actions/settings.
-  if (role === 'cashier') return { ...base };
 
   const resolved: RolePermissions = { ...base, ...(overrides ?? {}) };
   for (const key of NON_OVERRIDABLE_PERMISSIONS) {
@@ -202,6 +219,10 @@ export interface AppUser {
   name: string;
   phone?: string;
   role: UserRole;
+  /** Business/store this login belongs to. Missing means legacy single-user store = uid. */
+  storeId?: string;
+  /** Optional per-store role mirror. role remains the canonical current role for compatibility. */
+  storeRole?: StoreRole;
   isActive: boolean;
   pendingApproval?: boolean;
   /** standard = paid/admin-created account, trial = self-service testing account. */
@@ -697,7 +718,7 @@ export interface Settings {
   lowStockThreshold?: number;
   expiryWarningDays?: number;
   // Role-level permission overrides. Values override DEFAULT_ROLE_PERMISSIONS for future/lower POS roles. Cashier remains fixed as the top operational POS role.
-  rolePermissions?: Partial<Record<UserRole, Partial<RolePermissions>>>;
+  rolePermissions?: Partial<Record<Exclude<UserRole, 'administration'>, Partial<RolePermissions>>>;
   createdAt: string;
   updatedAt: string;
   syncStatus?: SyncStatus;

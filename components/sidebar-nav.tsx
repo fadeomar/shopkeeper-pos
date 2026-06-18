@@ -37,6 +37,7 @@ import {
 } from 'lucide-react';
 import { db } from '@/lib/db/schema';
 import { useLocale } from '@/components/providers/locale-context';
+import { useAppPermissions } from '@/lib/hooks/use-app-permissions';
 
 interface Route {
   href: string;
@@ -80,6 +81,8 @@ const routes: readonly Route[] = [
 export function SidebarNav() {
   const pathname = usePathname();
   const { t } = useLocale();
+  const permissions = useAppPermissions();
+  const visibleRoutes = routes.filter((route) => permissions.canAccessRoute(route.href));
   const activeShift = useLiveQuery(
     () => db.shifts.where('status').equals('open').first(),
     [],
@@ -99,7 +102,7 @@ export function SidebarNav() {
       aria-label={t('nav.mainNavLabel')}
       className="hidden lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:gap-1 lg:overflow-y-auto lg:px-3 lg:py-2"
     >
-      {routes.map(({ href, key, icon: Icon }) => {
+      {visibleRoutes.map(({ href, key, icon: Icon }) => {
         const active = isActive(href);
         const showShiftDot = href === '/shift' && Boolean(activeShift);
 

@@ -1110,6 +1110,8 @@ export interface TranslationDict {
     syncing: string;
     syncCloudData: string;
     syncThenSignOut: string;
+    accessDeniedTitle: string;
+    accessDeniedDescription: string;
     signOut: string;
     signOutAnyway: string;
     signingOut: string;

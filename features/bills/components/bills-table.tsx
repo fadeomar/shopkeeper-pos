@@ -19,6 +19,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Button } from "@/components/ui/button";
 import { useLocale } from "@/components/providers/locale-context";
 import { usePermissions } from "@/lib/hooks/use-permissions";
+import { usePersistedState } from "@/lib/hooks/use-persisted-state";
 import {
   filterBills,
   getBillNetProfit,
@@ -109,13 +110,13 @@ export function BillsTable() {
   );
   const settings = useLiveQuery(() => settingsRepo.get(), []);
   const currency = settings?.currency ?? "ILS";
-  const [query, setQuery] = useState("");
-  const [dateFilter, setDateFilter] = useState<BillDateFilter>("today");
-  const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>("all");
-  const [statusFilter, setStatusFilter] = useState<BillStatusFilter>("all");
-  const [cashierFilter, setCashierFilter] = useState("all");
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
+  const [query, setQuery] = usePersistedState("asas:bills:query", "");
+  const [dateFilter, setDateFilter] = usePersistedState<BillDateFilter>("asas:bills:dateFilter", "today");
+  const [paymentFilter, setPaymentFilter] = usePersistedState<PaymentFilter>("asas:bills:paymentFilter", "all");
+  const [statusFilter, setStatusFilter] = usePersistedState<BillStatusFilter>("asas:bills:statusFilter", "all");
+  const [cashierFilter, setCashierFilter] = usePersistedState("asas:bills:cashierFilter", "all");
+  const [customFrom, setCustomFrom] = usePersistedState("asas:bills:customFrom", "");
+  const [customTo, setCustomTo] = usePersistedState("asas:bills:customTo", "");
 
   const filteredBills = useMemo(() => {
     return filterBills(bills ?? [], {
@@ -594,6 +595,7 @@ export function BillsTable() {
                   last: t("dataTable.last"),
                 }}
                 getRowId={(bill) => String(bill.id)}
+                storageKey="asas:bills:table"
               />
             </div>
           </>

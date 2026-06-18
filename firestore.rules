@@ -30,15 +30,13 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(uid)).data;
     }
 
-    // Admin capability is the 'owner' role in this app's model
-    // (UserRole = owner | manager | cashier | accountant; there is no 'admin').
-    // 'admin' is accepted too as a defensive fallback for any legacy profile,
-    // but 'owner' is the canonical admin-capable role the app checks
-    // (auth-context: isAdmin = user.role === 'owner').
+    // System administration is the app-level POS operator role. Store owners are
+    // customer-side admins for their own store only and should not pass this
+    // global admin gate. 'admin' remains accepted as a defensive legacy fallback.
     function isActiveAdmin() {
       return isSignedIn()
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && (userDoc(request.auth.uid).role == 'owner'
+        && (userDoc(request.auth.uid).role == 'administration'
             || userDoc(request.auth.uid).role == 'admin')
         && userDoc(request.auth.uid).isActive == true;
     }
@@ -57,6 +55,18 @@ service cloud.firestore {
           && (!('subscriptionEndAtTimestamp' in userDoc(uid))
               || userDoc(uid).subscriptionEndAtTimestamp >= request.time)
         );
+    }
+
+    function isStoreMember(storeId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && (request.auth.uid == storeId || userDoc(request.auth.uid).storeId == storeId);
+    }
+
+    function isActiveStoreMember(storeId) {
+      return isStoreMember(storeId)
+        && ownerIsActive(request.auth.uid)
+        && subscriptionCanWrite(request.auth.uid);
     }
 
     function isActiveOwner(uid) {
@@ -80,15 +90,17 @@ service cloud.firestore {
       // that secondary app's Firestore — so the create is authenticated AS the
       // new user (request.auth.uid == uid), gated by isOwner(uid) below. We
       // accept that path only when the document shape is exactly an active
-      // cashier trial account, with no extra/privileged keys smuggled in.
+      // owner trial account, with no extra/privileged keys smuggled in.
       return request.resource.data.keys().hasOnly([
           'uid', 'email', 'name', 'phone', 'role', 'isActive', 'pendingApproval',
           'accountType', 'subscriptionStatus', 'subscriptionStartAt', 'subscriptionEndAt',
           'subscriptionEndAtMs', 'subscriptionEndAtTimestamp', 'lastRenewedAt',
-          'renewalCount', 'createdAt',
+          'renewalCount', 'createdAt', 'storeId', 'storeRole',
         ])
         && request.resource.data.uid == uid
-        && request.resource.data.role == 'cashier'
+        && request.resource.data.role == 'owner'
+        && request.resource.data.storeId == uid
+        && request.resource.data.storeRole == 'owner'
         && request.resource.data.isActive == true
         && request.resource.data.pendingApproval == false
         && request.resource.data.accountType == 'trial'
@@ -111,7 +123,7 @@ service cloud.firestore {
       //   - Self-service trial registration: the new user creates their OWN
       //     profile (authenticated as request.auth.uid == uid via the
       //     secondary Firebase app), and the shape must match
-      //     isSelfRegistrationShape (cashier, active trial).
+      //     isSelfRegistrationShape (owner, active trial).
       //   - Admin-created: an active admin creates a profile for another user
       //     (createAppUser uses a secondary auth app, so the setDoc happens
       //     under the admin's session for a different target uid).
@@ -129,7 +141,7 @@ service cloud.firestore {
         isOwner(uid)
         && !request.resource.data.diff(resource.data).affectedKeys()
               .hasAny([
-                'role', 'isActive', 'pendingApproval', 'uid', 'createdAt', 'email',
+                'role', 'storeId', 'storeRole', 'isActive', 'pendingApproval', 'uid', 'createdAt', 'email',
                 'accountType', 'subscriptionStatus', 'subscriptionStartAt',
                 'subscriptionEndAt', 'subscriptionEndAtMs', 'subscriptionEndAtTimestamp',
                 'lastRenewedAt', 'renewalCount', 'subscriptionNote', 'contactedAt',
@@ -146,10 +158,10 @@ service cloud.firestore {
       //   customers, shifts, settings, meta
       // ───────────────────────────────────────────────────────────────
       match /{collection}/{docId} {
-        // Owner reads their own data; admins can read for support.
-        allow read: if isOwner(uid) || isActiveAdmin();
+        // Store members read the business data for their assigned store; admins can read for support.
+        allow read: if isStoreMember(uid) || isActiveAdmin();
 
-        // Only the owner can write, and only while active + approved + subscribed.
+        // Only active members of this store can write, while active + approved + subscribed.
         // Inactive / pending / expired / suspended users are blocked at this layer.
         // Admins do not get write permission here — admin support is
         // read-only on POS data (except settings, handled below).
@@ -157,7 +169,7 @@ service cloud.firestore {
         // so their dedicated stricter rules below are the ONLY writer path —
         // Firestore's OR-of-matches would otherwise let this broad rule grant
         // writes the narrow rules intend to deny.
-        allow write: if !isProtectedUserSubcollection(collection) && isActiveOwner(uid);
+        allow write: if !isProtectedUserSubcollection(collection) && isActiveStoreMember(uid);
       }
 
 
@@ -168,7 +180,7 @@ service cloud.firestore {
       // own renewal history, but only admins may append to it.
       // ───────────────────────────────────────────────────────────────
       match /subscriptionRenewals/{docId} {
-        allow read: if isOwner(uid) || isActiveAdmin();
+        allow read: if isStoreMember(uid) || isActiveAdmin();
         allow create: if isActiveAdmin();
         allow update, delete: if false;
       }
@@ -179,8 +191,8 @@ service cloud.firestore {
       // etc.) from the support dashboard. They cannot write other POS data.
       // ───────────────────────────────────────────────────────────────
       match /settings/{settingsId} {
-        allow read: if isOwner(uid) || isActiveAdmin();
-        allow write: if isActiveOwner(uid)
+        allow read: if isStoreMember(uid) || isActiveAdmin();
+        allow write: if isActiveStoreMember(uid)
           || (isActiveAdmin()
               && request.resource.data.diff(resource.data).affectedKeys()
                    .hasOnly(['storeName', 'cashierName', 'currency', 'allowLossSale', 'lowStockHighlight', 'updatedAt']));

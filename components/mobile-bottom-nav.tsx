@@ -49,6 +49,7 @@ import { db } from "@/lib/db/schema";
 import { useLocale } from "@/components/providers/locale-context";
 import { useAuth } from "@/components/providers/auth-context";
 import { SafeSignOutButton } from "@/components/auth/safe-sign-out-button";
+import { useAppPermissions } from "@/lib/hooks/use-app-permissions";
 
 interface TabRoute {
   href: string;
@@ -111,6 +112,13 @@ export function MobileBottomNav() {
   const pathname = usePathname();
   const { t } = useLocale();
   const { user } = useAuth();
+  const permissions = useAppPermissions();
+  const visiblePrimaryTabs = PRIMARY_TABS.filter((route) => permissions.canAccessRoute(route.href));
+  const visibleMoreRouteGroups = MORE_ROUTE_GROUPS.map((group) => ({
+    ...group,
+    routes: group.routes.filter((route) => permissions.canAccessRoute(route.href)),
+  })).filter((group) => group.routes.length > 0);
+  const visibleMoreRoutes = visibleMoreRouteGroups.flatMap((group) => group.routes);
   const [moreOpen, setMoreOpen] = useState(false);
   const dialogId = useId();
   const sheetRef = useRef<HTMLDivElement | null>(null);
@@ -198,7 +206,7 @@ export function MobileBottomNav() {
   }
 
   // If the current page is in the "More" set, highlight the More tab.
-  const isMoreActive = MORE_ROUTES.some((r) => isActive(r.href));
+  const isMoreActive = visibleMoreRoutes.some((r) => isActive(r.href));
 
   // The bottom nav also shows on the POS billing screen. When the cart has
   // items the billing screen renders its own sticky checkout bar — that bar is
@@ -219,7 +227,7 @@ export function MobileBottomNav() {
         )}
       >
         <div className="flex h-16 items-stretch">
-          {PRIMARY_TABS.map(({ href, shortKey, icon: Icon }) => {
+          {visiblePrimaryTabs.map(({ href, shortKey, icon: Icon }) => {
             const active = isActive(href);
             return (
               <Link
@@ -319,7 +327,7 @@ export function MobileBottomNav() {
 
             {/* Grouped icon grid */}
             <div className="space-y-4 px-3 pb-5">
-              {MORE_ROUTE_GROUPS.map((group) => (
+              {visibleMoreRouteGroups.map((group) => (
                 <section key={group.titleKey} aria-labelledby={`${dialogId}-${group.titleKey}`}>
                   <p
                     id={`${dialogId}-${group.titleKey}`}

@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { onAuthChange, fetchUserDoc, signOut } from '@/lib/firebase/auth-service';
 import { db } from '@/lib/db/schema';
-import { getActiveUid, getLocalDataSummary, prepareRuntimeDbForUid, setActiveUid } from '@/lib/services/account-data-service';
+import { getActiveStoreId, getLocalDataSummary, prepareRuntimeDbForAccount, setActiveStoreId, setActiveUid } from '@/lib/services/account-data-service';
 import {
   clearTrustedSession,
   getStoredTrustedSession,
@@ -15,7 +15,7 @@ import {
 } from '@/lib/services/local-auth-session-service';
 import { useToast } from '@/components/ui/toast';
 import { useLocale } from '@/components/providers/locale-context';
-import type { AuthCacheEntry } from '@/types/domain';
+import { resolveStoreId, type AuthCacheEntry } from '@/types/domain';
 import { getSubscriptionAccessState } from '@/lib/services/subscription-service';
 
 export type AuthStatus = 'loading' | 'unauthenticated' | 'pending' | 'inactive' | 'subscription_expired' | 'authenticated';
@@ -107,9 +107,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try { await db.open(); } catch { /* non-fatal */ }
     }
 
-    try { await prepareRuntimeDbForUid(entry.uid); } catch (e) { console.warn('[auth:e2e] account data handoff failed:', e); }
+    try { await prepareRuntimeDbForAccount(entry.uid, resolveStoreId(entry) ?? entry.uid); } catch (e) { console.warn('[auth:e2e] account data handoff failed:', e); }
     try { await db.authCache.put(entry); } catch { /* cache write failed, non-fatal */ }
-    try { setActiveUid(entry.uid); } catch { /* non-fatal */ }
+    try { setActiveUid(entry.uid); setActiveStoreId(resolveStoreId(entry) ?? entry.uid); } catch { /* non-fatal */ }
     setAuthError('');
     setUser(entry);
     setStatus(resolveStatus(entry));
@@ -126,7 +126,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const trusted = local ?? await getValidTrustedSession();
     if (!trusted) return false;
 
-    try { await prepareRuntimeDbForUid(trusted.session.uid); } catch (e) { console.warn('[auth] trusted session account data handoff failed:', e); }
+    try { await prepareRuntimeDbForAccount(trusted.session.uid, resolveStoreId(trusted.user) ?? trusted.session.uid); } catch (e) { console.warn('[auth] trusted session account data handoff failed:', e); }
     setAuthError('');
     setUser(trusted.user);
     setStatus(resolveStatus(trusted.user));
@@ -150,9 +150,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // a new cashier landing on this browser deserves a heads-up that hidden
     // state exists for another account. The check has to happen BEFORE
     // prepareRuntimeDbForUid because that function swaps the runtime DB.
-    const previousUid = getActiveUid();
+    const previousUid = getActiveStoreId();
     let unsyncedFromPriorAccount = 0;
-    if (previousUid && previousUid !== uid) {
+    const nextStoreId = resolveStoreId({ uid, storeId: undefined });
+    if (previousUid && previousUid !== nextStoreId) {
       try {
         const priorSummary = await getLocalDataSummary();
         if (priorSummary.hasUnsyncedWork) {
@@ -169,7 +170,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Preserve the current account's local browser database before switching users.
     // This protects offline work while preventing data from one account being visible
     // to the next account on the same browser.
-    try { await prepareRuntimeDbForUid(uid); } catch (e) { console.warn('[auth] account data handoff failed:', e); }
+    try { await prepareRuntimeDbForAccount(uid, uid); } catch (e) { console.warn('[auth] account data handoff failed:', e); }
 
     if (unsyncedFromPriorAccount > 0) {
       push(
@@ -181,6 +182,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const userDoc = await fetchUserDoc(uid);
       if (userDoc) {
         const entry = buildOnlineValidatedEntry(userDoc, new Date());
+        const storeId = resolveStoreId(entry) ?? uid;
+        if (getActiveStoreId() !== storeId) {
+          try { await prepareRuntimeDbForAccount(uid, storeId); } catch (e) { console.warn('[auth] store data handoff failed:', e); }
+        } else {
+          try { setActiveUid(uid); setActiveStoreId(storeId); } catch { /* non-fatal */ }
+        }
         await rememberTrustedSession(entry);
         setAuthError('');
         setUser(entry);
@@ -286,6 +293,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const userDoc = await fetchUserDoc(user.uid);
       if (userDoc) {
         const entry = buildOnlineValidatedEntry(userDoc, new Date());
+        const storeId = resolveStoreId(entry) ?? user.uid;
+        if (getActiveStoreId() !== storeId) {
+          try { await prepareRuntimeDbForAccount(user.uid, storeId); } catch (e) { console.warn('[auth] store data handoff failed:', e); }
+        } else {
+          try { setActiveUid(user.uid); setActiveStoreId(storeId); } catch { /* non-fatal */ }
+        }
         await rememberTrustedSession(entry);
         setUser(entry);
         setStatus(resolveStatus(entry));
@@ -294,7 +307,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [user]);
 
   return (
-    <AuthContext.Provider value={{ status, user, isAdmin: user?.role === 'owner', authError, logout, refreshStatus }}>
+    <AuthContext.Provider value={{ status, user, isAdmin: user?.role === 'administration', authError, logout, refreshStatus }}>
       {children}
     </AuthContext.Provider>
   );

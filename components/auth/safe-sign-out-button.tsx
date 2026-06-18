@@ -14,6 +14,7 @@ import { useState } from "react";
 import { useAuth } from "@/components/providers/auth-context";
 import { useLocale } from "@/components/providers/locale-context";
 import { syncAllToCloud } from "@/lib/firebase/sync-service";
+import { resolveStoreId } from "@/types/domain";
 import {
   getLocalDataSummary,
   saveCurrentAccountSnapshot,
@@ -39,10 +40,10 @@ export function SafeSignOutButton({ className }: { className?: string }) {
     setSigningOut(true);
     try {
       if (user?.uid) {
-        await saveCurrentAccountSnapshot(user.uid);
+        await saveCurrentAccountSnapshot(resolveStoreId(user) ?? user.uid);
         // Stamp the UID so runRestoreCheck can wipe local Dexie if a different
         // account signs in on the same device next time.
-        try { localStorage.setItem('shopkeeper_last_active_uid', user.uid); } catch { /* non-fatal */ }
+        try { localStorage.setItem('shopkeeper_last_active_uid', resolveStoreId(user) ?? user.uid); } catch { /* non-fatal */ }
       }
       await logout();
     } finally {
@@ -52,7 +53,7 @@ export function SafeSignOutButton({ className }: { className?: string }) {
   async function syncThenSignOut() {
     if (!user?.uid) return signOutKeepingDeviceData();
     setSyncing(true);
-    const result = await syncAllToCloud(user.uid);
+    const result = await syncAllToCloud(resolveStoreId(user) ?? user.uid);
     setSyncing(false);
     if (!result) {
       setSummary(await getLocalDataSummary());

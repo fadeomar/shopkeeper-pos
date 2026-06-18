@@ -32,7 +32,7 @@ import {
   markConflict,
 } from '@/lib/services/sync-queue-service';
 import { useAuth } from './auth-context';
-import { autoDismissFalseOfflineSaleConflicts, getOpenConflicts } from '@/lib/services/sync-conflict-service';
+import { autoDismissFalseOfflineSaleConflicts, autoResolveSafeConflicts, getOpenConflicts } from '@/lib/services/sync-conflict-service';
 import { detectProductCloudConflict, prepareSettingsForCloudSync } from '@/lib/firebase/cloud-merge-service';
 import { pullCloudChangesBeforePush } from '@/lib/firebase/cloud-pull-service';
 import { isSyncBlocked } from '@/lib/services/sync-gate';
@@ -564,6 +564,7 @@ export async function runSync(uid: string): Promise<void> {
   if (isSyncBlocked()) return;
 
   await autoDismissFalseOfflineSaleConflicts();
+  await autoResolveSafeConflicts();
   const openConflicts = await getOpenConflicts();
   if (openConflicts.length > 0) return;
 
@@ -571,6 +572,7 @@ export async function runSync(uid: string): Promise<void> {
   if (jobs.length === 0) {
     await pullCloudChangesBeforePush(uid);
     await autoDismissFalseOfflineSaleConflicts();
+    await autoResolveSafeConflicts();
     return;
   }
 
@@ -580,12 +582,14 @@ export async function runSync(uid: string): Promise<void> {
   await processJobs(uid, jobs);
 
   await autoDismissFalseOfflineSaleConflicts();
+  await autoResolveSafeConflicts();
   const conflictsAfterPush = await getOpenConflicts();
   if (conflictsAfterPush.length > 0) return;
 
   if (typeof navigator !== 'undefined' && !navigator.onLine) return;
   await pullCloudChangesBeforePush(uid);
   await autoDismissFalseOfflineSaleConflicts();
+  await autoResolveSafeConflicts();
 
   const remainingJobs = await getPendingSyncJobs();
   if (remainingJobs.length > 0) await processJobs(uid, remainingJobs);

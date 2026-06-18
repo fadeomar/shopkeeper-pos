@@ -4,7 +4,7 @@ import { createId } from '@/lib/utils/id';
 import { nowIso } from '@/lib/utils/date';
 import { buildSyncQueueItem } from '@/lib/services/sync-queue-service';
 import { logAudit } from '@/lib/services/audit-service';
-import { assertPermission, getCurrentPermissions } from '@/lib/services/permission-service';
+import { assertAppPermission, assertPermission, getCurrentPermissions } from '@/lib/services/permission-service';
 import type { InventoryLot, Product, StockMovement, StockMovementType } from '@/types/domain';
 import { assertSubscriptionCanWrite } from '@/lib/services/subscription-service';
 import {
@@ -22,6 +22,7 @@ function requestSync(): void {
 
 export async function createProductWithInitialMovement(product: Product) {
   await assertSubscriptionCanWrite();
+  await assertAppPermission('products.create');
   // Cost (buyPrice) is permission-gated. A user without canEditCost can still
   // create a product so cashiers can add SKUs on the fly — but they cannot set
   // a cost. Force buyPrice to 0 here as the service-layer backstop so a hidden
@@ -85,6 +86,7 @@ export async function createProductWithInitialMovement(product: Product) {
 
 export async function updateProductDetails(product: Product, changes: Partial<Product>) {
   await assertSubscriptionCanWrite();
+  await assertAppPermission('products.edit');
   // Editing the cost (buy price) requires canEditCost. The product form already
   // hides the field for roles without it; this is the service-layer backstop.
   if (

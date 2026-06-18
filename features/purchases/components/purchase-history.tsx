@@ -27,6 +27,7 @@ import { Badge } from "@/components/ui/badge";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { RecordSyncBadge } from "@/components/sync/record-sync-badge";
 import { useLocale } from "@/components/providers/locale-context";
+import { usePersistedState } from "@/lib/hooks/use-persisted-state";
 import type { Purchase } from "@/types/domain";
 
 type PurchaseDateFilter =
@@ -102,13 +103,13 @@ export function PurchaseHistory() {
   );
   const settings = useLiveQuery(() => settingsRepo.get(), []);
   const currency = settings?.currency ?? "ILS";
-  const [query, setQuery] = useState("");
-  const [dateFilter, setDateFilter] = useState<PurchaseDateFilter>("today");
-  const [supplierFilter, setSupplierFilter] = useState("all");
+  const [query, setQuery] = usePersistedState("asas:purchases:query", "");
+  const [dateFilter, setDateFilter] = usePersistedState<PurchaseDateFilter>("asas:purchases:dateFilter", "today");
+  const [supplierFilter, setSupplierFilter] = usePersistedState("asas:purchases:supplierFilter", "all");
   const [paymentStatusFilter, setPaymentStatusFilter] =
-    useState<PurchasePaymentStatusFilter>("all");
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
+    usePersistedState<PurchasePaymentStatusFilter>("asas:purchases:paymentStatusFilter", "all");
+  const [customFrom, setCustomFrom] = usePersistedState("asas:purchases:customFrom", "");
+  const [customTo, setCustomTo] = usePersistedState("asas:purchases:customTo", "");
 
   const supplierOptions = useMemo(() => {
     const names = Array.from(
@@ -428,6 +429,7 @@ export function PurchaseHistory() {
         getMobileRowAriaLabel={(row) =>
           `${t("purchases.viewDetails")}: ${row.purchaseNumber}`
         }
+        storageKey="asas:purchases:table"
       />
     </div>
   );

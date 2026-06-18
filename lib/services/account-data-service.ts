@@ -3,6 +3,7 @@ import { db } from '@/lib/db/schema';
 import type { AuditEvent, AuthCacheEntry, Bill, BillItem, BillItemCostAllocation, CashMovement, Customer, CustomerPayment, Expense, InventoryLot, Product, ProductUnit, Purchase, PurchaseItem, Settings, Shift, StockMovement, Supplier, SupplierPayment, SyncConflict, SyncQueueItem } from '@/types/domain';
 
 const ACTIVE_UID_KEY = 'shopkeeper_active_uid';
+const ACTIVE_STORE_ID_KEY = 'shopkeeper_active_store_id';
 const LEGACY_LAST_UID_KEY = 'shopkeeper_last_uid';
 const DEVICE_ID_KEY = 'shopkeeper_device_id';
 
@@ -45,6 +46,8 @@ export function getOrCreateDeviceId(): string {
 }
 export function getActiveUid(): string | null { if (typeof window === 'undefined') return null; return localStorage.getItem(ACTIVE_UID_KEY) || localStorage.getItem(LEGACY_LAST_UID_KEY); }
 export function setActiveUid(uid: string): void { if (typeof window === 'undefined') return; localStorage.setItem(ACTIVE_UID_KEY, uid); localStorage.setItem(LEGACY_LAST_UID_KEY, uid); }
+export function getActiveStoreId(): string | null { if (typeof window === 'undefined') return null; return localStorage.getItem(ACTIVE_STORE_ID_KEY) || getActiveUid(); }
+export function setActiveStoreId(storeId: string): void { if (typeof window === 'undefined') return; localStorage.setItem(ACTIVE_STORE_ID_KEY, storeId); }
 
 export async function getLocalDataSummary(): Promise<LocalDataSummary> {
   if (!db.isOpen()) { try { await db.open(); } catch {} }
@@ -95,4 +98,23 @@ export async function restoreAccountSnapshot(uid: string): Promise<boolean> {
   });
   return true;
 }
-export async function prepareRuntimeDbForUid(nextUid: string): Promise<void> { const previousUid = getActiveUid(); if (!previousUid || previousUid === nextUid) { setActiveUid(nextUid); return; } await saveCurrentAccountSnapshot(previousUid); await restoreAccountSnapshot(nextUid); setActiveUid(nextUid); }
+export async function prepareRuntimeDbForAccount(userUid: string, storeId = userUid): Promise<void> {
+  const previousStoreId = getActiveStoreId();
+  const previousUserUid = getActiveUid();
+  if (!previousStoreId || previousStoreId === storeId) {
+    setActiveUid(userUid);
+    setActiveStoreId(storeId);
+    return;
+  }
+  await saveCurrentAccountSnapshot(previousStoreId);
+  await restoreAccountSnapshot(storeId);
+  setActiveUid(userUid);
+  setActiveStoreId(storeId);
+  if (previousUserUid && previousUserUid !== userUid) {
+    // keep the latest signed-in identity separate from the store-scope snapshot.
+  }
+}
+
+export async function prepareRuntimeDbForUid(nextUid: string): Promise<void> {
+  await prepareRuntimeDbForAccount(nextUid, nextUid);
+}

@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // test. createProductWithInitialMovement then runs against fake-indexeddb only.
 vi.mock("@/lib/services/permission-service", () => ({
   assertPermission: vi.fn().mockResolvedValue(undefined),
+  assertAppPermission: vi.fn().mockResolvedValue(undefined),
   getCurrentPermissions: vi.fn().mockResolvedValue({
     canVoid: true,
     canReturn: true,

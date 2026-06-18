@@ -1109,7 +1109,7 @@ export const en: TranslationDict = {
     expiryWarningDaysHint: "Products expiring within this many days are flagged in inventory.",
     // Role permissions
     rolePermissions: "Role Permissions",
-    rolePermissionsDesc: "Control lower POS role actions. Cashier is the fixed top POS role; Owner is for admin/user management only.",
+    rolePermissionsDesc: "Control store-level role actions. Owner is the highest store role; Administration is reserved for system operators.",
     roleOwner: "Owner",
     roleManager: "Manager",
     roleCashier: "Cashier",
@@ -1185,6 +1185,8 @@ export const en: TranslationDict = {
     dontHaveAccount: "Need an account?",
     syncing: "Syncing…",
     syncCloudData: "Sync cloud data",
+    accessDeniedTitle: "Access denied",
+    accessDeniedDescription: "This section is not available for the current user role. Go back or ask the store owner to update permissions.",
     syncThenSignOut: "Sync now, then sign out",
     signOut: "Sign out",
     signOutAnyway: "Sign out anyway",
