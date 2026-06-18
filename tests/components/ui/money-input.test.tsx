@@ -120,14 +120,18 @@ describe('MoneyInput', () => {
 
   it('prevents mouse wheel changes on focused money fields', async () => {
     const user = userEvent.setup();
-    const blurSpy = vi.spyOn(HTMLInputElement.prototype, 'blur');
     renderWithLocale(<ControlledMoneyInput initial={33} />);
 
     const input = screen.getByRole('textbox', { name: /paid amount/i });
     await user.click(input);
-    input.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -100 }));
+    const wheel = new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: -100 });
+    const preventDefault = vi.spyOn(wheel, 'preventDefault');
+    input.dispatchEvent(wheel);
 
-    expect(blurSpy).toHaveBeenCalled();
+    // The wheel is blocked rather than blurring the field — trackpad users
+    // scrolling the page shouldn't lose focus mid-entry.
+    expect(preventDefault).toHaveBeenCalled();
+    expect(input).toHaveFocus();
     expect(input).toHaveValue('33.00');
   });
 });
