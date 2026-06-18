@@ -106,8 +106,6 @@ const MORE_ROUTE_GROUPS: MoreRouteGroup[] = [
   },
 ];
 
-const MORE_ROUTES = MORE_ROUTE_GROUPS.flatMap((group) => group.routes);
-
 export function MobileBottomNav() {
   const pathname = usePathname();
   const { t } = useLocale();

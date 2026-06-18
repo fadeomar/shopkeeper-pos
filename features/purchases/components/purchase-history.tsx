@@ -9,7 +9,7 @@
  * to as "Purchase history". Before this existed that link 404'd.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import clsx from "clsx";
 import { useLiveQuery } from "dexie-react-hooks";
 import type { ColumnDef } from "@tanstack/react-table";
