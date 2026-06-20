@@ -11,12 +11,31 @@ An offline-first point-of-sale PWA for small retail shops. Built with Next.js Ap
 ```bash
 npm run dev              # dev server (no service worker)
 npm run dev:offline      # dev with offline PWA service worker enabled
-npm run typecheck        # tsc --noEmit  ← run this after every edit
+npm run typecheck        # tsc --noEmit --noUnusedLocals --noUnusedParameters (matches CI) ← run after every edit
 npm run build            # production build
 npm run preview:offline  # build + serve with offline SW
+npm test                 # vitest: unit + integration + components
+npm run deploy:rules     # deploy firestore.rules to Firebase (see warning below)
 ```
 
-There is **no test runner** configured. `typecheck` is the only automated check.
+`npm run typecheck` mirrors CI's exact flags — CI also rejects unused locals/params,
+so an edit that only `tsc --noEmit`-passes can still fail CI without these.
+
+> ⚠️ **Firestore rules deploy SEPARATELY from the app.** Merging to `main` and the
+> Vercel deploy do **not** update `firestore.rules` in the Firebase project — the
+> live rules stay stale until you run `npm run deploy:rules` (or
+> `firebase deploy --only firestore:rules`). Any change to `firestore.rules` is
+> only live after that step. (A stale rules deploy once blocked the new
+> `administration` role from reading `/users` in production.)
+
+### Admin/ops scripts
+
+`npm run deploy:rules` and `npm run plan:permissions-migration` authenticate with
+the app's own `FIREBASE_ADMIN_*` service-account env vars (shared resolver in
+`scripts/lib/admin-credentials.mjs`). Get them locally with
+`vercel env pull .env.local`; the npm scripts load it via `--env-file-if-exists`.
+Avoid downloading raw service-account JSON keys — they're long-lived secrets.
+`GOOGLE_APPLICATION_CREDENTIALS` (a JSON key path) is still honored as a fallback.
 
 ---
 

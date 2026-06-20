@@ -2,9 +2,13 @@
 /**
  * Dry-run permissions migration helper.
  *
- * Usage:
- *   GOOGLE_APPLICATION_CREDENTIALS=/path/service-account.json npm run plan:permissions-migration
- *   GOOGLE_APPLICATION_CREDENTIALS=/path/service-account.json APPLY_PERMISSIONS_MIGRATION=1 npm run plan:permissions-migration
+ * Usage (npm script loads .env.local via `node --env-file-if-exists`):
+ *   npm run plan:permissions-migration                          # dry run
+ *   APPLY_PERMISSIONS_MIGRATION=1 npm run plan:permissions-migration   # apply
+ *
+ * Credentials come from the app's FIREBASE_ADMIN_* env vars (pull with
+ * `vercel env pull .env.local`) or GOOGLE_APPLICATION_CREDENTIALS — see
+ * scripts/lib/admin-credentials.mjs.
  *
  * What it does:
  *   - Groups active users by effective storeId.
@@ -13,9 +17,9 @@
  *     ONLY when APPLY_PERMISSIONS_MIGRATION=1.
  *   - Never promotes pending/inactive/suspended accounts.
  */
-import admin from 'firebase-admin';
+import { initAdmin } from './lib/admin-credentials.mjs';
 
-if (!admin.apps.length) admin.initializeApp();
+const admin = await initAdmin();
 const db = admin.firestore();
 const apply = process.env.APPLY_PERMISSIONS_MIGRATION === '1';
 

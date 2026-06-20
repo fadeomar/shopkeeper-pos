@@ -9,7 +9,7 @@
     "build": "next build",
     "start": "next start",
     "start:host": "next start -H 0.0.0.0",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit --noUnusedLocals --noUnusedParameters",
     "dev:offline:host": "cross-env NEXT_PUBLIC_ENABLE_OFFLINE_SW=1 next dev -H 0.0.0.0",
     "preview:offline": "npm run build && npm run start:host",
     "test": "npm run test:unit && npm run test:integration && npm run test:components",
@@ -38,7 +38,8 @@
     "test:e2e:visual": "playwright test --config=playwright.visual.config.ts",
     "test:e2e:visual:update": "playwright test --config=playwright.visual.config.ts --update-snapshots",
     "test:production-core": "vitest run tests/integration/services/local-auth-session-service.integration.test.ts tests/components/providers/auth-context-offline-session.test.tsx tests/unit/services/storage-health-service.test.ts tests/integration/services/sync-health-service.integration.test.ts tests/unit/pwa/install-environment.test.ts tests/components/pwa/pwa-install-action.test.tsx tests/components/providers/locale-context.test.tsx tests/unit/config/feature-flags.test.ts tests/components/dashboard/demo-data-gating.test.tsx --reporter dot --maxWorkers=1 --pool=forks",
-    "plan:permissions-migration": "node scripts/plan-permissions-migration.mjs"
+    "deploy:rules": "node --env-file-if-exists=.env.local scripts/deploy-firestore-rules.mjs",
+    "plan:permissions-migration": "node --env-file-if-exists=.env.local scripts/plan-permissions-migration.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
