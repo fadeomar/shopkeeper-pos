@@ -1,6 +1,6 @@
 import { db } from '@/lib/db/schema';
-import { getOrCreateDeviceId, setActiveUid } from '@/lib/services/account-data-service';
-import type { AuthCacheEntry } from '@/types/domain';
+import { getOrCreateDeviceId, setActiveStoreId, setActiveUid } from '@/lib/services/account-data-service';
+import { resolveStoreId, type AuthCacheEntry } from '@/types/domain';
 
 export const TRUSTED_SESSION_TTL_DAYS = 30;
 export const TRUSTED_SESSION_TTL_MS = TRUSTED_SESSION_TTL_DAYS * 24 * 60 * 60 * 1000;
@@ -119,7 +119,7 @@ export async function rememberTrustedSession(
 
   await ensureDbOpen();
   try { await db.authCache.put(cachedUser); } catch { /* cache write failed, non-fatal */ }
-  try { setActiveUid(user.uid); } catch { /* non-fatal */ }
+  try { setActiveUid(user.uid); setActiveStoreId(resolveStoreId(user) ?? user.uid); } catch { /* non-fatal */ }
 
   const storage = readStorage();
   if (storage) {

@@ -24,7 +24,7 @@ export class AdminRequestError extends Error {
  *
  * The caller must present a Firebase ID token as `Authorization: Bearer <token>`.
  * We verify the token, then read their /users/{uid} profile and require the
- * admin-capable role ('owner', or legacy 'admin') AND an active account — the
+ * admin-capable role ('administration', or legacy 'admin') AND an active account — the
  * same gate enforced by isActiveAdmin() in firestore.rules. Returns the
  * verified caller uid so routes can guard self-targeting actions.
  *
@@ -45,7 +45,7 @@ export async function requireAdmin(request: NextRequest): Promise<string> {
 
   const callerDoc = await getAdminFirestore().doc(`users/${uid}`).get();
   const data = callerDoc.data() as { role?: string; isActive?: boolean } | undefined;
-  const isAdminRole = data?.role === 'owner' || data?.role === 'admin';
+  const isAdminRole = data?.role === 'administration' || data?.role === 'admin';
   if (!callerDoc.exists || !isAdminRole || data?.isActive === false) {
     throw new AdminRequestError(403, 'Forbidden');
   }

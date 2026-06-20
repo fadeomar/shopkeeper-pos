@@ -1,6 +1,8 @@
 'use client';
 
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, type ReactNode } from 'react';
+import Link from 'next/link';
+import type { Route } from 'next';
 import clsx from 'clsx';
 import { useLocale } from '@/components/providers/locale-context';
 import {
@@ -10,7 +12,10 @@ import {
   getPaginationRowModel,
   getSortedRowModel,
   useReactTable,
+  type Cell,
   type ColumnDef,
+  type Row,
+  type PaginationState,
   type SortingState,
 } from '@tanstack/react-table';
 import { Button } from '@/components/ui/button';
@@ -18,6 +23,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { typographyClasses } from '@/lib/design/variants';
+import { usePersistedState } from '@/lib/hooks/use-persisted-state';
 
 export interface DataTableLabels {
   searchPlaceholder?: string;
@@ -47,6 +53,135 @@ export interface DataTableProps<TData> {
   pageSizeOptions?: number[];
   getRowId?: (row: TData, index: number) => string;
   labels?: DataTableLabels;
+  /** Optional href used by the mobile card layout so rows become tappable detail entries. */
+  getMobileRowHref?: (row: TData, index: number) => string | undefined;
+  /** Optional accessible label for a tappable mobile row. */
+  getMobileRowAriaLabel?: (row: TData, index: number) => string | undefined;
+  /**
+   * Max detail fields shown per mobile card (excludes the primary/title field).
+   * Defaults to showing every column — set this only to deliberately truncate
+   * very wide tables. Hiding columns silently drops information the user needs.
+   */
+  mobileDetailLimit?: number;
+  /** Persists table search, sorting and page size locally so back navigation keeps the user's context. */
+  storageKey?: string;
+}
+
+function isActionColumn(columnId: string): boolean {
+  return /(^|[-_])(action|actions)([-_]|$)/i.test(columnId);
+}
+
+function columnLabel<TData>(cell: Cell<TData, unknown>): ReactNode {
+  const header = cell.column.columnDef.header;
+  if (typeof header === 'string') return header;
+  if (typeof header === 'number') return String(header);
+  return cell.column.id;
+}
+
+function MobileTableCards<TData>({
+  rows,
+  loading,
+  emptyTitle,
+  emptyDescription,
+  loadingLabel,
+  getHref,
+  getAriaLabel,
+  detailLimit,
+}: {
+  rows: Row<TData>[];
+  loading?: boolean;
+  emptyTitle: ReactNode;
+  emptyDescription?: ReactNode;
+  loadingLabel: ReactNode;
+  getHref?: (row: TData, index: number) => string | undefined;
+  getAriaLabel?: (row: TData, index: number) => string | undefined;
+  detailLimit?: number;
+}) {
+  if (loading) {
+    return (
+      <div className="px-4 py-10 text-center text-sm text-slate-500">
+        {loadingLabel}
+      </div>
+    );
+  }
+
+  if (rows.length === 0) {
+    return (
+      <div className="px-4 py-10">
+        <EmptyState title={emptyTitle} description={emptyDescription} compact />
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-3 p-3">
+      {rows.map((row, index) => {
+        const cells = row.getVisibleCells();
+        const nonActionCells = cells.filter((cell) => !isActionColumn(cell.column.id));
+        const actionCells = cells.filter((cell) => isActionColumn(cell.column.id));
+        const [primaryCell, ...detailCells] = nonActionCells;
+        const href = getHref?.(row.original, index);
+        const ariaLabel = getAriaLabel?.(row.original, index);
+        const visibleDetails =
+          detailLimit != null ? detailCells.slice(0, detailLimit) : detailCells;
+        const hasHiddenDetails = detailCells.length > visibleDetails.length;
+
+        const card = (
+          <div
+            className={clsx(
+              'touch-card rounded-2xl border border-slate-200 bg-white p-3 shadow-xs',
+              href ? 'transition-colors active:bg-slate-50' : 'hover:bg-slate-50/60',
+            )}
+          >
+            {primaryCell ? (
+              <div className="min-w-0 text-sm font-semibold text-slate-900">
+                {flexRender(primaryCell.column.columnDef.cell, primaryCell.getContext())}
+              </div>
+            ) : (
+              <div className="text-sm font-semibold text-slate-900">#{index + 1}</div>
+            )}
+
+            {visibleDetails.length > 0 && (
+              <dl className="mt-3 grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
+                {visibleDetails.map((cell) => (
+                  <div key={cell.id} className="rounded-xl bg-slate-50 p-2">
+                    <dt className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      {columnLabel(cell)}
+                    </dt>
+                    <dd className="min-w-0 text-slate-800">
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </dd>
+                  </div>
+                ))}
+                {hasHiddenDetails && (
+                  <div className="rounded-xl bg-slate-50 p-2 text-[11px] font-medium text-slate-500">
+                    +{detailCells.length - visibleDetails.length}
+                  </div>
+                )}
+              </dl>
+            )}
+
+            {!href && actionCells.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
+                {actionCells.map((cell) => (
+                  <div key={cell.id}>
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+
+        if (!href) return <div key={row.id}>{card}</div>;
+        return (
+          <Link key={row.id} href={href as Route} aria-label={ariaLabel} className="block">
+            {card}
+          </Link>
+        );
+      })}
+    </div>
+  );
 }
 
 export function DataTable<TData>({
@@ -65,10 +200,29 @@ export function DataTable<TData>({
   pageSizeOptions = [10, 25, 50, 100],
   getRowId,
   labels,
+  getMobileRowHref,
+  getMobileRowAriaLabel,
+  mobileDetailLimit,
+  storageKey,
 }: DataTableProps<TData>) {
   const { t } = useLocale();
-  const [globalFilter, setGlobalFilter] = useState('');
-  const [sorting, setSorting] = useState<SortingState>([]);
+  const persistenceKey = storageKey ?? '__data-table:volatile__';
+  const persistenceEnabled = Boolean(storageKey);
+  const [globalFilter, setGlobalFilter] = usePersistedState(
+    `${persistenceKey}:globalFilter`,
+    '',
+    { enabled: persistenceEnabled },
+  );
+  const [sorting, setSorting] = usePersistedState<SortingState>(
+    `${persistenceKey}:sorting`,
+    [],
+    { enabled: persistenceEnabled },
+  );
+  const [pagination, setPagination] = usePersistedState<PaginationState>(
+    `${persistenceKey}:pagination`,
+    { pageIndex: 0, pageSize },
+    { enabled: persistenceEnabled },
+  );
   // Pull every default from the locale dict so a caller that forgets to pass
   // labels still gets the user's language, not hardcoded English.
   const resolvedEmptyTitle = emptyTitle ?? t('dataTable.noResults');
@@ -77,10 +231,10 @@ export function DataTable<TData>({
   const table = useReactTable({
     data,
     columns,
-    state: { globalFilter, sorting },
-    initialState: { pagination: { pageSize } },
+    state: { globalFilter, sorting, pagination },
     onGlobalFilterChange: setGlobalFilter,
     onSortingChange: setSorting,
+    onPaginationChange: setPagination,
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),
@@ -99,6 +253,13 @@ export function DataTable<TData>({
     next: labels?.next ?? t('dataTable.next'),
     last: labels?.last ?? t('dataTable.last'),
   };
+
+  useEffect(() => {
+    const pageCount = table.getPageCount();
+    if (pageCount > 0 && pagination.pageIndex >= pageCount) {
+      table.setPageIndex(pageCount - 1);
+    }
+  }, [pagination.pageIndex, table]);
 
   const rows = table.getRowModel().rows;
   const colSpan = table.getAllLeafColumns().length || 1;
@@ -135,8 +296,21 @@ export function DataTable<TData>({
         </div>
       )}
 
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[720px] text-sm md:min-w-full">
+      <div className="md:hidden">
+        <MobileTableCards
+          rows={rows}
+          loading={loading}
+          emptyTitle={resolvedEmptyTitle}
+          emptyDescription={emptyDescription}
+          loadingLabel={tableLabels.loading}
+          getHref={getMobileRowHref}
+          getAriaLabel={getMobileRowAriaLabel}
+          detailLimit={mobileDetailLimit}
+        />
+      </div>
+
+      <div className="hidden overflow-x-auto md:block">
+        <table className="w-full min-w-full text-sm">
           <thead className="bg-slate-50">
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id} className="border-b border-slate-200">

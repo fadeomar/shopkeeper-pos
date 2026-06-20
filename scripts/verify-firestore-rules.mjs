@@ -9,18 +9,18 @@ const rules = readFileSync(rulesPath, 'utf8');
 
 const checks = [
   {
-    name: 'owner role is admin-capable',
-    pass: /userDoc\(request\.auth\.uid\)\.role == 'owner'/.test(rules),
-    hint: 'isActiveAdmin() must treat role=owner as the canonical app admin role.',
+    name: 'administration role is admin-capable',
+    pass: /userDoc\(request\.auth\.uid\)\.role == 'administration'/.test(rules),
+    hint: 'isActiveAdmin() must treat role=administration as the canonical system admin role.',
   },
   {
-    name: 'cashier self-registration is constrained to trial cashier shape',
+    name: 'owner self-registration is constrained to trial owner shape',
     pass: /function isSelfRegistrationShape\(uid\)/.test(rules)
-      && /role == 'cashier'/.test(rules)
+      && /role == 'owner'/.test(rules)
       && /subscriptionStatus == 'trial'/.test(rules)
       && /request\.resource\.data\.keys\(\)\.hasOnly/.test(rules)
       && /allow create: if \(isOwner\(uid\) && isSelfRegistrationShape\(uid\)\)/.test(rules),
-    hint: 'Self-registration must only allow the signed-in new user to create the exact trial cashier profile shape.',
+    hint: 'Self-registration must only allow the signed-in new user to create the exact trial owner profile shape.',
   },
   {
     name: 'trial window is capped at 15 days in rules',
@@ -46,7 +46,7 @@ const checks = [
     pass: /function isProtectedUserSubcollection\(collection\)/.test(rules)
       && /collection == 'settings'/.test(rules)
       && /collection == 'subscriptionRenewals'/.test(rules)
-      && /allow write: if !isProtectedUserSubcollection\(collection\) && isActiveOwner\(uid\)/.test(rules),
+      && /allow write: if !isProtectedUserSubcollection\(collection\) && isActiveStoreMember\(uid\)/.test(rules),
     hint: 'Firestore ORs overlapping matches, so generic POS writes must not cover settings or subscriptionRenewals.',
   },
   {

@@ -33,7 +33,7 @@ import {
 import { getServiceErrorMessage } from "@/lib/errors/get-error-message";
 import type { Locale } from "@/lib/i18n";
 import type { UserRole, RolePermissions } from "@/types/domain";
-import { DEFAULT_ROLE_PERMISSIONS } from "@/types/domain";
+import { DEFAULT_ROLE_PERMISSIONS, resolveStoreId } from "@/types/domain";
 import { usePermissions } from "@/lib/hooks/use-permissions";
 import { db } from "@/lib/db/schema";
 import {
@@ -488,7 +488,8 @@ export default function SettingsPage() {
 
 // ─── Role Permissions Card ───────────────────────────────────────────────────
 
-const ROLES: UserRole[] = ["cashier", "manager", "accountant"];
+type StoreAssignableRole = Exclude<UserRole, 'administration'>;
+const ROLES: StoreAssignableRole[] = ['owner', 'manager', 'cashier', 'accountant'];
 const PERM_KEYS: Array<keyof RolePermissions> = [
   "canVoid",
   "canReturn",
@@ -498,7 +499,7 @@ const PERM_KEYS: Array<keyof RolePermissions> = [
   "canExport",
 ];
 
-type PermOverride = Partial<Record<UserRole, Partial<RolePermissions>>>;
+type PermOverride = Partial<Record<StoreAssignableRole, Partial<RolePermissions>>>;
 
 function RolePermissionsCard() {
   const { t } = useLocale();
@@ -514,14 +515,14 @@ function RolePermissionsCard() {
     setOverrides(settings.rolePermissions ?? {});
   }, [settings]);
 
-  function getEffective(role: UserRole, perm: keyof RolePermissions): boolean {
+  function getEffective(role: StoreAssignableRole, perm: keyof RolePermissions): boolean {
     const base = DEFAULT_ROLE_PERMISSIONS[role][perm];
     return overrides[role]?.[perm] ?? base;
   }
 
-  function toggle(role: UserRole, perm: keyof RolePermissions) {
+  function toggle(role: StoreAssignableRole, perm: keyof RolePermissions) {
     if (!canManageRolePermissions) return;
-    if (role === "cashier") return; // cashier is fixed as the top POS role
+    if (role === "owner") return; // owner is fixed as the full store role
     const current = getEffective(role, perm);
     setOverrides((prev) => ({
       ...prev,
@@ -558,6 +559,7 @@ function RolePermissionsCard() {
   }
 
   const roleLabels: Record<UserRole, string> = {
+    administration: 'Administration',
     owner: t("settings.roleOwner"),
     manager: t("settings.roleManager"),
     cashier: t("settings.roleCashier"),
@@ -603,7 +605,7 @@ function RolePermissionsCard() {
                   className="text-center text-xs font-semibold text-slate-600 pb-3 px-3 min-w-[80px]"
                 >
                   {roleLabels[role]}
-                  {role === "cashier" && (
+                  {role === "owner" && (
                     <span className="block text-[10px] font-normal text-slate-400">
                       {t("settings.roleFullAccess")}
                     </span>
@@ -620,7 +622,7 @@ function RolePermissionsCard() {
                 </td>
                 {ROLES.map((role) => {
                   const checked = getEffective(role, perm);
-                  const isFixedTopRole = role === "cashier";
+                  const isFixedTopRole = role === "owner";
                   return (
                     <td key={role} className="py-2.5 px-3 text-center">
                       <input
@@ -692,7 +694,7 @@ function CloudBackupCard() {
         return;
       }
 
-      const result = await syncAllToCloud(uid);
+      const result = await syncAllToCloud(resolveStoreId(user) ?? uid);
       if (result) {
         setSyncMeta(result);
         push(t("settings.syncSuccess"));

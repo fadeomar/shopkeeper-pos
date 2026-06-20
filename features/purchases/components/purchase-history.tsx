@@ -9,7 +9,7 @@
  * to as "Purchase history". Before this existed that link 404'd.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import clsx from "clsx";
 import { useLiveQuery } from "dexie-react-hooks";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -27,6 +27,7 @@ import { Badge } from "@/components/ui/badge";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { RecordSyncBadge } from "@/components/sync/record-sync-badge";
 import { useLocale } from "@/components/providers/locale-context";
+import { usePersistedState } from "@/lib/hooks/use-persisted-state";
 import type { Purchase } from "@/types/domain";
 
 type PurchaseDateFilter =
@@ -102,13 +103,13 @@ export function PurchaseHistory() {
   );
   const settings = useLiveQuery(() => settingsRepo.get(), []);
   const currency = settings?.currency ?? "ILS";
-  const [query, setQuery] = useState("");
-  const [dateFilter, setDateFilter] = useState<PurchaseDateFilter>("today");
-  const [supplierFilter, setSupplierFilter] = useState("all");
+  const [query, setQuery] = usePersistedState("asas:purchases:query", "");
+  const [dateFilter, setDateFilter] = usePersistedState<PurchaseDateFilter>("asas:purchases:dateFilter", "today");
+  const [supplierFilter, setSupplierFilter] = usePersistedState("asas:purchases:supplierFilter", "all");
   const [paymentStatusFilter, setPaymentStatusFilter] =
-    useState<PurchasePaymentStatusFilter>("all");
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
+    usePersistedState<PurchasePaymentStatusFilter>("asas:purchases:paymentStatusFilter", "all");
+  const [customFrom, setCustomFrom] = usePersistedState("asas:purchases:customFrom", "");
+  const [customTo, setCustomTo] = usePersistedState("asas:purchases:customTo", "");
 
   const supplierOptions = useMemo(() => {
     const names = Array.from(
@@ -188,12 +189,9 @@ export function PurchaseHistory() {
         header: t("purchases.purchaseNumber"),
         accessorKey: "purchaseNumber",
         cell: ({ row }) => (
-          <a
-            href={`/purchases/${encodeURIComponent(row.original.id)}`}
-            className="font-medium tabular-nums text-info hover:text-info/80"
-          >
+          <span className="font-medium tabular-nums text-info">
             {row.original.purchaseNumber}
-          </a>
+          </span>
         ),
       },
       {
@@ -427,6 +425,11 @@ export function PurchaseHistory() {
         pageSize={10}
         labels={labels}
         getRowId={(row) => row.id}
+        getMobileRowHref={(row) => `/purchases/${encodeURIComponent(row.id)}`}
+        getMobileRowAriaLabel={(row) =>
+          `${t("purchases.viewDetails")}: ${row.purchaseNumber}`
+        }
+        storageKey="asas:purchases:table"
       />
     </div>
   );

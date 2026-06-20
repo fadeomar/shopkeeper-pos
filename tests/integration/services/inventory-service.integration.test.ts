@@ -7,6 +7,7 @@ import { resetTestDb, seedProduct } from '@/tests/helpers/db';
 
 const permissionMocks = vi.hoisted(() => ({
   assertPermission: vi.fn().mockResolvedValue(undefined),
+  assertAppPermission: vi.fn().mockResolvedValue(undefined),
   getCurrentPermissions: vi.fn().mockResolvedValue({
     canVoid: true,
     canReturn: true,

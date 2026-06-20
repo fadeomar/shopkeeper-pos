@@ -49,11 +49,17 @@ import { db } from "@/lib/db/schema";
 import { useLocale } from "@/components/providers/locale-context";
 import { useAuth } from "@/components/providers/auth-context";
 import { SafeSignOutButton } from "@/components/auth/safe-sign-out-button";
+import { useAppPermissions } from "@/lib/hooks/use-app-permissions";
 
 interface TabRoute {
   href: string;
   shortKey: string;
   icon: LucideIcon;
+}
+
+interface MoreRouteGroup {
+  titleKey: string;
+  routes: TabRoute[];
 }
 
 // The 4 most-used POS actions — always visible in the bottom bar.
@@ -64,25 +70,53 @@ const PRIMARY_TABS: TabRoute[] = [
   { href: "/inventory", shortKey: "navShort.inventory", icon: Boxes },
 ];
 
-// Secondary routes — accessible via the "More" sheet.
-const MORE_ROUTES: TabRoute[] = [
-  { href: "/", shortKey: "navShort.dashboard", icon: LayoutDashboard },
-  { href: "/purchases/new", shortKey: "navShort.newPurchase", icon: Truck },
-  { href: "/purchases", shortKey: "navShort.purchaseHistory", icon: ReceiptText },
-  { href: "/reports", shortKey: "navShort.reports", icon: BarChart3 },
-  { href: "/customers", shortKey: "navShort.customers", icon: Users },
-  { href: "/suppliers", shortKey: "navShort.suppliers", icon: Store },
-  { href: "/shift", shortKey: "navShort.shift", icon: Clock },
-  { href: "/cash", shortKey: "navShort.cash", icon: Banknote },
-  { href: "/expenses", shortKey: "navShort.expenses", icon: Wallet },
-  { href: "/audit", shortKey: "navShort.audit", icon: History },
-  { href: "/settings", shortKey: "navShort.settings", icon: Settings },
+// Secondary routes — accessible via the "More" sheet. Grouping keeps
+// cashier/daily operations above reporting and system screens on phones.
+const MORE_ROUTE_GROUPS: MoreRouteGroup[] = [
+  {
+    titleKey: "nav.mobileGroupDailyWork",
+    routes: [
+      { href: "/shift", shortKey: "navShort.shift", icon: Clock },
+      { href: "/cash", shortKey: "navShort.cash", icon: Banknote },
+      { href: "/expenses", shortKey: "navShort.expenses", icon: Wallet },
+    ],
+  },
+  {
+    titleKey: "nav.mobileGroupBusiness",
+    routes: [
+      { href: "/purchases/new", shortKey: "navShort.newPurchase", icon: Truck },
+      { href: "/purchases", shortKey: "navShort.purchaseHistory", icon: ReceiptText },
+      { href: "/customers", shortKey: "navShort.customers", icon: Users },
+      { href: "/suppliers", shortKey: "navShort.suppliers", icon: Store },
+    ],
+  },
+  {
+    titleKey: "nav.mobileGroupReports",
+    routes: [
+      { href: "/reports", shortKey: "navShort.reports", icon: BarChart3 },
+      { href: "/", shortKey: "navShort.dashboard", icon: LayoutDashboard },
+    ],
+  },
+  {
+    titleKey: "nav.mobileGroupSystem",
+    routes: [
+      { href: "/settings", shortKey: "navShort.settings", icon: Settings },
+      { href: "/audit", shortKey: "navShort.audit", icon: History },
+    ],
+  },
 ];
 
 export function MobileBottomNav() {
   const pathname = usePathname();
   const { t } = useLocale();
   const { user } = useAuth();
+  const permissions = useAppPermissions();
+  const visiblePrimaryTabs = PRIMARY_TABS.filter((route) => permissions.canAccessRoute(route.href));
+  const visibleMoreRouteGroups = MORE_ROUTE_GROUPS.map((group) => ({
+    ...group,
+    routes: group.routes.filter((route) => permissions.canAccessRoute(route.href)),
+  })).filter((group) => group.routes.length > 0);
+  const visibleMoreRoutes = visibleMoreRouteGroups.flatMap((group) => group.routes);
   const [moreOpen, setMoreOpen] = useState(false);
   const dialogId = useId();
   const sheetRef = useRef<HTMLDivElement | null>(null);
@@ -170,7 +204,7 @@ export function MobileBottomNav() {
   }
 
   // If the current page is in the "More" set, highlight the More tab.
-  const isMoreActive = MORE_ROUTES.some((r) => isActive(r.href));
+  const isMoreActive = visibleMoreRoutes.some((r) => isActive(r.href));
 
   // The bottom nav also shows on the POS billing screen. When the cart has
   // items the billing screen renders its own sticky checkout bar — that bar is
@@ -191,7 +225,7 @@ export function MobileBottomNav() {
         )}
       >
         <div className="flex h-16 items-stretch">
-          {PRIMARY_TABS.map(({ href, shortKey, icon: Icon }) => {
+          {visiblePrimaryTabs.map(({ href, shortKey, icon: Icon }) => {
             const active = isActive(href);
             return (
               <Link
@@ -289,43 +323,55 @@ export function MobileBottomNav() {
               </button>
             </div>
 
-            {/* 4-column icon grid */}
-            <div className="grid grid-cols-4 gap-1 px-3 pb-5">
-              {MORE_ROUTES.map(({ href, shortKey, icon: Icon }) => {
-                const active = isActive(href);
-                const showShiftDot = href === "/shift" && Boolean(activeShift);
-
-                return (
-                  <Link
-                    key={href}
-                    href={href as any}
-                    aria-current={active ? "page" : undefined}
-                    className={clsx(
-                      "relative flex flex-col items-center gap-2 rounded-2xl px-2 py-3",
-                      "text-center text-xs font-medium transition-colors",
-                      active
-                        ? "bg-white/10 text-white"
-                        : "text-slate-400 hover:bg-white/5 hover:text-white active:bg-white/10",
-                    )}
+            {/* Grouped icon grid */}
+            <div className="space-y-4 px-3 pb-5">
+              {visibleMoreRouteGroups.map((group) => (
+                <section key={group.titleKey} aria-labelledby={`${dialogId}-${group.titleKey}`}>
+                  <p
+                    id={`${dialogId}-${group.titleKey}`}
+                    className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500"
                   >
-                    <Icon
-                      size={24}
-                      strokeWidth={active ? 2.25 : 2}
-                      aria-hidden
-                    />
-                    <span className="leading-tight">{t(shortKey)}</span>
-                    {showShiftDot && (
-                      <span className="absolute top-2 end-2 inline-flex items-center">
-                        <span
-                          className="h-2 w-2 rounded-full bg-success"
-                          aria-hidden
-                        />
-                        <span className="sr-only">{t("nav.shiftOpen")}</span>
-                      </span>
-                    )}
-                  </Link>
-                );
-              })}
+                    {t(group.titleKey)}
+                  </p>
+                  <div className="grid grid-cols-3 gap-1 min-[390px]:grid-cols-4">
+                    {group.routes.map(({ href, shortKey, icon: Icon }) => {
+                      const active = isActive(href);
+                      const showShiftDot = href === "/shift" && Boolean(activeShift);
+
+                      return (
+                        <Link
+                          key={href}
+                          href={href as any}
+                          aria-current={active ? "page" : undefined}
+                          className={clsx(
+                            "relative flex min-h-20 flex-col items-center justify-center gap-2 rounded-2xl px-2 py-3",
+                            "text-center text-xs font-medium transition-colors",
+                            active
+                              ? "bg-white/10 text-white"
+                              : "text-slate-400 hover:bg-white/5 hover:text-white active:bg-white/10",
+                          )}
+                        >
+                          <Icon
+                            size={24}
+                            strokeWidth={active ? 2.25 : 2}
+                            aria-hidden
+                          />
+                          <span className="leading-tight">{t(shortKey)}</span>
+                          {showShiftDot && (
+                            <span className="absolute top-2 end-2 inline-flex items-center">
+                              <span
+                                className="h-2 w-2 rounded-full bg-success"
+                                aria-hidden
+                              />
+                              <span className="sr-only">{t("nav.shiftOpen")}</span>
+                            </span>
+                          )}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </section>
+              ))}
             </div>
 
             {/* Account — sign-out lives here (off the working header). The

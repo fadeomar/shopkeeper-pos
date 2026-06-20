@@ -11,6 +11,7 @@ vi.mock('@/lib/services/subscription-service', () => ({
 
 vi.mock('@/lib/services/permission-service', () => ({
   assertPermission: vi.fn().mockResolvedValue(undefined),
+  assertAppPermission: vi.fn().mockResolvedValue(undefined),
   getCurrentPermissions: vi.fn().mockResolvedValue({
     canVoid: true,
     canReturn: true,

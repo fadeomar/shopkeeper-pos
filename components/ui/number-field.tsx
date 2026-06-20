@@ -278,9 +278,12 @@ export const NumberField = forwardRef<HTMLInputElement, NumberFieldProps>(
     }
 
     // Block the scroll-wheel from silently changing prices/qty on desktop.
+    // Do not blur: trackpad users often scroll a page while a money/qty field
+    // is focused, and losing focus mid-entry feels like an input remount bug.
     function handleWheel(e: React.WheelEvent<HTMLInputElement>) {
       if (document.activeElement === innerRef.current) {
-        e.currentTarget.blur();
+        e.preventDefault();
+        e.stopPropagation();
       }
     }
 

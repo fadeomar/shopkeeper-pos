@@ -8,6 +8,7 @@ import clsx from "clsx";
 import { useAuth } from "@/components/providers/auth-context";
 import { useLocale } from "@/components/providers/locale-context";
 import { signIn, registerUser } from "@/lib/firebase/auth-service";
+import { resolveStoreId } from "@/types/domain";
 import {
   getSubscriptionAccessState,
   subscriptionExpiryDateLabel,
@@ -37,6 +38,7 @@ import { SafeSignOutButton } from "@/components/auth/safe-sign-out-button";
 import { ConflictResolverModal } from "@/components/sync/conflict-resolver-modal";
 import { MobileBottomNav } from "@/components/mobile-bottom-nav";
 import { PublicShell } from "@/components/auth/public-shell";
+import { RoutePermissionGate } from "@/components/auth/route-permission-gate";
 import {
   lockBodyScroll,
   resetBodyScrollLock,
@@ -126,7 +128,7 @@ export function AuthenticatedShell({
     return <SubscriptionExpiredScreen onLogout={logout} />;
 
   // Authenticated — split by role
-  if (user?.role === "owner") return <AdminShell>{children}</AdminShell>;
+  if (user?.role === "administration") return <AdminShell>{children}</AdminShell>;
   return <CashierShell>{children}</CashierShell>;
 }
 
@@ -269,7 +271,7 @@ function CashierShell({ children }: { children: React.ReactNode }) {
       // cheap local counts + the cloud meta/sync doc and returns one clear
       // verdict (plus a reason). We surface it as an event so support tooling
       // can read exactly why a screen did or didn't appear.
-      const decision = await classifySyncStartupState({ uid: userId });
+      const decision = await classifySyncStartupState({ uid: resolveStoreId(user) ?? userId });
       if (typeof window !== "undefined") {
         window.dispatchEvent(
           new CustomEvent("shopkeeper:sync-startup-decision", { detail: decision }),
@@ -342,7 +344,7 @@ function CashierShell({ children }: { children: React.ReactNode }) {
       return null;
     }
 
-    return syncAllToCloud(userId);
+    return syncAllToCloud(resolveStoreId(user) ?? userId);
   }
 
   // Silent fresh-device restore. On success the page reloads into a populated
@@ -352,8 +354,8 @@ function CashierShell({ children }: { children: React.ReactNode }) {
   // never leaves local half-deleted.
   async function runSilentRestore(userId: string) {
     try {
-      await restoreFromCloud(userId, setRestoreStep);
-      clearSkippedRestore(userId);
+      await restoreFromCloud(resolveStoreId(user) ?? userId, setRestoreStep);
+      clearSkippedRestore(resolveStoreId(user) ?? userId);
       await clearAppCaches();
       try {
         db.close();
@@ -373,8 +375,8 @@ function CashierShell({ children }: { children: React.ReactNode }) {
     setRestoring(true);
     setRestoreError("");
     try {
-      await restoreFromCloud(uid, setRestoreStep);
-      clearSkippedRestore(uid);
+      await restoreFromCloud(resolveStoreId(user) ?? uid, setRestoreStep);
+      clearSkippedRestore(resolveStoreId(user) ?? uid);
       setRestoreStep("Preparing app reload…");
       await clearAppCaches();
       // Close DB before reload to guarantee IDB writes are flushed (important on Safari/iOS).
@@ -497,7 +499,7 @@ function CashierShell({ children }: { children: React.ReactNode }) {
                 onSignOut={() => void logout()}
               />
             )}
-            {children}
+            <RoutePermissionGate>{children}</RoutePermissionGate>
           </DbBootstrap>
         </main>
       </div>

@@ -26,6 +26,7 @@ import { DataTable } from "@/components/ui/data-table";
 import { Badge } from "@/components/ui/badge";
 import { PriceDisplay } from "@/components/pos/price-display";
 import { useToast } from "@/components/ui/toast";
+import { usePersistedState } from "@/lib/hooks/use-persisted-state";
 import { useLocale } from "@/components/providers/locale-context";
 import type { Product, ProductUnit, SyncStatus } from "@/types/domain";
 import clsx from "clsx";
@@ -78,8 +79,8 @@ export function ProductsTable({
   const { push } = useToast();
   const currency = settings?.currency ?? "ILS";
 
-  const [query, setQuery] = useState("");
-  const [category, setCategory] = useState("all");
+  const [query, setQuery] = usePersistedState("asas:products:query", "");
+  const [category, setCategory] = usePersistedState("asas:products:category", "all");
   const [adjustProduct, setAdjustProduct] = useState<Product | null>(null);
   const [adjustQty, setAdjustQty] = useState<number>(1);
   const [adjustNote, setAdjustNote] = useState("Manual stock adjustment");
@@ -91,15 +92,32 @@ export function ProductsTable({
   }, [products]);
 
   const filtered = useMemo(() => {
-    return (products ?? []).filter((p) => {
-      const matchQ = [p.name, p.barcode, p.brand, p.supplierName]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-        .includes(query.toLowerCase());
-      const matchC = category === "all" || p.category === category;
-      return matchQ && matchC;
-    });
+    const needle = query.trim().toLowerCase();
+    return (products ?? [])
+      .filter((p) => {
+        const matchC = category === "all" || p.category === category;
+        if (!matchC) return false;
+        if (!needle) return true;
+        return [p.name, p.barcode, p.brand, p.supplierName]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(needle);
+      })
+      .sort((a, b) => {
+        if (!needle) return a.name.localeCompare(b.name);
+        const score = (p: Product) => {
+          const barcode = p.barcode?.toLowerCase() ?? "";
+          const name = p.name.toLowerCase();
+          if (barcode === needle) return 0;
+          if (barcode.startsWith(needle)) return 1;
+          if (name.startsWith(needle)) return 2;
+          if (barcode.includes(needle)) return 3;
+          if (name.includes(needle)) return 4;
+          return 5;
+        };
+        return score(a) - score(b) || a.name.localeCompare(b.name);
+      });
   }, [products, query, category]);
   const [mobilePage, setMobilePage] = useState(0);
 
@@ -527,6 +545,7 @@ export function ProductsTable({
               last: t("dataTable.last"),
             }}
             getRowId={(product) => String(product.id)}
+            storageKey="asas:products:table"
           />
         </div>
       </Card>

@@ -37,7 +37,8 @@
     "test:e2e:axe": "playwright test --config=playwright.accessibility.config.ts",
     "test:e2e:visual": "playwright test --config=playwright.visual.config.ts",
     "test:e2e:visual:update": "playwright test --config=playwright.visual.config.ts --update-snapshots",
-    "test:production-core": "vitest run tests/integration/services/local-auth-session-service.integration.test.ts tests/components/providers/auth-context-offline-session.test.tsx tests/unit/services/storage-health-service.test.ts tests/integration/services/sync-health-service.integration.test.ts tests/unit/pwa/install-environment.test.ts tests/components/pwa/pwa-install-action.test.tsx tests/components/providers/locale-context.test.tsx tests/unit/config/feature-flags.test.ts tests/components/dashboard/demo-data-gating.test.tsx --reporter dot --maxWorkers=1 --pool=forks"
+    "test:production-core": "vitest run tests/integration/services/local-auth-session-service.integration.test.ts tests/components/providers/auth-context-offline-session.test.tsx tests/unit/services/storage-health-service.test.ts tests/integration/services/sync-health-service.integration.test.ts tests/unit/pwa/install-environment.test.ts tests/components/pwa/pwa-install-action.test.tsx tests/components/providers/locale-context.test.tsx tests/unit/config/feature-flags.test.ts tests/components/dashboard/demo-data-gating.test.tsx --reporter dot --maxWorkers=1 --pool=forks",
+    "plan:permissions-migration": "node scripts/plan-permissions-migration.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

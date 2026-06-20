@@ -47,7 +47,9 @@ function trialProfile(uid: string, overrides: Record<string, unknown> = {}) {
     uid,
     email: `${uid}@example.com`,
     name: 'Trial Tester',
-    role: 'cashier',
+    role: 'owner',
+    storeId: uid,
+    storeRole: 'owner',
     isActive: true,
     pendingApproval: false,
     accountType: 'trial',
@@ -113,11 +115,11 @@ describe('self-service trial registration', () => {
     await assertFails(setDoc(doc(db, 'users', 'victim'), trialProfile('victim')));
   });
 
-  it('rejects self-granting an admin (owner) role', async () => {
+  it('rejects self-granting the system administration role', async () => {
     const uid = 'newuser1';
     const db = testEnv.authenticatedContext(uid).firestore();
     await assertFails(
-      setDoc(doc(db, 'users', uid), trialProfile(uid, { role: 'owner' })),
+      setDoc(doc(db, 'users', uid), trialProfile(uid, { role: 'administration' })),
     );
   });
 
@@ -166,14 +168,14 @@ describe('self-service trial registration', () => {
 });
 
 describe('admin-created profiles', () => {
-  /** Seed an active owner/admin profile, bypassing rules. */
+  /** Seed an active system administration profile, bypassing rules. */
   async function seedAdmin(uid: string) {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), 'users', uid), {
         uid,
         email: `${uid}@example.com`,
-        name: 'Shop Owner',
-        role: 'owner',
+        name: 'System Admin',
+        role: 'administration',
         isActive: true,
         pendingApproval: false,
         createdAt: new Date().toISOString(),
@@ -228,11 +230,11 @@ describe('profile self-update guards', () => {
     );
   });
 
-  it('rejects the owner promoting their own role', async () => {
+  it('rejects the owner changing their own role', async () => {
     const uid = 'newuser1';
     await seedTrialUser(uid);
     const db = testEnv.authenticatedContext(uid).firestore();
-    await assertFails(updateDoc(doc(db, 'users', uid), { role: 'owner' }));
+    await assertFails(updateDoc(doc(db, 'users', uid), { role: 'administration' }));
   });
 
   it('keeps the user able to read their own profile after creation', async () => {

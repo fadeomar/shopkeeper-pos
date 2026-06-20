@@ -14,12 +14,11 @@ export function usePermissions(): RolePermissions {
   const { user } = useAuth();
   const { settings } = useSettings();
 
-  // Fail closed when the signed-in user has no resolvable role: 'cashier' is now
-  // the top shop-side role, so defaulting to it would expose full permissions.
+  // Fail closed when the signed-in user has no resolvable role.
   const role = user?.role;
   if (!isUserRole(role)) return NO_PERMISSIONS;
 
-  const overrides = settings?.rolePermissions?.[role];
+  const overrides = role === 'administration' ? undefined : settings?.rolePermissions?.[role];
 
   return resolveRolePermissions(role, overrides);
 }

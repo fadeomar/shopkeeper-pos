@@ -40,7 +40,7 @@ export async function saveBusinessSettings(
  * if they tampered with their local settings object.
  */
 export async function saveRolePermissions(
-  overrides: Partial<Record<UserRole, Partial<RolePermissions>>>,
+  overrides: Partial<Record<Exclude<UserRole, 'administration'>, Partial<RolePermissions>>>,
 ): Promise<Settings> {
   await assertPermission("canManageRolePermissions");
   const saved = await settingsRepo.update({

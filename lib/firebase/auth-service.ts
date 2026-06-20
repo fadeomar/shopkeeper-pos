@@ -20,7 +20,7 @@ import {
 } from 'firebase/firestore';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { auth, firestore, firebaseApp } from './config';
-import type { AppUser, UserRole } from '@/types/domain';
+import { resolveStoreId, type AppUser, type UserRole } from '@/types/domain';
 import { addCalendarMonths, buildInitialPaidSubscription, buildTrialSubscription, getSubscriptionAccessState, toSubscriptionMs } from '@/lib/services/subscription-service';
 
 export function signIn(email: string, password: string) {
@@ -134,7 +134,9 @@ export async function registerUser(
         email,
         name,
         ...(phone ? { phone } : {}),
-        role: 'cashier',
+        role: 'owner',
+        storeId: uid,
+        storeRole: 'owner',
         isActive: true,
         pendingApproval: false,
         ...buildTrialSubscription(now),
@@ -172,12 +174,25 @@ export async function createAppUser(
     const tempAuth = getAuth(tempApp);
     const cred = await createUserWithEmailAndPassword(tempAuth, email, password);
     const now = new Date().toISOString();
+    const creatorUid = auth.currentUser?.uid;
+    const creatorProfile = creatorUid ? await fetchUserDoc(creatorUid).catch(() => null) : null;
+    // System administration creates customer store owners. A new owner must get
+    // a fresh store scope (storeId = own uid); otherwise all newly created
+    // owners would accidentally inherit the administration user's support scope.
+    // Store-side staff creation should inherit the creator's store.
+    const creatorRole = creatorProfile?.role as string | undefined;
+    const creatorIsSystemAdmin = creatorRole === 'administration' || creatorRole === 'admin';
+    const storeId = creatorIsSystemAdmin && role === 'owner'
+      ? cred.user.uid
+      : resolveStoreId(creatorProfile ?? (creatorUid ? { uid: creatorUid } as AppUser : null)) ?? cred.user.uid;
     await setDoc(doc(firestore, 'users', cred.user.uid), {
       uid: cred.user.uid,
       email,
       name,
       ...(phone ? { phone } : {}),
       role,
+      storeId,
+      storeRole: role,
       isActive: true,
       pendingApproval: false,
       ...buildInitialPaidSubscription(new Date(now), 1),

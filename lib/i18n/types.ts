@@ -68,6 +68,10 @@ export interface TranslationDict {
     shiftOpen: string;
     /** Title / aria-label for the mobile "More" sheet dialog */
     moreMenuLabel: string;
+    mobileGroupDailyWork: string;
+    mobileGroupBusiness: string;
+    mobileGroupReports: string;
+    mobileGroupSystem: string;
     account: string;
   };
   navShort: {
@@ -1106,6 +1110,8 @@ export interface TranslationDict {
     syncing: string;
     syncCloudData: string;
     syncThenSignOut: string;
+    accessDeniedTitle: string;
+    accessDeniedDescription: string;
     signOut: string;
     signOutAnyway: string;
     signingOut: string;

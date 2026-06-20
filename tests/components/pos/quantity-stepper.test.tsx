@@ -63,14 +63,18 @@ describe('QuantityStepper', () => {
 
   it('does not allow mouse wheel to silently mutate the focused value', async () => {
     const user = userEvent.setup();
-    const blurSpy = vi.spyOn(HTMLInputElement.prototype, 'blur');
     renderWithLocale(<ControlledQuantityStepper initial={4} min={1} />);
 
     const input = screen.getByRole('textbox', { name: /quantity under test/i });
     await user.click(input);
-    input.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -100 }));
+    const wheel = new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: -100 });
+    const preventDefault = vi.spyOn(wheel, 'preventDefault');
+    input.dispatchEvent(wheel);
 
-    expect(blurSpy).toHaveBeenCalled();
+    // The wheel is blocked rather than blurring the field — trackpad users
+    // scrolling the page shouldn't lose focus mid-entry.
+    expect(preventDefault).toHaveBeenCalled();
+    expect(input).toHaveFocus();
     expect(input).toHaveValue('4');
   });
 });

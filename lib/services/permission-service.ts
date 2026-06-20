@@ -5,6 +5,7 @@ import { getActiveUid } from "@/lib/services/account-data-service";
 import { AppError, AppErrorCode } from "@/lib/errors/app-error";
 import { isUserRole, resolveRolePermissions, NO_PERMISSIONS } from "@/types/domain";
 import type { RolePermissions, UserRole } from "@/types/domain";
+import { canAppPermission, type AppPermission } from '@/lib/permissions/permission-engine';
 
 /**
  * Service-layer mirror of usePermissions(). The UI hides actions a role can't
@@ -17,8 +18,7 @@ import type { RolePermissions, UserRole } from "@/types/domain";
  *   role  ← cached auth entry (offline-safe: firebase auth.currentUser + Dexie
  *           authCache). When the role can't be determined we return
  *           NO_PERMISSIONS (deny all) so we fail closed, not open — we can no
- *           longer default to a real role because 'cashier' is now the top
- *           shop-side role and would fail OPEN.
+ *           longer default to a real role because assuming any real role would fail OPEN.
  *   perms ← DEFAULT_ROLE_PERMISSIONS[role] then settings.rolePermissions[role].
  *
  * IMPORTANT: call these BEFORE opening a Dexie rw transaction — they read the
@@ -50,7 +50,7 @@ export async function getCurrentPermissions(): Promise<RolePermissions> {
   let overrides: Partial<RolePermissions> = {};
   try {
     const settings = await db.settings.get(SETTINGS_ID);
-    overrides = settings?.rolePermissions?.[role] ?? {};
+    overrides = role === 'administration' ? {} : settings?.rolePermissions?.[role] ?? {};
   } catch {
     /* no overrides available */
   }
@@ -66,6 +66,19 @@ export async function assertPermission(
 ): Promise<void> {
   const perms = await getCurrentPermissions();
   if (!perms[key]) {
+    throw new AppError(AppErrorCode.PERMISSION_DENIED);
+  }
+}
+
+
+/** Throw PERMISSION_DENIED unless the current user holds the granular app permission. */
+export async function assertAppPermission(
+  permission: AppPermission,
+): Promise<void> {
+  const uid = auth.currentUser?.uid ?? getActiveUid();
+  const entry = uid ? await db.authCache.get(uid).catch(() => undefined) : undefined;
+  const perms = await getCurrentPermissions();
+  if (!canAppPermission(entry?.role, perms, permission)) {
     throw new AppError(AppErrorCode.PERMISSION_DENIED);
   }
 }

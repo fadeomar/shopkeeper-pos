@@ -13,7 +13,7 @@
  * offline.
  */
 
-import { getLocalDataSummary, getActiveUid } from '@/lib/services/account-data-service';
+import { getLocalDataSummary, getActiveStoreId } from '@/lib/services/account-data-service';
 import { getOpenConflicts } from '@/lib/services/sync-conflict-service';
 import { fetchSyncMeta } from '@/lib/firebase/restore-service';
 import type { SyncMeta } from '@/lib/firebase/sync-service';
@@ -58,7 +58,7 @@ function readAccountMismatch(uid: string): boolean {
     return Boolean(lastUid && lastUid !== uid);
   } catch {
     // Fall back to the active-uid record used elsewhere in the app.
-    const active = getActiveUid();
+    const active = getActiveStoreId();
     return Boolean(active && active !== uid);
   }
 }

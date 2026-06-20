@@ -3,6 +3,7 @@ import { nowIso } from '@/lib/utils/date';
 import { getSyncQueueId } from '@/lib/services/sync-queue-service';
 import { isSettingsSequenceField } from '@/lib/services/settings-sync-fields';
 import type { InventoryLot, Settings, Product, SyncConflict, SyncConflictResolution } from '@/types/domain';
+import { decideAutoConflictResolution } from '@/lib/sync/auto-conflict-policy';
 
 function requestSync(): void {
   if (typeof window === 'undefined') return;
@@ -68,6 +69,73 @@ async function isFalseOfflineBillStockConflict(conflict: SyncConflict): Promise<
   return Math.abs(expectedDelta - actualDelta) <= 0.000001;
 }
 
+
+async function applyAutomaticResolution(conflict: SyncConflict, resolution: SyncConflictResolution, resolvedAt: string): Promise<void> {
+  const queueId = conflict.operationId ?? getSyncQueueId(conflict.entity, conflict.entityId);
+
+  if (conflict.entity === 'product' && resolution === 'merge') {
+    const cloud = conflict.cloudRecord as unknown as Product;
+    const local = conflict.localRecord as unknown as Product;
+    const merged = { ...cloud } as Product;
+    for (const field of conflict.changedFields) {
+      (merged as unknown as Record<string, unknown>)[field] = (local as unknown as Record<string, unknown>)[field];
+    }
+    merged.syncStatus = 'pending';
+    merged.lastSyncError = undefined;
+    await db.products.put(merged);
+    await db.syncQueue.update(queueId, {
+      status: 'pending',
+      retryCount: 0,
+      updatedAt: resolvedAt,
+      lastError: undefined,
+    });
+    return;
+  }
+
+  if (conflict.entity === 'settings' && resolution === 'merge') {
+    const cloud = conflict.cloudRecord as unknown as Settings;
+    const local = conflict.localRecord as unknown as Settings;
+    const merged: Settings = { ...cloud, ...local };
+
+    // Offline devices may both reserve receipt numbers while disconnected. Do
+    // not let the settings counter move backwards or choose an arbitrary last
+    // writer: keep the highest known next sequence so future receipts continue
+    // from a safe ceiling. Existing additive bill records are kept separately.
+    if (conflict.changedFields.includes('nextBillSequence')) {
+      merged.nextBillSequence = Math.max(
+        Number(cloud.nextBillSequence) || 0,
+        Number(local.nextBillSequence) || 0,
+      );
+    }
+    if (conflict.changedFields.includes('nextPurchaseSequence')) {
+      merged.nextPurchaseSequence = Math.max(
+        Number(cloud.nextPurchaseSequence) || 0,
+        Number(local.nextPurchaseSequence) || 0,
+      );
+    }
+
+    merged.syncStatus = 'pending';
+    merged.lastSyncError = undefined;
+    await db.settings.put(merged);
+    await db.syncQueue.update(queueId, {
+      status: 'pending',
+      retryCount: 0,
+      updatedAt: resolvedAt,
+      lastError: undefined,
+    });
+    return;
+  }
+
+  if (resolution === 'keep_both') {
+    await db.syncQueue.update(queueId, {
+      status: 'pending',
+      retryCount: 0,
+      updatedAt: resolvedAt,
+      lastError: undefined,
+    });
+  }
+}
+
 async function markConflictIgnored(conflict: SyncConflict): Promise<void> {
   await db.syncConflicts.update(conflict.id, {
     status: 'ignored',
@@ -126,6 +194,41 @@ export async function autoDismissFalseOfflineSaleConflicts(): Promise<number> {
   }
 
   return dismissed;
+}
+
+/**
+ * Explicit safe-merge pass over open conflicts (multi-user offline sprint).
+ *
+ * Detection (saveConflict) always raises and leaves conflicts open so the
+ * review safety net is preserved. This pass runs afterwards and auto-applies
+ * ONLY the decisions the policy considers safe (merge / keep_both). Anything the
+ * policy defers — destructive, financially ambiguous, or unknown — is left open
+ * for the user, so genuine price/inventory conflicts still surface. Returns the
+ * number of conflicts auto-resolved.
+ */
+export async function autoResolveSafeConflicts(): Promise<number> {
+  const openConflicts = await getOpenConflicts();
+  let resolved = 0;
+
+  for (const conflict of openConflicts) {
+    const decision = decideAutoConflictResolution(conflict);
+    if (decision.resolution === 'defer') continue;
+
+    const resolution = decision.resolution;
+    const resolvedAt = nowIso();
+    await db.transaction('rw', [db.syncConflicts, db.products, db.settings, db.syncQueue], async () => {
+      await applyAutomaticResolution(conflict, resolution, resolvedAt);
+      await db.syncConflicts.update(conflict.id, {
+        status: 'ignored',
+        resolution,
+        resolvedAt,
+      });
+    });
+    resolved += 1;
+  }
+
+  if (resolved > 0) requestSync();
+  return resolved;
 }
 
 export async function resolveConflict(
