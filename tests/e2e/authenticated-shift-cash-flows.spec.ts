@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { initializeDemoData, loginAsCashier } from './helpers/auth';
+import { initializeDemoData, loginAsOwner } from './helpers/auth';
 
 async function openShift(page: import('@playwright/test').Page, openingCash = '10.00') {
   await page.goto('/shift');
@@ -35,7 +35,7 @@ test.describe('authenticated shift and cash drawer flows', () => {
   test('cashier opens a shift, records manual cash in, then closes with a report', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'desktop-chrome', 'cash drawer reconciliation is covered once on desktop');
 
-    await loginAsCashier(page);
+    await loginAsOwner(page);
     await initializeDemoData(page);
 
     await openShift(page, '10.00');

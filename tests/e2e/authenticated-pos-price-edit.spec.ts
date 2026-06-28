@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { initializeDemoData, loginAsCashier } from './helpers/auth';
+import { initializeDemoData, loginAsOwner } from './helpers/auth';
 
 // Demo product Milk 1L is seeded at buyPrice 1.10 / sellPrice 1.60 (lib/db/seed.ts),
 // so its default line profit is 0.50 and any price below 1.10 sells at a loss.
@@ -22,7 +22,7 @@ test.describe('authenticated POS price editing + profit', () => {
   test('cashier edits a line price, sees profit, is floored at cost when loss sales are off, and the edit drives the total', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'desktop-chrome', 'price-edit flow runs once on desktop');
 
-    await loginAsCashier(page);
+    await loginAsOwner(page);
     await initializeDemoData(page);
     await page.goto('/billing');
 

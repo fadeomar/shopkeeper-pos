@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { initializeDemoData, loginAsCashier } from './helpers/auth';
+import { initializeDemoData, loginAsOwner } from './helpers/auth';
 
 const MOBILE_ROUTES: Array<{ path: string; heading: RegExp; anchor: RegExp }> = [
   { path: '/products', heading: /^Products$/i, anchor: /add product|product import/i },
@@ -22,7 +22,7 @@ test.describe('mobile authenticated route smoke', () => {
   test('cashier can open the core mobile pages without layout overflow', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'mobile-chrome', 'mobile route smoke runs only on the mobile project');
 
-    await loginAsCashier(page);
+    await loginAsOwner(page);
     await initializeDemoData(page);
 
     for (const route of MOBILE_ROUTES) {

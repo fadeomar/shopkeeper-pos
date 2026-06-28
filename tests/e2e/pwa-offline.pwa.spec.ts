@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { initializeDemoData, loginAsCashier } from './helpers/auth';
+import { initializeDemoData, loginAsOwner } from './helpers/auth';
 import {
   expectActiveSyncCountAtLeast,
   getStoreCount,
@@ -29,7 +29,7 @@ test.describe('production PWA offline behavior', () => {
   test('desktop cashier can reload billing offline, save a cash sale, and sync after reconnect', async ({ context, page }, testInfo) => {
     test.skip(testInfo.project.name !== 'pwa-desktop-chrome', 'full offline-save-sync flow runs once on desktop');
 
-    await loginAsCashier(page, { uid: 'e2e-pwa-desktop-cashier' });
+    await loginAsOwner(page, { uid: 'e2e-pwa-desktop-cashier' });
     await initializeDemoData(page);
     await page.goto('/billing');
     await expect(page.getByRole('heading', { name: /create bill/i })).toBeVisible();
@@ -58,7 +58,7 @@ test.describe('production PWA offline behavior', () => {
   test('mobile cashier can reload the cached billing screen offline and reach finalize review', async ({ context, page }, testInfo) => {
     test.skip(testInfo.project.name !== 'pwa-mobile-chrome', 'mobile-only PWA smoke test');
 
-    await loginAsCashier(page, { uid: 'e2e-pwa-mobile-cashier' });
+    await loginAsOwner(page, { uid: 'e2e-pwa-mobile-cashier' });
     await initializeDemoData(page);
     await page.goto('/billing');
     await expect(page.getByRole('heading', { name: /create bill/i })).toBeVisible();

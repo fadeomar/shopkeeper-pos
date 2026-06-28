@@ -3,7 +3,7 @@ import { defineConfig, devices } from '@playwright/test';
 const PORT = Number(process.env.E2E_PWA_PORT ?? process.env.E2E_PORT ?? 3200);
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${PORT}`;
 
-const e2eEnv = 'NEXT_PUBLIC_E2E_AUTH=1 NEXT_PUBLIC_E2E_SYNC_STUB=1 NEXT_PUBLIC_ENABLE_OFFLINE_SW=1';
+const e2eEnv = 'NEXT_PUBLIC_E2E_AUTH=1 NEXT_PUBLIC_E2E_SYNC_STUB=1 NEXT_PUBLIC_ENABLE_OFFLINE_SW=1 NEXT_PUBLIC_ENABLE_DEMO_DATA=1';
 
 export default defineConfig({
   testDir: './tests/e2e',

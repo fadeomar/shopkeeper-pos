@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { initializeDemoData, loginAsCashier } from '../e2e/helpers/auth';
+import { initializeDemoData, loginAsOwner } from '../e2e/helpers/auth';
 
 async function stabilizePage(page: Page) {
   await page.addStyleTag({
@@ -45,7 +45,7 @@ test.describe('visual regression baselines', () => {
   });
 
   test('cashier dashboard desktop/mobile remains visually stable', async ({ page }, testInfo) => {
-    await loginAsCashier(page, { uid: `visual-${testInfo.project.name}`, name: 'Visual Cashier', email: `visual-${testInfo.project.name}@example.test` });
+    await loginAsOwner(page, { uid: `visual-${testInfo.project.name}`, name: 'Visual Cashier', email: `visual-${testInfo.project.name}@example.test` });
     await initializeDemoData(page);
     await page.goto('/');
     await expect(page.getByRole('main')).toBeVisible();
@@ -53,7 +53,7 @@ test.describe('visual regression baselines', () => {
   });
 
   test('billing entry state desktop/mobile remains visually stable', async ({ page }, testInfo) => {
-    await loginAsCashier(page, { uid: `visual-billing-${testInfo.project.name}`, name: 'Visual Cashier', email: `visual-billing-${testInfo.project.name}@example.test` });
+    await loginAsOwner(page, { uid: `visual-billing-${testInfo.project.name}`, name: 'Visual Cashier', email: `visual-billing-${testInfo.project.name}@example.test` });
     await initializeDemoData(page);
     await page.goto('/billing');
     await expect(page.getByRole('heading', { name: /create bill/i })).toBeVisible();
@@ -63,7 +63,7 @@ test.describe('visual regression baselines', () => {
   test('mobile core route chrome remains visually stable', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'mobile-chrome', 'mobile route chrome snapshot runs only on mobile');
 
-    await loginAsCashier(page, { uid: 'visual-mobile-routes', name: 'Visual Cashier', email: 'visual-mobile@example.test' });
+    await loginAsOwner(page, { uid: 'visual-mobile-routes', name: 'Visual Cashier', email: 'visual-mobile@example.test' });
     await initializeDemoData(page);
     await page.goto('/products');
     await expect(page.getByRole('heading', { name: /^products$/i })).toBeVisible();

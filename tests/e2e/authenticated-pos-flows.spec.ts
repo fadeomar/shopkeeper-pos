@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { initializeDemoData, loginAsCashier } from './helpers/auth';
+import { initializeDemoData, loginAsOwner } from './helpers/auth';
 
 async function addProductToBill(page: Page, productName = 'Milk 1L') {
   await page.getByRole('button', { name: /select product/i }).first().click();
@@ -35,7 +35,7 @@ test.describe('authenticated POS billing flows', () => {
   test('cashier finalizes a cash sale and sees the saved receipt panel', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'desktop-chrome', 'full finalize flow runs once on desktop; mobile has its own smoke test');
 
-    await loginAsCashier(page);
+    await loginAsOwner(page);
     await initializeDemoData(page);
     await page.goto('/billing');
 
@@ -54,7 +54,7 @@ test.describe('authenticated POS billing flows', () => {
     const customerName = `E2E Credit Customer ${Date.now()}`;
     const customerPhone = `0599${String(Date.now()).slice(-6)}`;
 
-    await loginAsCashier(page);
+    await loginAsOwner(page);
     await initializeDemoData(page);
     await page.goto('/billing');
 
@@ -86,7 +86,7 @@ test.describe('authenticated POS billing flows', () => {
   test('mobile cashier can reach billing, add an item, and open finalize review', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'mobile-chrome', 'mobile-only smoke test');
 
-    await loginAsCashier(page);
+    await loginAsOwner(page);
     await initializeDemoData(page);
     await page.goto('/billing');
 
