@@ -940,6 +940,33 @@ export async function isLocalDbEmpty(): Promise<boolean> {
   }
 }
 
+// If no restore progress is observed for this long, treat the cloud backup as
+// unreachable and fail with a recoverable timeout instead of hanging on the
+// "Preparing store data…" spinner forever. A stalled getDocs (weak signal,
+// throttled in-app browser like the Messenger/Instagram webview) is the common
+// cause; the caller routes the resulting error to the Retry / Sign-out dialog.
+const RESTORE_STALL_TIMEOUT_MS = 45_000;
+// Best-effort cloud cleanup runs AFTER local data is safely written. Bound it
+// so a hung commit on a weak connection can never strand an otherwise-finished
+// restore on the loading screen.
+const REPAIR_TIMEOUT_MS = 15_000;
+
+async function withTimeout<T>(
+  work: Promise<T>,
+  ms: number,
+  message: string,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+  });
+  try {
+    return await Promise.race([work, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 /**
  * Download all Firestore subcollections for a user and write them into
  * the local Dexie DB. Local tables are cleared only after all cloud data has
@@ -959,7 +986,52 @@ export async function restoreFromCloud(
   // The flag is released in the outer try/finally below.
   setRestoreInProgress(true);
   try {
-    await doRestoreFromCloud(uid, onProgress);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let disarmed = false;
+    let rejectStall: ((error: unknown) => void) | undefined;
+
+    // Stall watchdog, (re)armed on every progress step. Each collection fetch
+    // reports progress before it awaits, so what trips this is a single fetch
+    // that never resolves — not a slow-but-advancing restore.
+    const armStall = () => {
+      if (disarmed) return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        rejectStall?.(
+          new RestoreError(
+            "Restore timed out — the cloud backup stopped responding.",
+            { code: "deadline-exceeded" },
+          ),
+        );
+      }, RESTORE_STALL_TIMEOUT_MS);
+    };
+
+    const progress = (step: string) => {
+      armStall();
+      onProgress?.(step);
+    };
+
+    // Once local data is committed the heavy network work is done. Disarm the
+    // watchdog so the best-effort cloud-cleanup tail can never trigger a false
+    // timeout on an already-successful restore.
+    const disarmStall = () => {
+      disarmed = true;
+      if (timer) clearTimeout(timer);
+    };
+
+    const stallPromise = new Promise<never>((_, reject) => {
+      rejectStall = reject;
+    });
+
+    armStall();
+    try {
+      await Promise.race([
+        doRestoreFromCloud(uid, progress, disarmStall),
+        stallPromise,
+      ]);
+    } finally {
+      disarmStall();
+    }
   } finally {
     setRestoreInProgress(false);
   }
@@ -968,6 +1040,7 @@ export async function restoreFromCloud(
 async function doRestoreFromCloud(
   uid: string,
   onProgress?: (step: string) => void,
+  onCommitted?: () => void,
 ): Promise<void> {
   const restoredAt = new Date().toISOString();
 
@@ -1230,6 +1303,11 @@ async function doRestoreFromCloud(
     );
   }
 
+  // Local data is now safely written. Stop the stall watchdog so the optional
+  // cloud-cleanup tail below can take its time (or fail) without re-throwing a
+  // timeout over an already-successful restore.
+  onCommitted?.();
+
   onProgress?.("Finalizing restore…");
   try {
     localStorage.setItem(`shopkeeper_last_sync_${uid}`, JSON.stringify(meta));
@@ -1241,7 +1319,11 @@ async function doRestoreFromCloud(
   // duplicate barcode records. If this cleanup fails, the local restore is still valid.
   if (productRepair.duplicateProductIds.length) {
     try {
-      await repairCloudDuplicateProducts({ uid, repair: productRepair, meta });
+      await withTimeout(
+        repairCloudDuplicateProducts({ uid, repair: productRepair, meta }),
+        REPAIR_TIMEOUT_MS,
+        "Cloud duplicate repair timed out.",
+      );
     } catch (error) {
       if (process.env.NODE_ENV === "development") {
         console.warn("[restore] cloud duplicate repair failed", error);
