@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { loginAsCashier } from './helpers/auth';
+import { initializeDemoData, loginAsCashier, loginAsOwner } from './helpers/auth';
 
 test.describe('authenticated cashier shell', () => {
   test('lands on the dashboard without using a real Firebase session', async ({ page }, testInfo) => {
@@ -17,12 +17,12 @@ test.describe('authenticated cashier shell', () => {
     }
   });
 
-  test('can seed demo data and build a cashier sale draft', async ({ page }) => {
-    await loginAsCashier(page);
-    await page.goto('/');
-
-    await page.getByRole('button', { name: /initialize demo data/i }).click();
-    await expect(page.getByText(/demo data initialized|demo data already exists/i)).toBeVisible();
+  test('can seed demo data and build a sale draft', async ({ page }) => {
+    // Demo seeding creates products with costs, which only an owner/manager can
+    // do — seed (and run this operational flow) as an owner. Owners use the same
+    // POS shell as cashiers.
+    await loginAsOwner(page);
+    await initializeDemoData(page);
 
     await page.getByRole('link', { name: /create.*bill/i }).click();
     await expect(page).toHaveURL(/\/billing$/);

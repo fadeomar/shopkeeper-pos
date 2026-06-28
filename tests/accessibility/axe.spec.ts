@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
-import { initializeDemoData, loginAsCashier } from '../e2e/helpers/auth';
+import { initializeDemoData, loginAsOwner } from '../e2e/helpers/auth';
 
 type AxePage = {
   path: string;
@@ -11,7 +11,7 @@ type AxePage = {
 
 const PUBLIC_PAGES: AxePage[] = [
   { path: '/', name: 'public login shell', heading: /welcome|sign in|my shop|asas pos/i },
-  { path: '/guide', name: 'public guide', heading: /guide|welcome/i },
+  { path: '/guide', name: 'public guide', heading: /run your shop|guide|welcome/i },
 ];
 
 const CASHIER_PAGES: AxePage[] = [
@@ -57,7 +57,7 @@ test.describe('axe accessibility checks', () => {
 
   test.describe('authenticated cashier pages', () => {
     test.beforeEach(async ({ page }) => {
-      await loginAsCashier(page);
+      await loginAsOwner(page);
       await initializeDemoData(page);
     });
 

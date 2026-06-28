@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { initializeDemoData, loginAsCashier } from './helpers/auth';
+import { initializeDemoData, loginAsOwner } from './helpers/auth';
 
 type A11yIssue = { selector: string; text: string; issue: string };
 
@@ -115,7 +115,7 @@ test.describe('authenticated accessibility smoke', () => {
   test('core cashier pages have named controls, headings, image alt text, and no horizontal overflow', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'desktop-chrome', 'accessibility smoke runs once on desktop');
 
-    await loginAsCashier(page);
+    await loginAsOwner(page);
     await initializeDemoData(page);
 
     for (const route of ROUTES) {

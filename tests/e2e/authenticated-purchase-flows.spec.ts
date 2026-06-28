@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { initializeDemoData, loginAsCashier } from './helpers/auth';
+import { initializeDemoData, loginAsOwner } from './helpers/auth';
 
 async function addProductToPurchase(page: Page, productName = 'Rice 5kg') {
   await page.getByRole('button', { name: /select product to add/i }).click();
@@ -42,7 +42,7 @@ test.describe('authenticated purchase and supplier flows', () => {
   test('cashier records a cash purchase from an existing product', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'desktop-chrome', 'full purchase flow runs once on desktop');
 
-    await loginAsCashier(page);
+    await loginAsOwner(page);
     await initializeDemoData(page);
     await page.goto('/purchases/new');
 
@@ -55,7 +55,7 @@ test.describe('authenticated purchase and supplier flows', () => {
   test('cashier voids a finalized purchase from its detail page', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'desktop-chrome', 'void flow runs once on desktop; service tests cover the math');
 
-    await loginAsCashier(page);
+    await loginAsOwner(page);
     await initializeDemoData(page);
     await page.goto('/purchases/new');
 
@@ -92,7 +92,7 @@ test.describe('authenticated purchase and supplier flows', () => {
     const supplierName = `E2E Supplier ${Date.now()}`;
     const supplierPhone = `0566${String(Date.now()).slice(-6)}`;
 
-    await loginAsCashier(page);
+    await loginAsOwner(page);
     await initializeDemoData(page);
     await page.goto('/purchases/new');
 

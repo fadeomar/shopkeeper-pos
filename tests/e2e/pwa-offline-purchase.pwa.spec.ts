@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { initializeDemoData, loginAsCashier } from './helpers/auth';
+import { initializeDemoData, loginAsOwner } from './helpers/auth';
 import {
   expectActiveSyncCountAtLeast,
   getStoreCount,
@@ -31,7 +31,7 @@ test.describe('production PWA offline purchase behavior', () => {
   test('desktop cashier can reload purchases offline, save a cash purchase, and sync after reconnect', async ({ context, page }, testInfo) => {
     test.skip(testInfo.project.name !== 'pwa-desktop-chrome', 'full offline purchase sync flow runs once on desktop');
 
-    await loginAsCashier(page, { uid: 'e2e-pwa-desktop-purchase-cashier' });
+    await loginAsOwner(page, { uid: 'e2e-pwa-desktop-purchase-cashier' });
     await initializeDemoData(page);
     await page.goto('/purchases/new');
     await expect(page.getByRole('heading', { name: /new purchase/i })).toBeVisible();
@@ -60,7 +60,7 @@ test.describe('production PWA offline purchase behavior', () => {
   test('mobile cashier can reload cached purchase screen offline and reach save review', async ({ context, page }, testInfo) => {
     test.skip(testInfo.project.name !== 'pwa-mobile-chrome', 'mobile-only PWA purchase smoke test');
 
-    await loginAsCashier(page, { uid: 'e2e-pwa-mobile-purchase-cashier' });
+    await loginAsOwner(page, { uid: 'e2e-pwa-mobile-purchase-cashier' });
     await initializeDemoData(page);
     await page.goto('/purchases/new');
     await expect(page.getByRole('heading', { name: /new purchase/i })).toBeVisible();

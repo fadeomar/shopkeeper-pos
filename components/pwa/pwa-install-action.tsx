@@ -73,7 +73,7 @@ export function PwaInstallAction({ compact = false, className }: PwaInstallActio
         className={clsx(
           "inline-flex items-center gap-1.5 rounded-full font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:opacity-60",
           compact
-            ? "bg-brand/15 px-2.5 py-0.5 text-xs text-brand hover:bg-brand/25 focus-visible:ring-offset-slate-950"
+            ? "bg-brand px-2.5 py-0.5 text-xs text-white hover:bg-brand-hover focus-visible:ring-offset-slate-950"
             : "bg-brand px-4 py-2 text-sm text-white hover:bg-brand-hover",
           className,
         )}

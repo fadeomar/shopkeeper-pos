@@ -1,7 +1,3 @@
-function readPublicFlag(name: string): string | undefined {
-  return process.env[name];
-}
-
 function isTruthyFlag(value: string | undefined): boolean {
   return value === '1' || value === 'true' || value === 'yes' || value === 'on';
 }
@@ -14,9 +10,15 @@ function isFalsyFlag(value: string | undefined): boolean {
  * Demo data must never be a daily-production dashboard action. It is only
  * available for local development by default, or explicitly enabled on an
  * internal staging deployment via NEXT_PUBLIC_ENABLE_DEMO_DATA=1.
+ *
+ * NOTE: `process.env.NEXT_PUBLIC_*` must be referenced by its static, literal
+ * name — Next.js/Turbopack only inlines public env vars into the client bundle
+ * when they are accessed that way. Reading them through a computed key
+ * (`process.env[name]`) leaves the value `undefined` in the browser, which
+ * silently disabled this flag on the client.
  */
 export function isDemoDataUiEnabled(): boolean {
-  const configured = readPublicFlag('NEXT_PUBLIC_ENABLE_DEMO_DATA');
+  const configured = process.env.NEXT_PUBLIC_ENABLE_DEMO_DATA;
   if (isTruthyFlag(configured)) return true;
   if (isFalsyFlag(configured)) return false;
   return process.env.NODE_ENV === 'development';
@@ -29,5 +31,5 @@ export function isDemoDataUiEnabled(): boolean {
  * real users.
  */
 export function isRolePermissionsUiEnabled(): boolean {
-  return isTruthyFlag(readPublicFlag('NEXT_PUBLIC_ENABLE_ROLE_PERMISSIONS'));
+  return isTruthyFlag(process.env.NEXT_PUBLIC_ENABLE_ROLE_PERMISSIONS);
 }
