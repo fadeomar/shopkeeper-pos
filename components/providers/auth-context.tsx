@@ -131,13 +131,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(trusted.user);
     setStatus(resolveStatus(trusted.user));
 
-    // Offline-first boot opens the POS from the cached session on every launch.
-    // Only surface the "restored from saved session, will verify when online"
-    // notice when the device is actually offline — when online, onAuthChange
-    // validates silently moments later, so the toast is both noise and wrong
-    // ("will verify when internet returns" while internet is already present).
-    const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
-    if (toast && isOffline && !restoredToastShownRef.current) {
+    // The "restored from saved session, will verify when internet returns"
+    // toast is driven by the CALLER, not by a navigator.onLine snapshot. On a
+    // cold mobile launch navigator.onLine is frequently still false for a beat
+    // before the network stack reports online, so checking it here fired the
+    // toast on every online launch. Instead, the initial optimistic boot passes
+    // toast=false and stays silent; the toast is only pushed from the paths that
+    // represent a genuine failed online validation (Firestore unreachable / no
+    // Firebase session), i.e. the device really is offline.
+    if (toast && !restoredToastShownRef.current) {
       restoredToastShownRef.current = true;
       push(t('auth.offlineSessionRestored'));
     }
@@ -237,17 +239,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     setStatus('loading');
 
-    const tryTrustedSession = async (showErrorWhenMissing: boolean) => {
+    const tryTrustedSession = async (showErrorWhenMissing: boolean, toast = true) => {
       const local = await getValidTrustedSession();
       if (cancelled) return false;
-      if (local) return bootFromTrustedSession(local);
+      if (local) return bootFromTrustedSession(local, toast);
       if (showErrorWhenMissing) setAuthError(getLocalSessionError());
       return false;
     };
 
     // Offline-first boot: if this device has a still-valid saved session, open
     // the POS immediately and let Firebase/Firestore refresh the profile later.
-    void tryTrustedSession(false);
+    // Stay silent here (toast=false): this runs on EVERY launch regardless of
+    // connectivity, so it must not announce "offline session". When online,
+    // onAuthChange validates the profile silently right after. The toast is only
+    // shown if that later validation reveals we are genuinely offline.
+    void tryTrustedSession(false, false);
 
     // Safety timeout: if Firebase Auth doesn't fire within 10 s (e.g. SDK hung,
     // IndexedDB blocked, very slow mobile network) try the local trusted session
