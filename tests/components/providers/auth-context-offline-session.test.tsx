@@ -168,6 +168,36 @@ describe('AuthProvider offline trusted session', () => {
     });
   });
 
+  it('does not show the offline-session toast when the session validates online', async () => {
+    const user = makeUser({ uid: 'uid-online-toast' });
+    await rememberTrustedSession(user, new Date());
+    authMocks.fetchUserDoc.mockResolvedValue(makeUser({ uid: 'uid-online-toast' }));
+
+    renderAuthProvider();
+    await act(async () => { await authMocks.emit({ uid: 'uid-online-toast' }); });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('status')).toHaveTextContent('authenticated');
+      expect(screen.getByTestId('uid')).toHaveTextContent('uid-online-toast');
+    });
+    // The optimistic boot must stay silent; online validation succeeded, so the
+    // "restored from saved session" notice must never appear.
+    expect(screen.queryByText(/saved session/i)).not.toBeInTheDocument();
+  });
+
+  it('shows the offline-session toast only when online validation genuinely fails', async () => {
+    const user = makeUser({ uid: 'uid-offline-toast' });
+    await rememberTrustedSession(user, new Date());
+    authMocks.fetchUserDoc.mockRejectedValue(new Error('offline'));
+
+    renderAuthProvider();
+    await act(async () => { await authMocks.emit({ uid: 'uid-offline-toast' }); });
+
+    await waitFor(() => {
+      expect(screen.getByText(/saved session/i)).toBeInTheDocument();
+    });
+  });
+
   it('does not restore from authCache alone when trusted session metadata is missing', async () => {
     await db.authCache.put(makeUser({ uid: 'uid-cache-only' }));
 
