@@ -131,7 +131,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(trusted.user);
     setStatus(resolveStatus(trusted.user));
 
-    if (toast && !restoredToastShownRef.current) {
+    // Offline-first boot opens the POS from the cached session on every launch.
+    // Only surface the "restored from saved session, will verify when online"
+    // notice when the device is actually offline — when online, onAuthChange
+    // validates silently moments later, so the toast is both noise and wrong
+    // ("will verify when internet returns" while internet is already present).
+    const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+    if (toast && isOffline && !restoredToastShownRef.current) {
       restoredToastShownRef.current = true;
       push(t('auth.offlineSessionRestored'));
     }
