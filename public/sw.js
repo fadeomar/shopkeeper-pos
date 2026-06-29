@@ -40,7 +40,7 @@ if (IS_DEV_HOST && !ENABLE_DEV_SW) {
   // (scripts/stamp-sw-version.mjs), the same source as NEXT_PUBLIC_APP_VERSION.
   // Bump package.json on each release and this updates automatically — do not
   // hand-edit the literal below; the build overwrites it.
-  const CACHE_VERSION = "0.1.14"; // @sw-version (stamped from package.json at build)
+  const CACHE_VERSION = "0.1.15"; // @sw-version (stamped from package.json at build)
 
   const CACHE_HTML = `sk-pages-${CACHE_VERSION}`;
   const CACHE_STATIC = `sk-static-${CACHE_VERSION}`;
