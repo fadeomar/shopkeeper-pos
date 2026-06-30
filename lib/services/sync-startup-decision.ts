@@ -119,13 +119,26 @@ export function decideSyncStartup(input: SyncStartupInput): SyncStartupDecisionR
     );
   }
 
-  if (!input.hasMeaningfulLocalData) {
-    return input.cloud.hasData
-      ? result('RESTORE_CLOUD_SILENTLY', 'Fresh device: no local business data, cloud has data.', input)
-      : result('NO_ACTION_REQUIRED', 'Brand-new account: no local and no cloud data.', input);
-  }
-
   const cloudNewer = cloudIsNewer(input.cloud.lastSyncedAt, input.localLastSyncedAt);
+
+  if (!input.hasMeaningfulLocalData) {
+    if (!input.cloud.hasData) {
+      return result('NO_ACTION_REQUIRED', 'Brand-new account: no local and no cloud data.', input);
+    }
+
+    // A settings-only / empty-business restore writes a successful sync marker but
+    // intentionally leaves hasMeaningfulLocalData=false. Do not restore it again on
+    // every reload unless the cloud has changed since that marker.
+    if (input.localLastSyncedAt && !cloudNewer) {
+      return result(
+        'NO_ACTION_REQUIRED',
+        'Empty local business data already matches the latest cloud snapshot.',
+        input,
+      );
+    }
+
+    return result('RESTORE_CLOUD_SILENTLY', 'Fresh device: no local business data, cloud has data.', input);
+  }
 
   if (input.pendingCount > 0) {
     return cloudNewer

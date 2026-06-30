@@ -33,10 +33,36 @@ export type {
   SyncStartupInput,
 } from '@/lib/services/sync-startup-decision';
 
+const MEANINGFUL_CLOUD_RECORD_COUNT_KEYS = [
+  'bills',
+  'billItems',
+  'products',
+  'productUnits',
+  'stockMovements',
+  'customerPayments',
+  'customers',
+  'shifts',
+  'suppliers',
+  'purchases',
+  'purchaseItems',
+  'supplierPayments',
+  'auditEvents',
+  'cashMovements',
+  'expenses',
+  'inventoryLots',
+  'billItemCostAllocations',
+] as const satisfies ReadonlyArray<keyof SyncMeta['recordCounts']>;
+
 function cloudHasData(meta: SyncMeta | null): boolean {
-  return Boolean(
-    meta && Object.values(meta.recordCounts).some((count) => typeof count === 'number' && count > 0),
-  );
+  if (!meta) return false;
+
+  // Keep this aligned with getLocalDataSummary().hasBusinessData: settings-only
+  // cloud metadata is not enough to trigger the destructive fresh-device restore.
+  // Settings are pulled by pullSettingsFromCloud after the startup gate opens.
+  return MEANINGFUL_CLOUD_RECORD_COUNT_KEYS.some((key) => {
+    const count = meta.recordCounts[key];
+    return typeof count === 'number' && count > 0;
+  });
 }
 
 function readLocalLastSyncedAt(uid: string): string | undefined {

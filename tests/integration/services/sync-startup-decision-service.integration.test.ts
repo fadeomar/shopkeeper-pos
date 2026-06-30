@@ -28,6 +28,32 @@ function cloudMeta(overrides: Partial<SyncMeta['recordCounts']> = {}): SyncMeta 
   };
 }
 
+function settingsOnlyCloudMeta(): SyncMeta {
+  return {
+    lastSyncedAt: '2026-06-01T00:00:00.000Z',
+    recordCounts: {
+      bills: 0,
+      billItems: 0,
+      products: 0,
+      productUnits: 0,
+      stockMovements: 0,
+      customerPayments: 0,
+      customers: 0,
+      shifts: 0,
+      suppliers: 0,
+      purchases: 0,
+      purchaseItems: 0,
+      supplierPayments: 0,
+      auditEvents: 0,
+      cashMovements: 0,
+      expenses: 0,
+      inventoryLots: 0,
+      billItemCostAllocations: 0,
+      settings: 1,
+    },
+  };
+}
+
 function makeLot(overrides: Partial<InventoryLot> = {}): InventoryLot {
   return {
     id: 'lot-1',
@@ -89,6 +115,16 @@ describe('classifySyncStartupState integration', () => {
 
     expect(result.decision).toBe('NO_ACTION_REQUIRED');
     expect(result.cloudSummary.hasCloudData).toBe(false);
+  });
+
+  it('settings-only cloud metadata does not trigger the fresh-device restore loop', async () => {
+    fetchSyncMetaMock.mockResolvedValue(settingsOnlyCloudMeta());
+
+    const result = await classifySyncStartupState({ uid: 'user-1' });
+
+    expect(result.decision).toBe('NO_ACTION_REQUIRED');
+    expect(result.cloudSummary.hasCloudData).toBe(false);
+    expect(result.cloudSummary.entityCounts?.settings).toBe(1);
   });
 
   it('local DB holding ONLY lots + allocations is NOT treated as empty (no false restore)', async () => {
