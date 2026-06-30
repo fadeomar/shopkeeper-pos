@@ -192,12 +192,19 @@ if (IS_DEV_HOST && !ENABLE_DEV_SW) {
 
     // Online must be network-first. Returning stale HTML after a new Next build can
     // reference chunks that no longer exist and causes "This page could not load".
+    //
+    // A navigation must NOT be raced against the short asset timeout. A fresh
+    // device has an empty cache; on a cold/slow first connection the timeout
+    // would abort the navigation, find nothing cached below, and render the
+    // offline-not-ready screen WHILE THE DEVICE IS ONLINE — the root cause of
+    // "Offline cache is not ready yet" on a brand-new browser. Use a plain fetch
+    // so a slow-but-working first load completes instead of being aborted.
     try {
-      const networkRes = await fetchWithTimeout(event.request);
+      const networkRes = await fetch(event.request);
       cacheHtml(networkRes.clone());
       return networkRes;
     } catch {
-      // Offline fallback below.
+      // Network failed — fall back to cache, then handle offline vs online below.
     }
 
     const cached =
@@ -206,16 +213,43 @@ if (IS_DEV_HOST && !ENABLE_DEV_SW) {
       (await cache.match(url.pathname, { ignoreSearch: true }));
     if (cached) return cached;
 
-    // Do not serve '/' for another route. In Next App Router that paints the
-    // dashboard while the URL/sidebar say another page is active.
-    return offlineRouteNotCachedResponse(url.pathname);
+    // No cached copy. The offline-not-ready screen must appear ONLY when the
+    // device is genuinely offline. While online, a transient navigation failure
+    // (cold start, momentary blip) must retry the network rather than strand an
+    // online user on the offline screen.
+    if (self.navigator && self.navigator.onLine === false) {
+      // Do not serve '/' for another route. In Next App Router that paints the
+      // dashboard while the URL/sidebar say another page is active.
+      return offlineRouteNotCachedResponse(url.pathname);
+    }
+
+    try {
+      const retryRes = await fetch(event.request);
+      cacheHtml(retryRes.clone());
+      return retryRes;
+    } catch {
+      // Online per the OS but the origin is genuinely unreachable (captive
+      // portal, origin down) and nothing is cached — offline screen as a last
+      // resort so the tab is not left hanging forever.
+      return offlineRouteNotCachedResponse(url.pathname);
+    }
   }
 
   async function handleRsc(event, url, isPrefetch) {
+    // RSC powers client navigation; like document navigation it must not be
+    // raced against the short asset timeout, or a slow first load online would
+    // be misread as offline and trigger a spurious full-document navigation.
     try {
-      return await fetchWithTimeout(event.request);
+      return await fetch(event.request);
     } catch {
-      if (!isPrefetch) {
+      // Only ask the client to fall back to a full (cached) document navigation
+      // when actually offline. While online a transient RSC failure should not
+      // force a navigation away from the current online session.
+      if (
+        !isPrefetch &&
+        self.navigator &&
+        self.navigator.onLine === false
+      ) {
         await notifyWindows({
           type: "SK_OFFLINE_NAV",
           url: `${url.pathname}${url.search}`,

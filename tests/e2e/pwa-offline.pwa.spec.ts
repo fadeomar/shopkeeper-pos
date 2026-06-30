@@ -14,7 +14,7 @@ async function addProductToBill(page: Page, productName = 'Milk 1L') {
   await page.getByRole('button', { name: /select product/i }).first().click();
   await page.getByRole('combobox', { name: /search by name/i }).fill(productName);
   await page.getByRole('option', { name: new RegExp(productName, 'i') }).click();
-  await expect(page.getByText(productName).first()).toBeVisible();
+  await expect(page.getByText(productName).filter({ visible: true }).first()).toBeVisible();
 }
 
 async function finalizeBill(page: Page) {
@@ -43,7 +43,7 @@ test.describe('production PWA offline behavior', () => {
     await goOffline(context, page);
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { name: /create bill/i })).toBeVisible();
-    await expect(page.getByText(/^offline$/i).first()).toBeVisible();
+    await expect(page.getByText('Offline mode active').first()).toBeVisible();
 
     await addProductToBill(page, 'Milk 1L');
     await finalizeBill(page);

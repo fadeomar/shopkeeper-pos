@@ -17,6 +17,19 @@ test.describe('authenticated cashier shell', () => {
     }
   });
 
+  test('a fresh trial owner in a clean browser reaches the dashboard, not the sign-in screen', async ({ page }) => {
+    // Regression: a brand-new browser profile (no IndexedDB, no cache, no prior
+    // session) must boot straight to the store. The production P0 stranded fresh
+    // profiles on the login screen ("Sign in to continue") or the loading loop.
+    await loginAsOwner(page, { uid: `e2e-fresh-trial-${Date.now()}` });
+    await page.goto('/');
+
+    await expect(page.getByRole('link', { name: /create.*bill/i })).toBeVisible();
+    // The sign-in screen must NOT be showing.
+    await expect(page.getByText(/sign in to continue/i)).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /^sign in$/i })).toHaveCount(0);
+  });
+
   test('can seed demo data and build a sale draft', async ({ page }) => {
     // Demo seeding creates products with costs, which only an owner/manager can
     // do — seed (and run this operational flow) as an owner. Owners use the same

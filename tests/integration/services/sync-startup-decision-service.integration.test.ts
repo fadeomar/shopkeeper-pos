@@ -89,10 +89,18 @@ function makeAllocation(overrides: Partial<BillItemCostAllocation> = {}): BillIt
   };
 }
 
+function setLocalSyncMarker(uid: string, lastSyncedAt: string): void {
+  window.localStorage.setItem(
+    `shopkeeper_last_sync_${uid}`,
+    JSON.stringify({ lastSyncedAt, recordCounts: {} }),
+  );
+}
+
 describe('classifySyncStartupState integration', () => {
   beforeEach(async () => {
     await resetTestDb();
     fetchSyncMetaMock.mockReset();
+    window.localStorage.clear();
   });
 
   it('fresh empty device + cloud data (incl. lots/allocations) => RESTORE_CLOUD_SILENTLY, no conflict', async () => {
@@ -125,6 +133,52 @@ describe('classifySyncStartupState integration', () => {
     expect(result.decision).toBe('NO_ACTION_REQUIRED');
     expect(result.cloudSummary.hasCloudData).toBe(false);
     expect(result.cloudSummary.entityCounts?.settings).toBe(1);
+  });
+
+  it('does not restore an empty snapshot again after reload once the sync marker is written', async () => {
+    // Reproduces the "Preparing store data…" loop: a prior empty/settings-only
+    // restore wrote the local sync marker but left the business tables empty.
+    // On the next reload the cloud meta has NOT changed, so this must resolve to
+    // NO_ACTION — never another RESTORE that reloads into the same empty state.
+    const cloudLastSyncedAt = '2026-06-01T00:00:00.000Z';
+    fetchSyncMetaMock.mockResolvedValue(cloudMeta()); // cloud reports data
+    setLocalSyncMarker('user-1', cloudLastSyncedAt);
+
+    const result = await classifySyncStartupState({ uid: 'user-1' });
+
+    expect(result.localSummary.hasMeaningfulData).toBe(false);
+    expect(result.decision).toBe('NO_ACTION_REQUIRED');
+  });
+
+  it('restores real cloud business data exactly once: a populated device with an up-to-date marker does not restore again', async () => {
+    // First boot on a fresh device with real cloud data restores silently.
+    fetchSyncMetaMock.mockResolvedValue(cloudMeta());
+    const first = await classifySyncStartupState({ uid: 'user-1' });
+    expect(first.decision).toBe('RESTORE_CLOUD_SILENTLY');
+
+    // Simulate the result of that restore: business data is now local and the
+    // device recorded a successful sync at (or after) the cloud's timestamp.
+    await db.products.put({
+      id: 'p1',
+      name: 'Restored product',
+      barcode: 'R1',
+      category: 'Uncategorized',
+      unit: 'pcs',
+      quantityInStock: 1,
+      buyPrice: 1,
+      sellPrice: 2,
+      minimumStockAlert: 0,
+      dateAdded: '2026-06-01T00:00:00.000Z',
+      lastUpdated: '2026-06-01T00:00:00.000Z',
+      status: 'active',
+      syncStatus: 'synced',
+    } as Parameters<typeof db.products.put>[0]);
+    setLocalSyncMarker('user-1', '2026-06-01T00:00:00.000Z');
+
+    const second = await classifySyncStartupState({ uid: 'user-1' });
+
+    expect(second.localSummary.hasMeaningfulData).toBe(true);
+    expect(second.decision).not.toBe('RESTORE_CLOUD_SILENTLY');
   });
 
   it('local DB holding ONLY lots + allocations is NOT treated as empty (no false restore)', async () => {

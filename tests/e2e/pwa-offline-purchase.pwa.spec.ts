@@ -16,12 +16,12 @@ async function addProductToPurchase(page: Page, productName = 'Rice 5kg') {
   await page.getByRole('option', { name: new RegExp(productName, 'i') }).click();
   await expect(page.getByRole('button', { name: /add item/i })).toBeEnabled();
   await page.getByRole('button', { name: /add item/i }).click();
-  await expect(page.getByText(productName).first()).toBeVisible();
+  await expect(page.getByText(productName).filter({ visible: true }).first()).toBeVisible();
 }
 
 async function finalizePurchase(page: Page) {
   await page.getByRole('button', { name: /review & save/i }).last().click();
-  const dialog = page.getByRole('dialog', { name: /finalize purchase/i });
+  const dialog = page.getByRole('dialog', { name: /save purchase/i });
   await expect(dialog).toBeVisible();
   await dialog.getByRole('button', { name: /confirm save/i }).click();
   await expect(page.getByText(/purchase saved/i).first()).toBeVisible();
@@ -34,7 +34,7 @@ test.describe('production PWA offline purchase behavior', () => {
     await loginAsOwner(page, { uid: 'e2e-pwa-desktop-purchase-cashier' });
     await initializeDemoData(page);
     await page.goto('/purchases/new');
-    await expect(page.getByRole('heading', { name: /new purchase/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /record a purchase/i, level: 1 })).toBeVisible();
 
     await waitForServiceWorkerControl(page);
     await waitForRouteCached(page, '/purchases/new');
@@ -44,8 +44,8 @@ test.describe('production PWA offline purchase behavior', () => {
 
     await goOffline(context, page);
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await expect(page.getByRole('heading', { name: /new purchase/i })).toBeVisible();
-    await expect(page.getByText(/^offline$/i).first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: /record a purchase/i, level: 1 })).toBeVisible();
+    await expect(page.getByText('Offline mode active').first()).toBeVisible();
 
     await addProductToPurchase(page, 'Rice 5kg');
     await finalizePurchase(page);
@@ -63,7 +63,7 @@ test.describe('production PWA offline purchase behavior', () => {
     await loginAsOwner(page, { uid: 'e2e-pwa-mobile-purchase-cashier' });
     await initializeDemoData(page);
     await page.goto('/purchases/new');
-    await expect(page.getByRole('heading', { name: /new purchase/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /record a purchase/i, level: 1 })).toBeVisible();
 
     await waitForServiceWorkerControl(page);
     await waitForRouteCached(page, '/purchases/new');
@@ -71,12 +71,12 @@ test.describe('production PWA offline purchase behavior', () => {
 
     await goOffline(context, page);
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await expect(page.getByRole('heading', { name: /new purchase/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /record a purchase/i, level: 1 })).toBeVisible();
 
     await addProductToPurchase(page, 'Rice 5kg');
     await expect(page.getByRole('button', { name: /review & save/i }).last()).toBeVisible();
     await page.getByRole('button', { name: /review & save/i }).last().click();
-    await expect(page.getByRole('dialog', { name: /finalize purchase/i })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: /save purchase/i })).toBeVisible();
 
     await goOnline(context, page);
   });
