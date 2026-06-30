@@ -18,10 +18,28 @@ function input(overrides: Partial<SyncStartupInput> = {}): SyncStartupInput {
 
 describe('decideSyncStartup', () => {
   // Test 1 — fresh device with cloud data restores silently
-  it('RESTORE_CLOUD_SILENTLY when local is empty and cloud has data', () => {
-    const result = decideSyncStartup(input({ hasMeaningfulLocalData: false }));
+  it('RESTORE_CLOUD_SILENTLY when local is empty, cloud has data, and this device has never synced it', () => {
+    const result = decideSyncStartup(
+      input({ hasMeaningfulLocalData: false, localLastSyncedAt: undefined }),
+    );
     expect(result.decision).toBe('RESTORE_CLOUD_SILENTLY');
     expect(result.conflicts).toBeUndefined();
+  });
+
+  it('NO_ACTION_REQUIRED after an empty-business cloud snapshot was already restored', () => {
+    const result = decideSyncStartup(input({ hasMeaningfulLocalData: false }));
+    expect(result.decision).toBe('NO_ACTION_REQUIRED');
+  });
+
+  it('RESTORE_CLOUD_SILENTLY for an empty local DB when the cloud changed after the last empty restore', () => {
+    const result = decideSyncStartup(
+      input({
+        hasMeaningfulLocalData: false,
+        localLastSyncedAt: '2026-01-01T00:00:00.000Z',
+        cloud: { hasData: true, lastSyncedAt: '2026-02-01T00:00:00.000Z' },
+      }),
+    );
+    expect(result.decision).toBe('RESTORE_CLOUD_SILENTLY');
   });
 
   it('NO_ACTION_REQUIRED for a brand-new account with no local and no cloud data', () => {
@@ -128,7 +146,11 @@ describe('decideSyncStartup', () => {
 
     it('a fresh-device restore wins over a pending push', () => {
       const result = decideSyncStartup(
-        input({ hasMeaningfulLocalData: false, pendingCount: 3 }),
+        input({
+          hasMeaningfulLocalData: false,
+          pendingCount: 3,
+          localLastSyncedAt: undefined,
+        }),
       );
       expect(result.decision).toBe('RESTORE_CLOUD_SILENTLY');
     });

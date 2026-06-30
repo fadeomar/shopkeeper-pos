@@ -314,20 +314,6 @@ function CashierShell({ children }: { children: React.ReactNode }) {
     }
   }
 
-  async function clearAppCaches() {
-    if (typeof window === "undefined" || !("caches" in window)) return;
-    try {
-      const keys = await caches.keys();
-      await Promise.all(
-        keys
-          .filter((key) => key.startsWith("sk-"))
-          .map((key) => caches.delete(key)),
-      );
-    } catch {
-      /* cache cleanup is best effort */
-    }
-  }
-
   function requestQueueSync() {
     if (typeof window === "undefined") return;
     window.dispatchEvent(new Event("shopkeeper:sync-requested"));
@@ -356,7 +342,6 @@ function CashierShell({ children }: { children: React.ReactNode }) {
     try {
       await restoreFromCloud(resolveStoreId(user) ?? userId, setRestoreStep);
       clearSkippedRestore(resolveStoreId(user) ?? userId);
-      await clearAppCaches();
       try {
         db.close();
       } catch {
@@ -378,7 +363,6 @@ function CashierShell({ children }: { children: React.ReactNode }) {
       await restoreFromCloud(resolveStoreId(user) ?? uid, setRestoreStep);
       clearSkippedRestore(resolveStoreId(user) ?? uid);
       setRestoreStep("Preparing app reload…");
-      await clearAppCaches();
       // Close DB before reload to guarantee IDB writes are flushed (important on Safari/iOS).
       try {
         db.close();

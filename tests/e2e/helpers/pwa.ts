@@ -40,6 +40,26 @@ export async function waitForRouteCached(page: Page, route: string): Promise<voi
     .toBe(true);
 }
 
+// Core app-shell routes a cashier reloads offline. Going offline before these
+// are cached is what produces the "Offline cache is not ready yet" screen — so
+// offline PWA tests must wait for this before calling goOffline (regression #6).
+export const CORE_OFFLINE_ROUTES = ['/', '/billing'] as const;
+
+export async function waitForOfflineCacheReady(page: Page): Promise<void> {
+  await waitForServiceWorkerControl(page);
+  for (const route of CORE_OFFLINE_ROUTES) {
+    await waitForRouteCached(page, route);
+  }
+}
+
+/** True when the synthetic service-worker "Offline cache is not ready yet" page
+ *  is currently rendered. It must never appear while the device is online. */
+export async function isOfflineNotReadyScreenShowing(page: Page): Promise<boolean> {
+  return page.evaluate(() =>
+    document.body?.innerText?.includes('Offline cache is not ready') ?? false,
+  );
+}
+
 async function readStoreRows(page: Page, storeName: string): Promise<Array<Record<string, unknown>>> {
   return page.evaluate((store) => {
     return new Promise<Array<Record<string, unknown>>>((resolve, reject) => {
@@ -97,14 +117,20 @@ export async function expectActiveSyncCountAtLeast(page: Page, minimum: number):
     .toBeGreaterThanOrEqual(minimum);
 }
 
+// The always-visible PWA status bar (sw-register) is the canonical network
+// indicator: "Offline mode active" / "Online". Do NOT assert on the bare
+// "Offline" text of SyncStatusBadge — it renders twice (mobile header + desktop
+// sidebar) and one copy is always display:none for the current breakpoint, so
+// `getByText(/^offline$/i).first()` can resolve to the HIDDEN copy and time out
+// even though the app went offline correctly.
 export async function goOffline(context: BrowserContext, page: Page): Promise<void> {
   await context.setOffline(true);
   await page.evaluate(() => window.dispatchEvent(new Event('offline')));
-  await expect(page.getByText(/^offline$/i).first()).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText('Offline mode active').first()).toBeVisible({ timeout: 10_000 });
 }
 
 export async function goOnline(context: BrowserContext, page: Page): Promise<void> {
   await context.setOffline(false);
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
-  await expect(page.getByText(/^online$/i).first()).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText('Online', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
 }
