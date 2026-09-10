@@ -26,7 +26,8 @@ import {
   ArrowUpFromLine,
   LayoutDashboard,
   Plus,
-  Play,
+  Truck,
+  HelpCircle,
 } from "@/components/ui/icons";
 
 export default function DashboardPage() {
@@ -153,6 +154,28 @@ export default function DashboardPage() {
             />
             <div className="mt-4 flex flex-wrap gap-2 justify-center">
               <Link
+                href="/guide/getting-started"
+                className={clsx(
+                  "inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition-colors",
+                  "bg-brand text-white hover:bg-brand-hover",
+                  "px-4 py-2.5 text-sm min-h-[42px]",
+                )}
+              >
+                <HelpCircle size={16} strokeWidth={2.5} aria-hidden />
+                {t("dashboard.gettingStarted")}
+              </Link>
+              <Link
+                href="/purchases/new"
+                className={clsx(
+                  "inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition-colors",
+                  "bg-surface-soft text-fg-secondary hover:bg-surface-muted",
+                  "px-4 py-2.5 text-sm min-h-[42px]",
+                )}
+              >
+                <Truck size={16} strokeWidth={2.5} aria-hidden />
+                {t("dashboard.addFirstPurchase")}
+              </Link>
+              <Link
                 href="/products"
                 className={clsx(
                   "inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition-colors",
@@ -162,17 +185,6 @@ export default function DashboardPage() {
               >
                 <Plus size={16} strokeWidth={2.5} aria-hidden />
                 {t("dashboard.addFirstProduct")}
-              </Link>
-              <Link
-                href="/shift"
-                className={clsx(
-                  "inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition-colors",
-                  "bg-brand text-white hover:bg-brand-hover",
-                  "px-4 py-2.5 text-sm min-h-[42px]",
-                )}
-              >
-                <Play size={16} strokeWidth={2.5} aria-hidden />
-                {t("dashboard.openFirstShift")}
               </Link>
               {canShowDemoDataAction && (
                 <Button
