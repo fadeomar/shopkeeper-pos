@@ -58,6 +58,7 @@ export interface TranslationDict {
     expenses: string;
     audit: string;
     settings: string;
+    guide: string;
     /** aria-label for the cashier sidebar <nav> */
     mainNavLabel: string;
     /** aria-label for the admin sidebar <nav> */
@@ -90,6 +91,7 @@ export interface TranslationDict {
     expenses: string;
     audit: string;
     settings: string;
+    guide: string;
     /** Label for the "More" tab in the mobile bottom nav */
     more: string;
   };
@@ -336,6 +338,8 @@ export interface TranslationDict {
     demoConfirmAction: string;
     emptyTitle: string;
     emptyDesc: string;
+    gettingStarted: string;
+    addFirstPurchase: string;
     addFirstProduct: string;
     openFirstShift: string;
   };
@@ -1747,6 +1751,7 @@ export interface TranslationDict {
 export interface GuideDict {
   common: {
     signIn: string;
+    backToApp: string;
     learnHow: string;
     privacyNote: string;
     versionLabel: string;
@@ -1755,6 +1760,7 @@ export interface GuideDict {
     heroTitle: string;
     heroSubtitle: string;
     requestAccess: string;
+    gettingStarted: string;
     canDoTitle: string;
     canDoSellTitle: string;
     canDoSellDesc: string;
@@ -1811,6 +1817,65 @@ export interface GuideDict {
     accessStep3Title: string;
     accessStep3Desc: string;
     accessManualNote: string;
+  };
+  gettingStarted: {
+    backToGuide: string;
+    heroTitle: string;
+    heroSubtitle: string;
+    chooseTitle: string;
+    chooseSubtitle: string;
+    signInAction: string;
+    newStoreTitle: string;
+    newStoreDesc: string;
+    newStoreStep1: string;
+    newStoreStep2: string;
+    newStoreStep3: string;
+    newStoreAction: string;
+    existingStockTitle: string;
+    existingStockDesc: string;
+    existingStockStep1: string;
+    existingStockStep2: string;
+    existingStockStep3: string;
+    existingStockAction: string;
+    spreadsheetTitle: string;
+    spreadsheetDesc: string;
+    spreadsheetStep1: string;
+    spreadsheetStep2: string;
+    spreadsheetStep3: string;
+    spreadsheetAction: string;
+    migrationTitle: string;
+    migrationDesc: string;
+    migrationStep1: string;
+    migrationStep2: string;
+    migrationStep3: string;
+    migrationAction: string;
+    commonTitle: string;
+    stepLabel: string;
+    commonStep1Title: string;
+    commonStep1Desc: string;
+    commonStep2Title: string;
+    commonStep2Desc: string;
+    commonStep3Title: string;
+    commonStep3Desc: string;
+    commonStep4Title: string;
+    commonStep4Desc: string;
+    commonStep5Title: string;
+    commonStep5Desc: string;
+    conceptsTitle: string;
+    productsTitle: string;
+    productsDesc: string;
+    purchasesTitle: string;
+    purchasesDesc: string;
+    inventoryTitle: string;
+    inventoryDesc: string;
+    laterTitle: string;
+    customersLater: string;
+    suppliersLater: string;
+    laterDesc: string;
+    migrationLimitTitle: string;
+    migrationLimitDesc: string;
+    readyTitle: string;
+    readyDesc: string;
   };
   offline: {
     title: string;

@@ -38,7 +38,7 @@ describe('Dashboard demo data action', () => {
 
     renderDashboard();
 
-    await screen.findByText('Welcome to Asas POS');
+    await screen.findByText('Let’s prepare your shop for the first sale');
     expect(screen.queryByRole('button', { name: 'Initialize Demo Data' })).not.toBeInTheDocument();
   });
 
@@ -59,7 +59,7 @@ describe('Dashboard demo data action', () => {
     renderDashboard();
 
     await waitFor(() => {
-      expect(screen.queryByText('Welcome to Asas POS')).not.toBeInTheDocument();
+      expect(screen.queryByText('Let’s prepare your shop for the first sale')).not.toBeInTheDocument();
     });
     expect(screen.queryByRole('button', { name: 'Initialize Demo Data' })).not.toBeInTheDocument();
   });
