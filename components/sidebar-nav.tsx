@@ -33,6 +33,7 @@ import {
   Wallet,
   History,
   Settings,
+  CircleHelp,
   type LucideIcon,
 } from 'lucide-react';
 import { db } from '@/lib/db/schema';
@@ -76,6 +77,7 @@ const routes: readonly Route[] = [
   { href: '/expenses',      key: 'nav.expenses',    icon: Wallet },
   { href: '/audit',         key: 'nav.audit',       icon: History },
   { href: '/settings',      key: 'nav.settings',    icon: Settings },
+  { href: '/guide/getting-started', key: 'nav.guide', icon: CircleHelp },
 ] as const;
 
 export function SidebarNav() {

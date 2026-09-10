@@ -129,10 +129,11 @@ export function PublicGuide() {
             {t("guide.public.requestAccess")}
           </a>
           <Link
-            href={"/" as Route}
+            href={"/guide/getting-started" as Route}
             className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-slate-100 px-5 py-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-200"
           >
-            {t("guide.common.signIn")}
+            <TruckIcon size={18} />
+            {t("guide.public.gettingStarted")}
           </Link>
         </div>
       </section>

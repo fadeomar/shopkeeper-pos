@@ -14,10 +14,13 @@
 import Link from "next/link";
 import type { Route } from "next";
 import { useLocale } from "@/components/providers/locale-context";
+import { useAuth } from "@/components/providers/auth-context";
 import { LoginIcon } from "@/features/guide/components/icons";
 
 export function PublicShell({ children }: { children: React.ReactNode }) {
   const { t, locale, setLocale } = useLocale();
+  const { status } = useAuth();
+  const authenticated = status === "authenticated";
 
   return (
     <div className="min-h-dvh bg-slate-50 text-slate-900">
@@ -62,7 +65,7 @@ export function PublicShell({ children }: { children: React.ReactNode }) {
               className="inline-flex items-center gap-1.5 rounded-xl bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-200"
             >
               <LoginIcon size={14} />
-              {t("guide.common.signIn")}
+              {authenticated ? t("guide.common.backToApp") : t("guide.common.signIn")}
             </Link>
           </div>
         </div>
