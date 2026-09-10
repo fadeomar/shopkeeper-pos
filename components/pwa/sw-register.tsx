@@ -10,6 +10,7 @@ import { PwaInstallAction } from "@/components/pwa/pwa-install-action";
 const OFFLINE_NAV_ROUTES = [
   "/",
   "/guide",
+  "/guide/getting-started",
   "/products",
   "/inventory",
   "/reports",

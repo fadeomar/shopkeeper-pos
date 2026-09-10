@@ -42,6 +42,7 @@ import {
   Wallet,
   History,
   Settings,
+  CircleHelp,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -102,6 +103,7 @@ const MORE_ROUTE_GROUPS: MoreRouteGroup[] = [
     routes: [
       { href: "/settings", shortKey: "navShort.settings", icon: Settings },
       { href: "/audit", shortKey: "navShort.audit", icon: History },
+      { href: "/guide/getting-started", shortKey: "navShort.guide", icon: CircleHelp },
     ],
   },
 ];
