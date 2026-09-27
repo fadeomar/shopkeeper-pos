@@ -36,6 +36,7 @@ export function ProductsWorkspace() {
               : t('products.addProduct')}
           </h3>
           <ProductForm
+            key={selectedProduct?.id ?? 'new-product'}
             product={selectedProduct}
             onSaved={() => setSelectedProduct(undefined)}
             onCancel={
