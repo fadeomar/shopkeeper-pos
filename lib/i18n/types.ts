@@ -797,6 +797,8 @@ export interface TranslationDict {
     clearDraft: string;
     newInvoice: string;
     openInvoices: string;
+    noOpenInvoicesTitle: string;
+    noOpenInvoicesDesc: string;
     invoiceDraftNumber: string;
     switchInvoice: string;
     cancelInvoiceNumber: string;

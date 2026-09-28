@@ -554,7 +554,13 @@ export function PosScreen() {
   // The session hook owns persistence; this screen only mirrors the active
   // draft into the existing form controls.
   useEffect(() => {
-    if (!draftSessionReady || !activeDraft) return;
+    if (!draftSessionReady) return;
+    if (!activeDraft) {
+      form.reset(defaultBillForm);
+      setIsPaidAmountManuallyEdited(false);
+      setHydratedDraftId(null);
+      return;
+    }
     form.reset(activeDraft.form);
     const autoTotal = calculateBillTotals(
       activeDraft.items.map((item) => ({
@@ -574,7 +580,7 @@ export function PosScreen() {
     );
     setHydratedDraftId(activeDraft.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftSessionReady, activeDraftId, form]);
+  }, [draftSessionReady, activeDraftId, form, defaultBillForm]);
 
   // Reconcile the active draft whenever it is opened or live product data
   // changes. Drafts do not reserve stock: each one keeps its own snapshot,
@@ -1368,8 +1374,11 @@ export function PosScreen() {
   }
 
   function handleCreateDraft() {
-    if (!activeFormReady) return;
-    createDraft(getCurrentFormValues(), defaultBillForm);
+    if (!draftSessionReady) return;
+    createDraft(
+      activeFormReady ? getCurrentFormValues() : defaultBillForm,
+      defaultBillForm,
+    );
     setBarcodeQuery("");
     setLastFinalized(null);
     setConfirmOpen(false);
@@ -1386,7 +1395,7 @@ export function PosScreen() {
   }
 
   function cancelDraftNow(draftId: string) {
-    removeDraft(draftId, getCurrentFormValues(), defaultBillForm);
+    removeDraft(draftId, getCurrentFormValues());
     setBarcodeQuery("");
     setCancelDraftId(null);
     setLastFinalized(null);
@@ -1422,7 +1431,7 @@ export function PosScreen() {
       });
       const hadPendingDrafts = openDrafts.length > 1;
       if (activeDraftId) {
-        removeDraft(activeDraftId, values, defaultBillForm);
+        removeDraft(activeDraftId, values);
       }
       setConfirmOpen(false);
       setLastFinalized({ bill, items: billItems, hadPendingDrafts });
@@ -1598,6 +1607,37 @@ export function PosScreen() {
       <Card>
         <p className="text-sm text-slate-500">{t("billing.loadingPos")}</p>
       </Card>
+    );
+  }
+
+  if (draftSessionReady && !activeDraft) {
+    return (
+      <>
+        <Card className="mx-auto flex min-h-[320px] w-full max-w-2xl flex-col items-center justify-center gap-4 text-center">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-soft text-brand">
+            <ReceiptText size={26} aria-hidden />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-lg font-bold text-fg">
+              {t("billing.noOpenInvoicesTitle")}
+            </h3>
+            <p className="text-sm text-fg-muted">
+              {t("billing.noOpenInvoicesDesc")}
+            </p>
+          </div>
+          <Button type="button" size="lg" onClick={handleCreateDraft}>
+            {t("billing.newInvoice")}
+          </Button>
+        </Card>
+        <InvoiceDraftTray
+          drafts={openDrafts}
+          activeDraftId={activeDraftId}
+          currency={currency}
+          onActivate={handleActivateDraft}
+          onCancel={requestCancelDraft}
+          onCreate={handleCreateDraft}
+        />
+      </>
     );
   }
 
@@ -2192,7 +2232,7 @@ export function PosScreen() {
         </div>
       </div>
 
-      {draftSessionReady && activeFormReady && (
+      {draftSessionReady && (
         <InvoiceDraftTray
           drafts={openDrafts}
           activeDraftId={activeDraftId}
@@ -2216,9 +2256,9 @@ export function PosScreen() {
         // totals so the bar reads as "your cart" not "random sticky strip".
         <div
           className={clsx(
-            // Sits above both the invoice tray (3.5rem) and mobile bottom nav.
-            // The nav owns the safe-area gap, so this bar uses a plain pb.
-            "fixed inset-x-0 bottom-[calc(7.5rem+max(env(safe-area-inset-bottom),0.5rem)+2px)] z-30 lg:hidden",
+            // Mobile invoices now live in a side rail, so checkout only needs
+            // to clear the persistent bottom navigation.
+            "fixed inset-x-0 bottom-[calc(4rem+max(env(safe-area-inset-bottom),0.5rem)+1px)] z-30 lg:hidden",
             "border-t border-border-default bg-surface/95 backdrop-blur",
             "shadow-[0_-8px_24px_rgba(11,18,32,0.10)]",
             "px-3 py-3",

@@ -833,6 +833,8 @@ export const en: TranslationDict = {
     clearDraft: "Clear draft",
     newInvoice: "New invoice",
     openInvoices: "Open invoices",
+    noOpenInvoicesTitle: "No open invoices",
+    noOpenInvoicesDesc: "Start a new invoice when you are ready to sell.",
     invoiceDraftNumber: "Invoice {{number}}",
     switchInvoice: "Open invoice {{number}}",
     cancelInvoiceNumber: "Cancel invoice {{number}}",

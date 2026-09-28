@@ -824,6 +824,8 @@ export const ar: TranslationDict = {
     clearDraft: "مسح المسودة",
     newInvoice: "فاتورة جديدة",
     openInvoices: "الفواتير المفتوحة",
+    noOpenInvoicesTitle: "لا توجد فواتير مفتوحة",
+    noOpenInvoicesDesc: "ابدأ فاتورة جديدة عندما تصبح جاهزاً للبيع.",
     invoiceDraftNumber: "فاتورة {{number}}",
     switchInvoice: "فتح الفاتورة {{number}}",
     cancelInvoiceNumber: "إلغاء الفاتورة {{number}}",
