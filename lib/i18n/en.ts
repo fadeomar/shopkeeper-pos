@@ -831,6 +831,17 @@ export const en: TranslationDict = {
     mixedSumMismatch: "Cash + card must equal the bill total.",
     invalidTotal: "Discount cannot be greater than subtotal plus tax.",
     clearDraft: "Clear draft",
+    newInvoice: "New invoice",
+    openInvoices: "Open invoices",
+    invoiceDraftNumber: "Invoice {{number}}",
+    switchInvoice: "Open invoice {{number}}",
+    cancelInvoiceNumber: "Cancel invoice {{number}}",
+    cancelInvoice: "Cancel invoice",
+    cancelInvoiceTitle: "Cancel this invoice?",
+    cancelInvoiceDescription:
+      "This open invoice and everything entered in it will be deleted. Other open invoices will stay available.",
+    cancelInvoiceConfirm: "Cancel invoice",
+    invoiceCancelled: "Invoice cancelled.",
     reviewFinalize: "Review & finalize",
     finalizeBill: "Finalize bill",
     finalizeDesc:
@@ -856,6 +867,7 @@ export const en: TranslationDict = {
     saleSavedSyncing: "Saved — syncing to cloud.",
     saleSavedOffline: "Saved offline — will sync when you're back online.",
     newSale: "New sale",
+    continueInvoice: "Continue invoice",
     quickCash: "Quick cash",
     exact: "Exact",
     lastAdded: "Added: {{name}} · ×{{qty}} · {{subtotal}}",
@@ -885,9 +897,9 @@ export const en: TranslationDict = {
       "Stock and minimum stock must be whole numbers. Prices must be valid non-negative numbers.",
     quickAddRequired: "Enter barcode, name, category, and unit.",
     draftPricesRefreshed:
-      "Prices refreshed for {{count}} item(s) in your saved cart.",
+      "Cost or unit details refreshed for {{count}} item(s) in your open invoice.",
     draftProductsRemoved:
-      "{{count}} item(s) removed from your saved cart — product is inactive or no longer exists.",
+      "{{count}} item(s) removed from your open invoice — product is inactive or no longer exists.",
     draftStockAdjusted:
       "Quantity reduced for {{count}} item(s) — not enough stock.",
     pickCustomer: "Select customer",

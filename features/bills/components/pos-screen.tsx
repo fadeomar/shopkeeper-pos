@@ -52,6 +52,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { DataTable, useDataTableLabels } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Modal } from "@/components/ui/modal";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/components/ui/toast";
 import { BarcodeScannerModal } from "@/components/barcode/barcode-scanner-modal";
 import { useLocale } from "@/components/providers/locale-context";
@@ -63,6 +64,7 @@ import { QuantityStepper } from "@/components/pos/quantity-stepper";
 import { QuickProductModal } from "./quick-product-modal";
 import { WeightEditorModal } from "./weight-editor-modal";
 import { ReceiptView } from "./receipt-view";
+import { InvoiceDraftTray } from "./invoice-draft-tray";
 import {
   formatStockDisplay,
   formatWeightForCart,
@@ -80,6 +82,11 @@ import { isMiscLine, MISC_ITEM_BARCODE } from "@/lib/utils/misc-items";
 import { useAuth } from "@/components/providers/auth-context";
 import { usePermissions } from "@/lib/hooks/use-permissions";
 import { useOnlineStatus } from "@/lib/hooks/use-online-status";
+import { usePosDraftSession } from "@/features/bills/hooks/use-pos-draft-session";
+import {
+  createDefaultBillForm,
+  isMeaningfulPosDraft,
+} from "@/features/bills/utils/pos-drafts";
 import type {
   Bill,
   BillDraftItem,
@@ -164,13 +171,6 @@ function smartCashChips(total: number): number[] {
 
 const SUCCESS_AUTO_DISMISS_MS = 8000;
 
-// Draft key is scoped per signed-in user so two cashiers sharing a browser
-// don't see each other's in-progress carts. Pre-uid drafts under the old
-// flat "shopkeeper-pos-bill-draft-v1" key are intentionally orphaned (no
-// data is lost — Dexie still has every saved bill — only the in-progress
-// scratch state is dropped on the migration).
-const POS_DRAFT_KEY_PREFIX = "shopkeeper-pos-bill-draft-v1";
-
 /** Compact native dropdown to switch a multi-unit cart line's sale unit. */
 function UnitChipSelect({
   value,
@@ -249,6 +249,7 @@ function SuccessPanel({
   currency,
   canViewProfit,
   onDismiss,
+  hasPendingDrafts,
 }: {
   bill: Bill;
   items: BillItem[];
@@ -256,6 +257,7 @@ function SuccessPanel({
   currency: string;
   canViewProfit: boolean;
   onDismiss: () => void;
+  hasPendingDrafts: boolean;
 }) {
   const { t } = useLocale();
   const online = useOnlineStatus();
@@ -388,7 +390,7 @@ function SuccessPanel({
           onClick={onDismiss}
           className="w-full"
         >
-          {t("billing.newSale")}
+          {hasPendingDrafts ? t("billing.continueInvoice") : t("billing.newSale")}
         </Button>
       </div>
     </Card>
@@ -422,7 +424,6 @@ export function PosScreen() {
   const { push } = useToast();
   const online = useOnlineStatus();
   const currency = settings?.currency ?? "ILS";
-  const draftKey = user?.uid ? `${POS_DRAFT_KEY_PREFIX}:${user.uid}` : null;
 
   // Below-cost selling needs BOTH the per-user privilege (canEditCost) and the
   // store-wide allowLossSale switch. The service (assertLossSaleAllowed) hard-
@@ -446,16 +447,15 @@ export function PosScreen() {
     }
   }
 
-  const [draftItems, setDraftItems] = useState<BillDraftItem[]>([]);
   // Open weight picker for a weight product being added or edited in the cart.
   const [weightEditor, setWeightEditor] = useState<{
     product: Product;
     itemId?: string;
     initialGrams?: number;
   } | null>(null);
-  const staleDraftChecked = useRef(false);
   const [barcodeQuery, setBarcodeQuery] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [cancelDraftId, setCancelDraftId] = useState<string | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [miscOpen, setMiscOpen] = useState(false);
@@ -473,6 +473,7 @@ export function PosScreen() {
   const [lastFinalized, setLastFinalized] = useState<{
     bill: Bill;
     items: BillItem[];
+    hadPendingDrafts: boolean;
   } | null>(null);
   const productOptions = useMemo(
     () =>
@@ -505,21 +506,35 @@ export function PosScreen() {
   const barcodeInputRef = useRef<HTMLInputElement | null>(null);
   const lastAppliedCashierNameRef = useRef(t("common.owner"));
 
+  const defaultBillForm = useMemo(
+    () => createDefaultBillForm(settings?.cashierName || t("common.owner")),
+    [settings?.cashierName, t],
+  );
+
   const form = useForm<BillFormSchema>({
     resolver: zodResolver(billFormSchema),
-    defaultValues: {
-      cashierName: settings?.cashierName ?? t("common.owner"),
-      customerName: "",
-      customerPhone: "",
-      paymentMethod: "cash",
-      discountAmount: 0,
-      taxAmount: 0,
-      paidAmount: 0,
-      cashAmount: 0,
-      cardAmount: 0,
-      notes: "",
-    },
+    defaultValues: defaultBillForm,
   });
+
+  const {
+    ready: draftSessionReady,
+    drafts: openDrafts,
+    activeDraft,
+    activeDraftId,
+    setActiveItems: setDraftItems,
+    setActiveForm,
+    createDraft,
+    activateDraft,
+    removeDraft,
+  } = usePosDraftSession({
+    userId: user?.uid,
+    fallbackForm: defaultBillForm,
+  });
+  const draftItems = activeDraft?.items ?? [];
+  const [hydratedDraftId, setHydratedDraftId] = useState<string | null>(null);
+  const activeFormReady = Boolean(
+    activeDraftId && hydratedDraftId === activeDraftId,
+  );
 
   useEffect(() => {
     if (!scannerOpen) barcodeInputRef.current?.focus();
@@ -535,63 +550,51 @@ export function PosScreen() {
     lastAppliedCashierNameRef.current = nextDefault;
   }, [settings, form]);
 
-  // Restore draft from localStorage — only when we know the user. Skipping
-  // when uid is unknown prevents loading another account's stale draft on
-  // a different login.
+  // Hydrate react-hook-form whenever the cashier activates a different draft.
+  // The session hook owns persistence; this screen only mirrors the active
+  // draft into the existing form controls.
   useEffect(() => {
-    if (!draftKey) return;
-    const raw = window.localStorage.getItem(draftKey);
-    if (!raw) return;
-    try {
-      const parsed = JSON.parse(raw) as {
-        items: BillDraftItem[];
-        form: BillFormSchema;
-      };
-      const items = parsed.items ?? [];
-      setDraftItems(items);
-      form.reset(parsed.form);
-      const autoTotal = calculateBillTotals(
-        items.map((i) => ({
-          quantity: i.quantity,
-          unitBuyPrice: i.unitBuyPrice,
-          unitSellPrice: i.unitSellPrice,
-        })),
-        parsed.form.discountAmount,
-        parsed.form.taxAmount,
-      ).totalAmount;
-      setIsPaidAmountManuallyEdited(
-        wasPaidAmountManuallyEdited(
-          parsed.form.paidAmount,
-          parsed.form.paymentMethod,
-          autoTotal,
-        ),
-      );
-    } catch {
-      window.localStorage.removeItem(draftKey);
-    }
-  }, [draftKey, form]);
+    if (!draftSessionReady || !activeDraft) return;
+    form.reset(activeDraft.form);
+    const autoTotal = calculateBillTotals(
+      activeDraft.items.map((item) => ({
+        quantity: item.quantity,
+        unitBuyPrice: item.unitBuyPrice,
+        unitSellPrice: item.unitSellPrice,
+      })),
+      activeDraft.form.discountAmount,
+      activeDraft.form.taxAmount,
+    ).totalAmount;
+    setIsPaidAmountManuallyEdited(
+      wasPaidAmountManuallyEdited(
+        activeDraft.form.paidAmount,
+        activeDraft.form.paymentMethod,
+        autoTotal,
+      ),
+    );
+    setHydratedDraftId(activeDraft.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftSessionReady, activeDraftId, form]);
 
-  // Once — after products load, reconcile draft prices/stock against live data.
-  // Runs only on the first render where both products and a non-empty cart are
-  // available. The ref gate prevents it from re-running on every cart change.
+  // Reconcile the active draft whenever it is opened or live product data
+  // changes. Drafts do not reserve stock: each one keeps its own snapshot,
+  // while switching/finalizing revalidates against the real inventory.
   useEffect(() => {
-    // Wait for productUnits too: a multi-unit line is reconciled against its
-    // live ProductUnit, so reconciling before units load would wrongly treat
-    // every multi-unit line as "unit removed" and drop it.
-    if (
-      staleDraftChecked.current ||
-      !products ||
-      !productUnits ||
-      draftItems.length === 0
-    )
+    if (!activeDraftId || !products || !productUnits || draftItems.length === 0)
       return;
-    staleDraftChecked.current = true;
 
     let priceCount = 0;
     let removedCount = 0;
     let stockCount = 0;
 
     const next = draftItems.reduce<BillDraftItem[]>((acc, item) => {
+      // Misc lines are intentionally not backed by a Product row. They are
+      // self-contained invoice lines and must survive draft switching/reload.
+      if (isMiscLine(item)) {
+        acc.push(item);
+        return acc;
+      }
+
       const live = products.find((p) => p.id === item.productId);
       if (!live || live.status !== "active") {
         removedCount += 1;
@@ -605,13 +608,13 @@ export function PosScreen() {
         removedCount += 1;
         return acc;
       }
-      // Multi-unit lines are priced per sale unit, not from the product's base
-      // sellPrice, so this product-level price comparison only applies to
-      // unit/weight lines. The multi_unit branch does its own price check.
+      // Refresh live cost metadata for unit/weight lines. Multi-unit lines
+      // resolve their own live unit cost/conversion below. Preserve the sell
+      // price captured in the open invoice: cashiers may
+      // negotiate/edit that price, and switching tabs must never reset it to
+      // the product catalog price. We only refresh the informational cost.
       const priceChanged =
-        item.saleType !== "multi_unit" &&
-        (live.sellPrice !== item.unitSellPrice ||
-          live.buyPrice !== item.unitBuyPrice);
+        item.saleType !== "multi_unit" && live.buyPrice !== item.unitBuyPrice;
       if (priceChanged) priceCount += 1;
 
       if (item.saleType === "weight") {
@@ -622,7 +625,7 @@ export function PosScreen() {
         if (cappedBase < base) stockCount += 1;
         acc.push({
           ...item,
-          unitSellPrice: live.sellPrice,
+          unitSellPrice: item.unitSellPrice,
           unitBuyPrice: live.buyPrice,
           availableStock: live.quantityInStock,
           baseQuantity: cappedBase,
@@ -654,7 +657,6 @@ export function PosScreen() {
         }
         const liveBuyPrice = liveUnit.buyPrice ?? live.buyPrice * conversion;
         const unitChanged =
-          liveUnit.sellPrice !== item.unitSellPrice ||
           liveBuyPrice !== item.unitBuyPrice ||
           conversion !== (item.conversionToBase || 1);
         if (unitChanged) priceCount += 1;
@@ -665,7 +667,7 @@ export function PosScreen() {
           ...item,
           saleUnitName: liveUnit.name,
           conversionToBase: conversion,
-          unitSellPrice: liveUnit.sellPrice,
+          unitSellPrice: item.unitSellPrice,
           unitBuyPrice: liveBuyPrice,
           availableStock: live.quantityInStock,
           quantity: qty,
@@ -679,7 +681,7 @@ export function PosScreen() {
 
       acc.push({
         ...item,
-        unitSellPrice: live.sellPrice,
+        unitSellPrice: item.unitSellPrice,
         unitBuyPrice: live.buyPrice,
         availableStock: live.quantityInStock,
         quantity: Math.max(1, cappedQty),
@@ -704,8 +706,10 @@ export function PosScreen() {
         t("billing.draftStockAdjusted", { count: String(stockCount) }),
         "error",
       );
+    // Intentionally exclude draftItems: cashier price/quantity edits must not
+    // trigger reconciliation that would overwrite the edit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [products, productUnits, draftItems]);
+  }, [products, productUnits, activeDraftId]);
 
   // Watch all form fields for draft persistence
   const watchedCashierName = form.watch("cashierName");
@@ -715,6 +719,8 @@ export function PosScreen() {
   const watchedDiscountAmount = Number(form.watch("discountAmount") || 0);
   const watchedTaxAmount = Number(form.watch("taxAmount") || 0);
   const watchedPaidAmount = Number(form.watch("paidAmount") || 0);
+  const watchedCashAmount = Number(form.watch("cashAmount") || 0);
+  const watchedCardAmount = Number(form.watch("cardAmount") || 0);
   const watchedNotes = form.watch("notes");
 
   useEffect(() => {
@@ -772,24 +778,24 @@ export function PosScreen() {
   }
 
   useEffect(() => {
-    if (!draftKey) return;
-    const payload = JSON.stringify({
-      items: draftItems,
-      form: {
-        cashierName: watchedCashierName ?? "",
-        customerName: watchedCustomerName ?? "",
-        customerPhone: watchedCustomerPhone ?? "",
-        paymentMethod: watchedPaymentMethod ?? "cash",
-        discountAmount: watchedDiscountAmount,
-        taxAmount: watchedTaxAmount,
-        paidAmount: watchedPaidAmount,
-        notes: watchedNotes ?? "",
-      },
+    if (!draftSessionReady || !activeDraftId || !activeFormReady) return;
+    setActiveForm({
+      cashierName: watchedCashierName ?? "",
+      customerName: watchedCustomerName ?? "",
+      customerPhone: watchedCustomerPhone ?? "",
+      paymentMethod: watchedPaymentMethod ?? "cash",
+      discountAmount: watchedDiscountAmount,
+      taxAmount: watchedTaxAmount,
+      paidAmount: watchedPaidAmount,
+      cashAmount: watchedCashAmount,
+      cardAmount: watchedCardAmount,
+      notes: watchedNotes ?? "",
     });
-    window.localStorage.setItem(draftKey, payload);
   }, [
-    draftKey,
-    draftItems,
+    draftSessionReady,
+    activeDraftId,
+    activeFormReady,
+    setActiveForm,
     watchedCashierName,
     watchedCustomerName,
     watchedCustomerPhone,
@@ -797,6 +803,8 @@ export function PosScreen() {
     watchedDiscountAmount,
     watchedTaxAmount,
     watchedPaidAmount,
+    watchedCashAmount,
+    watchedCardAmount,
     watchedNotes,
   ]);
 
@@ -854,6 +862,7 @@ export function PosScreen() {
   // If the selected method was just disabled in settings, snap to the first
   // allowed one so the form never holds a now-invalid method.
   useEffect(() => {
+    if (!activeFormReady) return;
     if (
       !availablePaymentMethods.includes(
         watchedPaymentMethod as BillFormSchema["paymentMethod"],
@@ -863,7 +872,7 @@ export function PosScreen() {
         shouldDirty: false,
       });
     }
-  }, [availablePaymentMethods, watchedPaymentMethod, form]);
+  }, [activeFormReady, availablePaymentMethods, watchedPaymentMethod, form]);
 
   // requireShift turns the soft "no shift open" banner into a hard block.
   // activeShift is `undefined` while loading and `null` when none is open —
@@ -882,13 +891,14 @@ export function PosScreen() {
   // counted by `total = subtotal - discount + tax`.
   const taxEnabled = settings?.taxMode === "exclusive";
   useEffect(() => {
+    if (!activeFormReady) return;
     if (!taxEnabled && watchedTaxAmount !== 0) {
       form.setValue("taxAmount", 0, {
         shouldDirty: false,
         shouldValidate: true,
       });
     }
-  }, [taxEnabled, watchedTaxAmount, form]);
+  }, [activeFormReady, taxEnabled, watchedTaxAmount, form]);
 
   // (Customer typeahead removed — replaced by CustomerSelectSheet modal)
 
@@ -899,6 +909,7 @@ export function PosScreen() {
   const hasValidTotal = billSummary.totalAmount >= 0;
   const hasEnoughPayment = isCreditSale || actualChangeAmount >= 0;
   const canFinalize =
+    activeFormReady &&
     draftItems.length > 0 &&
     hasValidTotal &&
     hasEnoughPayment &&
@@ -907,12 +918,12 @@ export function PosScreen() {
     (!isCreditSale || hasCreditCustomer);
 
   useEffect(() => {
-    if (isPaidAmountManuallyEdited) return;
+    if (!activeFormReady || isPaidAmountManuallyEdited) return;
     form.setValue("paidAmount", defaultPaidAmount, {
       shouldDirty: false,
       shouldValidate: true,
     });
-  }, [defaultPaidAmount, isPaidAmountManuallyEdited, form]);
+  }, [activeFormReady, defaultPaidAmount, isPaidAmountManuallyEdited, form]);
 
 
   // Auto-dismiss the success panel after a short window so the right column
@@ -1348,23 +1359,52 @@ export function PosScreen() {
     );
   }
 
-  function clearDraft() {
-    setDraftItems([]);
-    setIsPaidAmountManuallyEdited(false);
-    form.reset({
-      cashierName: settings?.cashierName ?? t("common.owner"),
-      customerName: "",
-      customerPhone: "",
-      paymentMethod: "cash",
-      discountAmount: 0,
-      taxAmount: 0,
-      paidAmount: 0,
-      cashAmount: 0,
-      cardAmount: 0,
-      notes: "",
-    });
-    if (draftKey) window.localStorage.removeItem(draftKey);
-    barcodeInputRef.current?.focus();
+  function getCurrentFormValues(): BillFormSchema {
+    return form.getValues();
+  }
+
+  function focusBarcodeSoon() {
+    setTimeout(() => barcodeInputRef.current?.focus(), 0);
+  }
+
+  function handleCreateDraft() {
+    if (!activeFormReady) return;
+    createDraft(getCurrentFormValues(), defaultBillForm);
+    setBarcodeQuery("");
+    setLastFinalized(null);
+    setConfirmOpen(false);
+    focusBarcodeSoon();
+  }
+
+  function handleActivateDraft(draftId: string) {
+    if (!activeFormReady || draftId === activeDraftId) return;
+    activateDraft(draftId, getCurrentFormValues());
+    setBarcodeQuery("");
+    setLastFinalized(null);
+    setConfirmOpen(false);
+    focusBarcodeSoon();
+  }
+
+  function cancelDraftNow(draftId: string) {
+    removeDraft(draftId, getCurrentFormValues(), defaultBillForm);
+    setBarcodeQuery("");
+    setCancelDraftId(null);
+    setLastFinalized(null);
+    push(t("billing.invoiceCancelled"));
+    focusBarcodeSoon();
+  }
+
+  function requestCancelDraft(draftId: string) {
+    if (!activeFormReady) return;
+    const draft = openDrafts.find((candidate) => candidate.id === draftId);
+    if (!draft) return;
+    const formValues =
+      draftId === activeDraftId ? getCurrentFormValues() : draft.form;
+    if (isMeaningfulPosDraft(draft.items, formValues)) {
+      setCancelDraftId(draftId);
+      return;
+    }
+    cancelDraftNow(draftId);
   }
 
   async function finalize(values: BillFormSchema) {
@@ -1380,9 +1420,12 @@ export function PosScreen() {
           paidAmount: actualPaidAmount,
         },
       });
-      clearDraft();
+      const hadPendingDrafts = openDrafts.length > 1;
+      if (activeDraftId) {
+        removeDraft(activeDraftId, values, defaultBillForm);
+      }
       setConfirmOpen(false);
-      setLastFinalized({ bill, items: billItems });
+      setLastFinalized({ bill, items: billItems, hadPendingDrafts });
       // Structured success toast that reinforces offline-first trust: it tells
       // the cashier the sale is saved and whether it's syncing now or queued
       // until reconnect. The SuccessPanel owns the actions (open bill / new
@@ -1580,7 +1623,7 @@ export function PosScreen() {
       )}
 
       {/* Mobile-first layout, desktop keeps two columns */}
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_400px] gap-4 xl:gap-5 items-start pb-28 lg:pb-0">
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_400px] gap-4 xl:gap-5 items-start pb-28 lg:pb-16">
         <div className="flex flex-col gap-4">
           {/* ── Build bill panel ─────────────────────────────────────────── */}
           <Card className="flex flex-col gap-4" padding="sm">
@@ -1848,6 +1891,7 @@ export function PosScreen() {
               settings={settings}
               currency={currency}
               canViewProfit={canViewProfit}
+              hasPendingDrafts={lastFinalized.hadPendingDrafts}
               onDismiss={() => {
                 setLastFinalized(null);
                 setTimeout(() => barcodeInputRef.current?.focus(), 0);
@@ -2129,10 +2173,11 @@ export function PosScreen() {
                   <Button
                     type="button"
                     variant="ghost"
-                    onClick={clearDraft}
+                    disabled={!activeFormReady}
+                    onClick={() => activeDraftId && requestCancelDraft(activeDraftId)}
                     className="flex-1"
                   >
-                    {t("billing.clearDraft")}
+                    {t("billing.cancelInvoice")}
                   </Button>
                   <Button
                     type="submit"
@@ -2147,6 +2192,17 @@ export function PosScreen() {
         </div>
       </div>
 
+      {draftSessionReady && activeFormReady && (
+        <InvoiceDraftTray
+          drafts={openDrafts}
+          activeDraftId={activeDraftId}
+          currency={currency}
+          onActivate={handleActivateDraft}
+          onCancel={requestCancelDraft}
+          onCreate={handleCreateDraft}
+        />
+      )}
+
       {/* Spacer so the last content clears the stacked checkout bar + bottom
           nav on mobile. Only needed when the checkout bar is present. */}
       {draftItems.length > 0 && <div className="h-20 lg:hidden" aria-hidden />}
@@ -2160,11 +2216,9 @@ export function PosScreen() {
         // totals so the bar reads as "your cart" not "random sticky strip".
         <div
           className={clsx(
-            // Sits ABOVE the mobile bottom nav so the finalize button is never
-            // covered. Offset = nav height: h-16 (4rem) + its pb-safe
-            // (max(env(safe-area-inset-bottom), 0.5rem)) + 1px top border.
+            // Sits above both the invoice tray (3.5rem) and mobile bottom nav.
             // The nav owns the safe-area gap, so this bar uses a plain pb.
-            "fixed inset-x-0 bottom-[calc(4rem+max(env(safe-area-inset-bottom),0.5rem)+1px)] z-30 lg:hidden",
+            "fixed inset-x-0 bottom-[calc(7.5rem+max(env(safe-area-inset-bottom),0.5rem)+2px)] z-30 lg:hidden",
             "border-t border-border-default bg-surface/95 backdrop-blur",
             "shadow-[0_-8px_24px_rgba(11,18,32,0.10)]",
             "px-3 py-3",
@@ -2196,6 +2250,17 @@ export function PosScreen() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={Boolean(cancelDraftId)}
+        title={t("billing.cancelInvoiceTitle")}
+        description={t("billing.cancelInvoiceDescription")}
+        confirmLabel={t("billing.cancelInvoiceConfirm")}
+        cancelLabel={t("common.cancel")}
+        tone="danger"
+        onCancel={() => setCancelDraftId(null)}
+        onConfirm={() => cancelDraftId && cancelDraftNow(cancelDraftId)}
+      />
 
       {/* ── Confirm modal ────────────────────────────────────────────────── */}
       <Modal

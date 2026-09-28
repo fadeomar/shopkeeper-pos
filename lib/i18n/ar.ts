@@ -822,6 +822,17 @@ export const ar: TranslationDict = {
     mixedSumMismatch: "مجموع النقد والبطاقة يجب أن يساوي إجمالي الفاتورة.",
     invalidTotal: "لا يمكن أن يكون الخصم أكبر من المجموع الفرعي مع الضريبة.",
     clearDraft: "مسح المسودة",
+    newInvoice: "فاتورة جديدة",
+    openInvoices: "الفواتير المفتوحة",
+    invoiceDraftNumber: "فاتورة {{number}}",
+    switchInvoice: "فتح الفاتورة {{number}}",
+    cancelInvoiceNumber: "إلغاء الفاتورة {{number}}",
+    cancelInvoice: "إلغاء الفاتورة",
+    cancelInvoiceTitle: "إلغاء هذه الفاتورة؟",
+    cancelInvoiceDescription:
+      "سيتم حذف هذه الفاتورة المفتوحة وكل البيانات المدخلة فيها. ستبقى الفواتير المفتوحة الأخرى كما هي.",
+    cancelInvoiceConfirm: "إلغاء الفاتورة",
+    invoiceCancelled: "تم إلغاء الفاتورة.",
     reviewFinalize: "مراجعة وإنهاء",
     finalizeBill: "إنهاء الفاتورة",
     finalizeDesc:
@@ -847,6 +858,7 @@ export const ar: TranslationDict = {
     saleSavedSyncing: "تم الحفظ — جارٍ المزامنة مع السحابة.",
     saleSavedOffline: "تم الحفظ دون اتصال — ستتم المزامنة عند عودة الإنترنت.",
     newSale: "بيع جديد",
+    continueInvoice: "متابعة الفاتورة",
     quickCash: "نقد سريع",
     exact: "بالضبط",
     lastAdded: "أُضيف: {{name}} · ×{{qty}} · {{subtotal}}",
@@ -876,9 +888,9 @@ export const ar: TranslationDict = {
       "المخزون والحد الأدنى يجب أن يكونا أرقاماً صحيحة. الأسعار يجب أن تكون أرقاماً صالحة غير سالبة.",
     quickAddRequired: "أدخل الباركود والاسم والفئة والوحدة.",
     draftPricesRefreshed:
-      "تم تحديث أسعار {{count}} منتج/منتجات في سلة المشتريات المحفوظة.",
+      "تم تحديث بيانات التكلفة أو الوحدة لـ {{count}} منتج/منتجات في الفاتورة المفتوحة.",
     draftProductsRemoved:
-      "تم حذف {{count}} منتج/منتجات من سلة المشتريات المحفوظة — المنتج غير نشط أو غير موجود.",
+      "تم حذف {{count}} منتج/منتجات من الفاتورة المفتوحة — المنتج غير نشط أو غير موجود.",
     draftStockAdjusted:
       "تم تعديل الكمية لـ {{count}} منتج/منتجات — المخزون غير كافٍ.",
     pickCustomer: "اختر عميلاً",
