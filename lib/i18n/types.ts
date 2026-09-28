@@ -795,6 +795,18 @@ export interface TranslationDict {
     mixedSumMismatch: string;
     invalidTotal: string;
     clearDraft: string;
+    newInvoice: string;
+    openInvoices: string;
+    noOpenInvoicesTitle: string;
+    noOpenInvoicesDesc: string;
+    invoiceDraftNumber: string;
+    switchInvoice: string;
+    cancelInvoiceNumber: string;
+    cancelInvoice: string;
+    cancelInvoiceTitle: string;
+    cancelInvoiceDescription: string;
+    cancelInvoiceConfirm: string;
+    invoiceCancelled: string;
     reviewFinalize: string;
     finalizeBill: string;
     finalizeDesc: string;
@@ -818,6 +830,7 @@ export interface TranslationDict {
     saleSavedSyncing: string;
     saleSavedOffline: string;
     newSale: string;
+    continueInvoice: string;
     quickCash: string;
     exact: string;
     lastAdded: string;

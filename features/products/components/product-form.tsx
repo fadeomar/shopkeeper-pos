@@ -43,7 +43,7 @@ import clsx from "clsx";
 
 interface Props {
   product?: Product;
-  onSaved?: () => void;
+  onSaved?: (savedProduct?: Product) => void;
   onCancel?: () => void;
   onOpenExisting?: (product: Product) => void;
 }
@@ -321,14 +321,21 @@ export function ProductForm({ product, onSaved, onCancel, onOpenExisting }: Prop
     );
   }, [products, product?.id, watchedBarcode]);
 
+  // Editing and add-mode defaults have different reset lifecycles. Keeping
+  // `isDirty` in the same effect as an existing product caused the form to
+  // reset back to the stored values after the cashier's first keystroke. The
+  // keyed ProductForm mount supplies the initial edit values; this effect only
+  // rehydrates when the selected product object itself changes.
   useEffect(() => {
-    if (product) {
-      form.reset(productToFormValues(product));
-      return;
-    }
-    if (!form.formState.isDirty) {
-      form.reset(buildEmptyDefaults(settings));
-    }
+    if (!product) return;
+    form.reset(productToFormValues(product));
+  }, [form, product]);
+
+  // Settings may arrive after the empty add form mounts. Apply those defaults
+  // only while the cashier has not started typing, and never while editing.
+  useEffect(() => {
+    if (product || form.formState.isDirty) return;
+    form.reset(buildEmptyDefaults(settings));
   }, [form, product, settings, form.formState.isDirty]);
   useEffect(() => {
     setLossWarning(Number(sellPrice) < Number(buyPrice));
@@ -425,7 +432,13 @@ export function ProductForm({ product, onSaved, onCancel, onOpenExisting }: Prop
           changes,
           units: built,
         });
+        const savedProduct = await productRepo.findById(product.id);
+        if (savedProduct) {
+          form.reset(productToFormValues(savedProduct));
+        }
         push(t("products.productUpdated"));
+        onSaved?.(savedProduct);
+        return;
       } else {
         const created: Product = {
           id: productId,
@@ -453,8 +466,8 @@ export function ProductForm({ product, onSaved, onCancel, onOpenExisting }: Prop
         setUnits([]);
         unitsInitRef.current = false;
         push(t("products.productCreated"));
+        onSaved?.();
       }
-      onSaved?.();
     } catch (error) {
       push(getServiceErrorMessage(error, t, t("products.productUpdated")), "error");
     }
@@ -513,7 +526,18 @@ export function ProductForm({ product, onSaved, onCancel, onOpenExisting }: Prop
       // can't blank out (or alter) the existing cost. The service also guards.
       if (!canEditCost) delete changes.buyPrice;
       await updateProductDetails(product, changes);
+      // Re-read the row we actually persisted and keep edit mode open. This
+      // prevents a successful edit from immediately looking like its prices
+      // were reset to zero when the parent switches back to the blank Add
+      // Product form, and it makes the form reflect IndexedDB as the source of
+      // truth after every save.
+      const savedProduct = await productRepo.findById(product.id);
+      if (savedProduct) {
+        form.reset(productToFormValues(savedProduct));
+      }
       push(t("products.productUpdated"));
+      onSaved?.(savedProduct);
+      return;
     } else {
       const created: Product = {
         id: createId("prod"),
@@ -531,8 +555,8 @@ export function ProductForm({ product, onSaved, onCancel, onOpenExisting }: Prop
       rememberProductDefaults(values);
       form.reset(buildEmptyDefaults(settings));
       push(t("products.productCreated"));
+      onSaved?.();
     }
-    onSaved?.();
   }
 
   const e = form.formState.errors;

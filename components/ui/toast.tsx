@@ -106,14 +106,15 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      {/* end-4 (logical) keeps toasts in the trailing corner in LTR & RTL.
-          bottom-20 clears the mobile bottom nav; lg drops it to the corner.
-          role="status" + aria-live="polite" announces new toasts to SRs. */}
+      {/* Toasts live at the top so persistent POS controls (invoice rail,
+          checkout bar, bottom navigation) always keep the lower viewport clear.
+          end-4 remains logical for LTR/RTL, and the mobile offset respects the
+          device safe area. role/status + aria-live announces new toasts to SRs. */}
       <div
         role="status"
         aria-live="polite"
         aria-atomic="false"
-        className="fixed bottom-20 end-4 z-[100] flex flex-col gap-2 pointer-events-none lg:bottom-5 lg:end-5"
+        className="fixed top-[max(env(safe-area-inset-top),1rem)] end-4 z-[100] flex flex-col gap-2 pointer-events-none lg:top-5 lg:end-5"
       >
         {toasts.map((toast) => {
           const { icon: Icon, chip, iconColor } = TONE_CONFIG[toast.tone];
