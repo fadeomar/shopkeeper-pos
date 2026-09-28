@@ -31,12 +31,12 @@ export function InvoiceDraftTray({
           checkout + bottom navigation. */}
       <div
         className={clsx(
-          "fixed z-30 top-24 bottom-[calc(8.5rem+max(env(safe-area-inset-bottom),0.5rem))] lg:hidden",
+          "fixed z-30 top-24 max-h-[calc(100dvh-15rem)] lg:hidden",
           dir === "rtl" ? "left-1.5" : "right-1.5",
         )}
         aria-label={t("billing.openInvoices")}
       >
-        <div className="flex h-full w-14 flex-col items-center gap-1.5 overflow-y-auto rounded-2xl border border-border-default bg-surface/95 p-1.5 shadow-lg backdrop-blur">
+        <div className="flex w-14 max-h-[calc(100dvh-15rem)] flex-col items-center gap-1.5 overflow-y-auto rounded-2xl border border-border-default bg-surface/95 p-1.5 shadow-lg backdrop-blur">
           <button
             type="button"
             onClick={onCreate}
