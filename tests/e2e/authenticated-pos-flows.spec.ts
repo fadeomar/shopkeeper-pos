@@ -83,6 +83,48 @@ test.describe('authenticated POS billing flows', () => {
     await expect(page.getByText(/1\.60|1.60/).first()).toBeVisible();
   });
 
+  test('cashier can keep multiple open invoices, switch them, refresh, and cancel one', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop-chrome', 'multi-invoice workflow is covered once on desktop');
+
+    await loginAsOwner(page);
+    await initializeDemoData(page);
+    await page.goto('/billing');
+
+    await addProductToBill(page, 'Milk 1L');
+    await page.getByLabel(/notes/i).fill('First invoice');
+
+    await page.getByRole('button', { name: /^new invoice$/i }).click();
+    await expect(page.getByRole('button', { name: /open invoice 1/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /open invoice 2/i })).toHaveAttribute('aria-pressed', 'true');
+
+    await addProductToBill(page, 'Rice 5kg');
+    await page.getByLabel(/notes/i).fill('Second invoice');
+
+    await page.getByRole('button', { name: /open invoice 1/i }).click();
+    await expect(page.getByText('Milk 1L').filter({ visible: true }).first()).toBeVisible();
+    await expect(page.getByLabel(/notes/i)).toHaveValue('First invoice');
+
+    await page.reload();
+    await expect(page.getByRole('button', { name: /open invoice 1/i })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByText('Milk 1L').filter({ visible: true }).first()).toBeVisible();
+    await expect(page.getByLabel(/notes/i)).toHaveValue('First invoice');
+
+    // Finalizing invoice 1 must remove only that draft and activate invoice 2.
+    await finalizeBill(page);
+    await expect(page.getByRole('button', { name: /open invoice 1/i })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /open invoice 2/i })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByText('Rice 5kg').filter({ visible: true }).first()).toBeVisible();
+    await expect(page.getByLabel(/notes/i)).toHaveValue('Second invoice');
+
+    await page.getByRole('button', { name: /cancel invoice 2/i }).click();
+    const cancelDialog = page.getByRole('dialog', { name: /cancel this invoice/i });
+    await expect(cancelDialog).toBeVisible();
+    await cancelDialog.getByRole('button', { name: /^cancel invoice$/i }).click();
+
+    await expect(page.getByRole('button', { name: /open invoice 2/i })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /open invoice 1/i })).toHaveAttribute('aria-pressed', 'true');
+  });
+
   test('mobile cashier can reach billing, add an item, and open finalize review', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'mobile-chrome', 'mobile-only smoke test');
 
@@ -91,8 +133,20 @@ test.describe('authenticated POS billing flows', () => {
     await page.goto('/billing');
 
     await addProductToBill(page, 'Milk 1L');
-    await expect(page.getByRole('button', { name: /review & finalize/i }).last()).toBeVisible();
-    await page.getByRole('button', { name: /review & finalize/i }).last().click();
+    const finalizeButton = page.getByRole('button', { name: /review & finalize/i }).last();
+    const newInvoiceButton = page.getByRole('button', { name: /^new invoice$/i });
+    await expect(finalizeButton).toBeVisible();
+    await expect(newInvoiceButton).toBeVisible();
+
+    const finalizeBox = await finalizeButton.boundingBox();
+    const trayButtonBox = await newInvoiceButton.boundingBox();
+    expect(finalizeBox).not.toBeNull();
+    expect(trayButtonBox).not.toBeNull();
+    expect((finalizeBox?.y ?? 0) + (finalizeBox?.height ?? 0)).toBeLessThanOrEqual(
+      (trayButtonBox?.y ?? 0) + 2,
+    );
+
+    await finalizeButton.click();
     await expect(page.getByRole('dialog', { name: /finalize bill/i })).toBeVisible();
   });
 });
