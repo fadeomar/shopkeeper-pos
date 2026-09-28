@@ -122,6 +122,12 @@ test.describe('authenticated POS billing flows', () => {
     await cancelDialog.getByRole('button', { name: /^cancel invoice$/i }).click();
 
     await expect(page.getByRole('button', { name: /open invoice 2/i })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /open invoice 1/i })).toHaveCount(0);
+    await expect(page.getByText(/no open invoices/i)).toBeVisible();
+
+    // Cancelling the final draft leaves a true empty workspace. Starting again
+    // is explicit and restarts the temporary draft numbering from one.
+    await page.getByRole('button', { name: /^new invoice$/i }).first().click();
     await expect(page.getByRole('button', { name: /open invoice 1/i })).toHaveAttribute('aria-pressed', 'true');
   });
 
@@ -142,9 +148,18 @@ test.describe('authenticated POS billing flows', () => {
     const trayButtonBox = await newInvoiceButton.boundingBox();
     expect(finalizeBox).not.toBeNull();
     expect(trayButtonBox).not.toBeNull();
-    expect((finalizeBox?.y ?? 0) + (finalizeBox?.height ?? 0)).toBeLessThanOrEqual(
-      (trayButtonBox?.y ?? 0) + 2,
+
+    // Mobile invoice navigation is a side rail, not another bottom bar. Its
+    // New Invoice control must not geometrically overlap checkout.
+    const overlaps = Boolean(
+      finalizeBox &&
+        trayButtonBox &&
+        finalizeBox.x < trayButtonBox.x + trayButtonBox.width &&
+        finalizeBox.x + finalizeBox.width > trayButtonBox.x &&
+        finalizeBox.y < trayButtonBox.y + trayButtonBox.height &&
+        finalizeBox.y + finalizeBox.height > trayButtonBox.y,
     );
+    expect(overlaps).toBe(false);
 
     await finalizeButton.click();
     await expect(page.getByRole('dialog', { name: /finalize bill/i })).toBeVisible();
