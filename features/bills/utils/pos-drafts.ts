@@ -17,7 +17,7 @@ export interface PosInvoiceDraft {
 
 export interface PosDraftSession {
   version: 2;
-  activeDraftId: string;
+  activeDraftId: string | null;
   nextDraftNumber: number;
   drafts: PosInvoiceDraft[];
 }
@@ -91,7 +91,7 @@ export function parsePosDraftSession(
 ): PosDraftSession | null {
   try {
     const value = JSON.parse(raw) as Partial<PosDraftSession>;
-    if (value.version !== 2 || !Array.isArray(value.drafts) || value.drafts.length === 0) {
+    if (value.version !== 2 || !Array.isArray(value.drafts)) {
       return null;
     }
 
@@ -113,7 +113,14 @@ export function parsePosDraftSession(
         form: normalizeBillForm(draft.form, fallbackForm),
       }));
 
-    if (drafts.length === 0) return null;
+    if (drafts.length === 0) {
+      return {
+        version: 2,
+        activeDraftId: null,
+        nextDraftNumber: 1,
+        drafts: [],
+      };
+    }
 
     const activeDraftId = drafts.some((draft) => draft.id === value.activeDraftId)
       ? (value.activeDraftId as string)
@@ -193,7 +200,9 @@ export function addDraftToSession(
   currentForm: BillFormSchema,
   newDraftForm: BillFormSchema,
 ): PosDraftSession {
-  const synced = syncDraftForm(session, session.activeDraftId, currentForm);
+  const synced = session.activeDraftId
+    ? syncDraftForm(session, session.activeDraftId, currentForm)
+    : session;
   const draft = createPosInvoiceDraft(synced.nextDraftNumber, newDraftForm);
   return {
     ...synced,
@@ -210,7 +219,9 @@ export function activateDraftInSession(
 ): PosDraftSession {
   if (draftId === session.activeDraftId) return session;
   if (!session.drafts.some((draft) => draft.id === draftId)) return session;
-  const synced = syncDraftForm(session, session.activeDraftId, currentForm);
+  const synced = session.activeDraftId
+    ? syncDraftForm(session, session.activeDraftId, currentForm)
+    : session;
   return { ...synced, activeDraftId: draftId };
 }
 
@@ -218,26 +229,25 @@ export function removeDraftFromSession(
   session: PosDraftSession,
   draftId: string,
   currentForm: BillFormSchema,
-  blankForm: BillFormSchema,
 ): PosDraftSession {
   const removedIndex = session.drafts.findIndex((draft) => draft.id === draftId);
   if (removedIndex < 0) return session;
 
   const synced =
-    draftId === session.activeDraftId
+    draftId === session.activeDraftId || !session.activeDraftId
       ? session
       : syncDraftForm(session, session.activeDraftId, currentForm);
   const remaining = synced.drafts.filter((draft) => draft.id !== draftId);
 
   if (remaining.length === 0) {
-    // A completely cleared workspace starts a fresh temporary numbering cycle.
-    // These are only cashier-facing draft labels, never persisted bill numbers.
-    const replacement = createPosInvoiceDraft(1, blankForm);
+    // Cancelling the final invoice must visibly close it. Keep a real empty
+    // session instead of immediately replacing it with another blank tab; the
+    // cashier can explicitly start the next invoice from the New Invoice action.
     return {
       ...synced,
-      activeDraftId: replacement.id,
-      nextDraftNumber: 2,
-      drafts: [replacement],
+      activeDraftId: null,
+      nextDraftNumber: 1,
+      drafts: [],
     };
   }
 

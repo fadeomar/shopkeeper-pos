@@ -84,7 +84,7 @@ describe("POS multi-draft session", () => {
   it("keeps cashier-edited sell prices isolated with their invoice", () => {
     const first = createPosDraftSession(createDefaultBillForm("Owner"));
     const editedMilk = { ...milk, unitSellPrice: 1.35 };
-    const priced = replaceDraftInSession(first, first.activeDraftId, (draft) => ({
+    const priced = replaceDraftInSession(first, first.drafts[0].id, (draft) => ({
       ...draft,
       items: [editedMilk],
     }));
@@ -95,7 +95,7 @@ describe("POS multi-draft session", () => {
     );
     const switchedBack = activateDraftInSession(
       two,
-      priced.activeDraftId,
+      priced.drafts[0].id,
       two.drafts[1].form,
     );
 
@@ -119,7 +119,6 @@ describe("POS multi-draft session", () => {
       withItem,
       withItem.drafts[1].id,
       withItem.drafts[1].form,
-      createDefaultBillForm("Owner"),
     );
 
     expect(remaining.drafts).toHaveLength(1);
@@ -127,21 +126,51 @@ describe("POS multi-draft session", () => {
     expect(remaining.activeDraftId).toBe(remaining.drafts[0].id);
   });
 
-  it("always leaves a fresh invoice when the last open invoice is cancelled", () => {
+  it("leaves a real empty workspace when the last open invoice is cancelled", () => {
     const initial = createPosDraftSession(createDefaultBillForm("Owner"));
-    const originalId = initial.activeDraftId;
+    const originalId = initial.drafts[0].id;
     const next = removeDraftFromSession(
       initial,
       originalId,
       initial.drafts[0].form,
+    );
+
+    expect(next.drafts).toEqual([]);
+    expect(next.activeDraftId).toBeNull();
+    expect(next.nextDraftNumber).toBe(1);
+  });
+
+  it("starts invoice numbering from one when creating after an empty workspace", () => {
+    const initial = createPosDraftSession(createDefaultBillForm("Owner"));
+    const empty = removeDraftFromSession(
+      initial,
+      initial.drafts[0].id,
+      initial.drafts[0].form,
+    );
+    const next = addDraftToSession(
+      empty,
+      createDefaultBillForm("Owner"),
       createDefaultBillForm("Owner"),
     );
 
     expect(next.drafts).toHaveLength(1);
-    expect(next.drafts[0].id).not.toBe(originalId);
     expect(next.drafts[0].draftNumber).toBe(1);
-    expect(next.drafts[0].items).toEqual([]);
+    expect(next.activeDraftId).toBe(next.drafts[0].id);
     expect(next.nextDraftNumber).toBe(2);
+  });
+
+  it("restores a persisted empty workspace without inventing a replacement invoice", () => {
+    const raw = JSON.stringify({
+      version: 2,
+      activeDraftId: null,
+      nextDraftNumber: 1,
+      drafts: [],
+    });
+    const parsed = parsePosDraftSession(raw, createDefaultBillForm("Owner"));
+
+    expect(parsed).not.toBeNull();
+    expect(parsed?.drafts).toEqual([]);
+    expect(parsed?.activeDraftId).toBeNull();
   });
 
   it("migrates the scoped v1 single draft into invoice 1", () => {

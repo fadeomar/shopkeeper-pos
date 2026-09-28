@@ -113,7 +113,7 @@ export function usePosDraftSession({
 
   const setActiveItems = useCallback((updater: DraftItemsUpdater) => {
     setSession((current) => {
-      if (!current) return current;
+      if (!current?.activeDraftId) return current;
       return replaceDraftInSession(current, current.activeDraftId, (draft) => {
         const items =
           typeof updater === "function" ? updater(draft.items) : updater;
@@ -125,7 +125,7 @@ export function usePosDraftSession({
 
   const setActiveForm = useCallback((form: BillFormSchema) => {
     setSession((current) =>
-      current
+      current?.activeDraftId
         ? syncDraftForm(current, current.activeDraftId, form)
         : current,
     );
@@ -154,15 +154,9 @@ export function usePosDraftSession({
   );
 
   const removeDraft = useCallback(
-    (
-      draftId: string,
-      currentForm: BillFormSchema,
-      blankForm: BillFormSchema,
-    ) => {
+    (draftId: string, currentForm: BillFormSchema) => {
       setSession((current) =>
-        current
-          ? removeDraftFromSession(current, draftId, currentForm, blankForm)
-          : current,
+        current ? removeDraftFromSession(current, draftId, currentForm) : current,
       );
     },
     [],
