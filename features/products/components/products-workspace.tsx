@@ -38,7 +38,13 @@ export function ProductsWorkspace() {
           <ProductForm
             key={selectedProduct?.id ?? 'new-product'}
             product={selectedProduct}
-            onSaved={() => setSelectedProduct(undefined)}
+            onSaved={(savedProduct) => {
+              // Creating a product returns no product and stays in the blank
+              // add form. Editing returns the row re-read from IndexedDB so
+              // the cashier remains in edit mode and sees the persisted values
+              // instead of a fresh form full of zero defaults.
+              setSelectedProduct(savedProduct);
+            }}
             onCancel={
               selectedProduct ? () => setSelectedProduct(undefined) : undefined
             }
